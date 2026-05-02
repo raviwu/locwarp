@@ -397,6 +397,39 @@ Double-click `LocWarp.bat`, it auto-elevates and invokes `start.py`, which launc
 
 ---
 
+### macOS (this fork)
+
+> **Note:** macOS packaging (`.app`) is not yet implemented. Dev mode only.
+
+#### Prerequisites
+
+- macOS (Apple Silicon or Intel)
+- Python 3.11+
+- Node.js 18+
+
+macOS has native Apple device drivers built in — no iTunes installation required.
+
+#### Setup
+
+```bash
+pip3 install -r backend/requirements.txt
+cd frontend && npm install
+```
+
+#### Run (dev mode)
+
+```bash
+./start.sh   # prompts for sudo password — required for iOS 17+ utun tunnel
+```
+
+This launches the FastAPI backend (`:8777`) and the Vite dev server (`:5173`), then opens the browser automatically.
+
+#### Why sudo?
+
+iOS 17+ uses the RSD (Remote Service Discovery) protocol, which requires creating a `utun` virtual network interface. On macOS this requires root privileges, the same reason the Windows version requires Administrator.
+
+---
+
 ## Build Installer
 
 ### One-time setup
