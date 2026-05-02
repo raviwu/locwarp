@@ -93,7 +93,11 @@ def install_backend():
         capture_output=True, text=True,
     )
 
-    if "would install" not in dry.stdout.lower():
+    # dry.returncode != 0 means pip itself failed (e.g. network error or packages
+    # genuinely missing but pip errored out) — fall through to a real install so
+    # we don't silently skip required packages.
+    needs_install = "would install" in dry.stdout.lower() or dry.returncode != 0
+    if not needs_install:
         print("已就緒 ✓")
     else:
         print("安裝中...")
