@@ -62,6 +62,13 @@ def kill_port(port):
                 pid = parts[-1]
                 subprocess.run(f"taskkill /pid {pid} /f",
                                shell=True, capture_output=True)
+    else:
+        result = subprocess.run(
+            ["lsof", "-ti", f":{port}"],
+            capture_output=True, text=True,
+        )
+        for pid in result.stdout.strip().splitlines():
+            subprocess.run(["kill", "-9", pid.strip()], capture_output=True)
 
 
 def wait_for_port(port, label, timeout=60):
@@ -104,7 +111,7 @@ def install_frontend():
         print("已就緒 ✓")
     else:
         print("安裝中...")
-        subprocess.run(["npm", "install"], cwd=FRONTEND, shell=True)
+        subprocess.run(["npm", "install"], cwd=FRONTEND, shell=(os.name == "nt"))
         print("        完成 ✓")
 
 
@@ -139,7 +146,7 @@ def start_frontend():
     p = subprocess.Popen(
         ["npx", "vite", "--host", "--port", str(FRONTEND_PORT), "--strictPort"],
         cwd=FRONTEND,
-        shell=True,
+        shell=(os.name == "nt"),
         creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0,
     )
     procs.append(p)
@@ -165,6 +172,8 @@ def cleanup():
 
 def check_admin():
     """Check if running with administrator privileges."""
+    if os.name != "nt":
+        return True
     import ctypes
     try:
         return ctypes.windll.shell32.IsUserAnAdmin()
@@ -173,15 +182,22 @@ def check_admin():
 
 
 def main():
-    os.system("title LocWarp")
+    if os.name == "nt":
+        os.system("title LocWarp")  # noqa: S605 - static string, no user input
     print_banner()
 
-    # 檢查管理員權限 (iOS 17+ 需要)
+    # 檢查管理員權限 (iOS 17+ 需要建立 tunnel)
     if os.name == "nt" and not check_admin():
         print("  [!] 未以系統管理員身份執行")
         print("      iOS 17+ 裝置需要管理員權限才能建立通道")
         print("      請右鍵 LocWarp.bat → 以系統管理員身份執行")
         print()
+    elif sys.platform == "darwin" and os.geteuid() != 0:
+        print("  [!] macOS 需要 root 權限建立 iOS 17+ 裝置通道 (utun)")
+        print("      請使用：sudo python3 start.py")
+        print("      或執行：./start.sh")
+        print()
+        sys.exit(1)
 
     # 檢查環境
     ok = True
