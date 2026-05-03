@@ -765,6 +765,7 @@ const MapView: React.FC<MapViewProps> = ({
     // coordinates there too.
     map.on('click', (e: L.LeafletMouseEvent) => {
       closeContextMenu();
+      setWpMenu((prev) => prev.visible ? { ...prev, visible: false } : prev);
       try {
         onMapClickRef.current?.(e.latlng.lat, e.latlng.lng);
       } catch { /* ignore handler errors */ }
@@ -1079,10 +1080,16 @@ const MapView: React.FC<MapViewProps> = ({
       const stemEnd   = isStart ? 'rgba(67,160,71,0)' : 'rgba(255,152,0,0)';
       const wpIcon = L.divIcon({
         className: 'waypoint-marker',
+        // Outer wrapper is pointer-events:auto + cursor:pointer so the
+        // ENTIRE 40x46 marker area (ring + stem + ground shadow + the
+        // padding around them) catches the left-click — not just the
+        // 28px ring. Old layout had pointer-events:none on the wrapper
+        // which meant a click on the stem or shadow passed straight
+        // through to the map and the waypoint menu never opened.
         html: `<div style="
           position:relative;width:100%;height:100%;
           display:flex;flex-direction:column;align-items:center;justify-content:flex-end;
-          pointer-events:none;">
+          pointer-events:auto;cursor:pointer;">
           <div style="
             width:28px;height:28px;border-radius:50%;
             border:4px solid ${ringColor};background:#fff;
@@ -1090,7 +1097,6 @@ const MapView: React.FC<MapViewProps> = ({
             color:${textColor};font-weight:800;font-size:13px;
             font-family:system-ui,-apple-system,'Segoe UI',sans-serif;
             box-shadow:0 0 0 2px ${ringGlow}, 0 3px 8px rgba(0,0,0,0.4);
-            pointer-events:auto;cursor:pointer;
           ">${label}</div>
           <div style="
             width:2px;height:10px;margin-top:-1px;
@@ -1111,8 +1117,31 @@ const MapView: React.FC<MapViewProps> = ({
         isStart ? tRef.current('panel.waypoint_start') : tRef.current('panel.waypoint_num', { n: wp.index }),
         { direction: 'top', offset: [0, -28] },
       );
+      // Left-click opens a mini menu (set as start / delete). Stop the
+      // event from bubbling to BOTH the map (so the click-to-add-
+      // waypoint toggle doesn't see it as a new map click) AND the
+      // DOM document (so the document-level outside-click handler
+      // doesn't immediately close the menu we just opened — without
+      // DOM stopPropagation the menu opens and closes in the same
+      // tick and the user sees nothing).
+      marker.on('click', (ev) => {
+        const oe = ev.originalEvent as MouseEvent | undefined;
+        L.DomEvent.stopPropagation(ev);
+        if (oe) {
+          oe.preventDefault?.();
+          oe.stopPropagation?.();
+          (oe as any).stopImmediatePropagation?.();
+        }
+        const x = oe?.clientX ?? 0;
+        const y = oe?.clientY ?? 0;
+        setWpMenu({ visible: true, x, y, index: wp.index, isStart });
+      });
       waypointMarkersRef.current.push(marker);
     });
+    // The waypoint signature may have changed under our feet (insert /
+    // remove / rotate). Any open menu now points at a stale index, so
+    // dismiss it.
+    setWpMenu((prev) => prev.visible ? { ...prev, visible: false } : prev);
   }, [waypoints]);
 
   // Render/clear small bookmark pins on the map when the user toggles
@@ -1549,6 +1578,15 @@ const MapView: React.FC<MapViewProps> = ({
     document.addEventListener('click', handler);
     return () => document.removeEventListener('click', handler);
   }, [closeContextMenu]);
+
+  // Close the waypoint mini-menu on any outside click. Same pattern as
+  // closeContextMenu — clicking inside the menu calls stopPropagation
+  // there so this fires only for clicks that miss the menu surface.
+  useEffect(() => {
+    const handler = () => closeWpMenu();
+    document.addEventListener('click', handler);
+    return () => document.removeEventListener('click', handler);
+  }, [closeWpMenu]);
 
   const recenter = useCallback(() => {
     const map = mapRef.current;
@@ -2506,6 +2544,81 @@ const MapView: React.FC<MapViewProps> = ({
             </>
           )}
 
+        </div>
+      )}
+
+      {wpMenu.visible && (
+        <div
+          className="context-menu anim-scale-in-tl"
+          style={{
+            position: 'fixed',
+            // Offset slightly so the cursor lands inside the menu rather
+            // than on its edge (otherwise the document-level click handler
+            // might immediately close it).
+            left: Math.max(8, Math.min(wpMenu.x + 6, window.innerWidth - 188)),
+            top: Math.max(8, Math.min(wpMenu.y + 6, window.innerHeight - 100)),
+            zIndex: 1000,
+            background: 'rgba(26, 29, 39, 0.96)',
+            backdropFilter: 'blur(10px)',
+            WebkitBackdropFilter: 'blur(10px)',
+            border: '1px solid rgba(108, 140, 255, 0.18)',
+            borderRadius: 10,
+            padding: '4px 0',
+            boxShadow: '0 10px 32px rgba(12, 18, 40, 0.55), 0 0 0 1px rgba(255, 255, 255, 0.04) inset',
+            minWidth: 180,
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div
+            style={{
+              padding: '6px 14px 4px',
+              fontSize: 11,
+              opacity: 0.55,
+              fontFamily: 'monospace',
+              borderBottom: '1px solid rgba(255,255,255,0.05)',
+              marginBottom: 2,
+            }}
+          >
+            {wpMenu.isStart ? tRef.current('panel.waypoint_start') : `#${wpMenu.index}`}
+          </div>
+          {!wpMenu.isStart && onSetWpAsStartRef.current && (
+            <div
+              style={contextMenuItemStyle}
+              onMouseEnter={highlightItem}
+              onMouseLeave={unhighlightItem}
+              onClick={() => {
+                const fn = onSetWpAsStartRef.current;
+                const idx = wpMenu.index;
+                closeWpMenu();
+                fn?.(idx);
+              }}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#43a047" strokeWidth="2" style={{ marginRight: 8 }}>
+                <line x1="4" y1="22" x2="4" y2="3" />
+                <path d="M4 4h12l-2 4 2 4H4" fill="#43a04733" />
+              </svg>
+              {t('map.wp_set_as_start')}
+            </div>
+          )}
+          {onRemoveWaypointRef.current && (
+            <div
+              style={{ ...contextMenuItemStyle, color: '#ff6b6b' }}
+              onMouseEnter={highlightItem}
+              onMouseLeave={unhighlightItem}
+              onClick={() => {
+                const fn = onRemoveWaypointRef.current;
+                const idx = wpMenu.index;
+                closeWpMenu();
+                fn?.(idx);
+              }}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: 8 }}>
+                <polyline points="3 6 5 6 21 6" />
+                <path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6" />
+              </svg>
+              {t('map.wp_delete')}
+            </div>
+          )}
         </div>
       )}
     </div>
