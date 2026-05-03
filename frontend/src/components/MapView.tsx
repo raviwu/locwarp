@@ -1805,8 +1805,25 @@ const MapView: React.FC<MapViewProps> = ({
     m.setView([parsed.lat, parsed.lng], targetZoom, { animate: true });
   };
 
+  // When insert-after-waypoint mode is armed, swap the leaflet drag/grab
+  // cursor to a crosshair so the user has a visual cue that the next
+  // map click drops a new waypoint (and isn't a no-op or a teleport).
+  // Scoped via inline <style> so it only affects THIS map instance —
+  // a global stylesheet rule would bleed into any other Leaflet map.
   return (
-    <div className="map-container" style={{ position: 'relative', flex: 1 }}>
+    <div
+      className={`map-container${insertAfterActive ? ' wp-insert-mode' : ''}`}
+      style={{ position: 'relative', flex: 1 }}
+    >
+      {insertAfterActive && (
+        <style>{`
+          .map-container.wp-insert-mode .leaflet-container,
+          .map-container.wp-insert-mode .leaflet-grab,
+          .map-container.wp-insert-mode .leaflet-interactive {
+            cursor: crosshair !important;
+          }
+        `}</style>
+      )}
       <div ref={mapContainerRef} style={{ width: '100%', height: '100%' }} />
 
       {/* Bottom-left stack: Bulk-paste (route/multi only) > Transport >
@@ -2598,6 +2615,25 @@ const MapView: React.FC<MapViewProps> = ({
                 <path d="M4 4h12l-2 4 2 4H4" fill="#43a04733" />
               </svg>
               {t('map.wp_set_as_start')}
+            </div>
+          )}
+          {onInsertAfterWpRef.current && (
+            <div
+              style={contextMenuItemStyle}
+              onMouseEnter={highlightItem}
+              onMouseLeave={unhighlightItem}
+              onClick={() => {
+                const fn = onInsertAfterWpRef.current;
+                const idx = wpMenu.index;
+                closeWpMenu();
+                fn?.(idx);
+              }}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6c8cff" strokeWidth="2" style={{ marginRight: 8 }}>
+                <line x1="12" y1="5" x2="12" y2="19" />
+                <line x1="5" y1="12" x2="19" y2="12" />
+              </svg>
+              {t('map.wp_insert_after')}
             </div>
           )}
           {onRemoveWaypointRef.current && (

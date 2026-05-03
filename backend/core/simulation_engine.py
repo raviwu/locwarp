@@ -170,6 +170,11 @@ class SimulationEngine:
         # disconnect-promotion can capture it and restore on the new
         # leader. The handler increments this after each completed leg.
         self._random_walk_count: int = 0
+        # Holds the live-insert-waypoint splice/resume task so the
+        # event loop's weak-reference task tracking doesn't garbage
+        # collect it mid-execution. Cleared by the task itself when it
+        # finishes (success or exception).
+        self._splice_resume_task: asyncio.Task | None = None
 
     # ── Public API ───────────────────────────────────────────
 
@@ -470,11 +475,21 @@ class SimulationEngine:
         if not self._last_sim_kind or not self._last_sim_args:
             return None
         cur = self.current_position
+        # multi_stop / start_loop: self.segment_index gets clobbered by
+        # _move_along_route's inner step loop (which writes the
+        # densified-coord index, not the leg index). Use
+        # _user_waypoint_next - 1 instead, which is the stable leg
+        # index source. navigate / random_walk use segment_index in
+        # its densified-coord meaning, so leave them on segment_index.
+        if self._last_sim_kind in ("multi_stop", "start_loop"):
+            seg_for_resume = max(0, int(self._user_waypoint_next) - 1)
+        else:
+            seg_for_resume = int(self.segment_index)
         snap = {
             "kind": self._last_sim_kind,
             "args": dict(self._last_sim_args),
             "current_pos": (cur.lat, cur.lng) if cur else None,
-            "segment_index": int(self.segment_index),
+            "segment_index": seg_for_resume,
             "lap_count": int(self.lap_count),
             "user_waypoint_next": int(self._user_waypoint_next),
             "distance_traveled": float(self.distance_traveled),
@@ -885,5 +900,11 @@ class SimulationEngine:
         self._stop_event.clear()
         # Fresh session — let the next handler resolve speed from its own
         # request, not from a stale apply_speed from a previous session.
-        self._speed_was_applied = False
-        self._active_speed_profile = None
+        # Resume entries (handoff between devices, live waypoint insert)
+        # set _resume_snapshot BEFORE calling the handler — preserve any
+        # mid-flight applied speed in that case so the iPhone keeps the
+        # speed the user just set instead of falling back to the slowest
+        # mode default.
+        if self._resume_snapshot is None:
+            self._speed_was_applied = False
+            self._active_speed_profile = None
