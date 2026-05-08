@@ -9,6 +9,7 @@ export enum SimMode {
   Joystick = 'joystick',
   MultiStop = 'multistop',
   RandomWalk = 'randomwalk',
+  GoldDitto = 'goldditto',
 }
 
 export enum MoveMode {
