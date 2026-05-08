@@ -125,6 +125,28 @@ const qs = (udid?: string | null) => (udid ? `?udid=${encodeURIComponent(udid)}`
 
 export const teleport = (lat: number, lng: number, udid?: string) =>
   request<any>('POST', '/api/location/teleport', { lat, lng, ...ud(udid) })
+
+export interface GoldDittoCycleResponse {
+  status: 'completed';
+  target_used: 'A' | 'B';
+  lat: number;
+  lng: number;
+  duration_ms: number;
+}
+
+export const goldDittoCycle = (
+  args: {
+    target: 'A' | 'B' | 'auto';
+    lat_a: number; lng_a: number;
+    lat_b: number; lng_b: number;
+    wait_seconds: number;
+  },
+  udid?: string,
+) =>
+  request<GoldDittoCycleResponse>('POST', '/api/location/goldditto/cycle', {
+    ...args,
+    ...ud(udid),
+  })
 export interface SpeedOpts { speed_kmh?: number | null; speed_min_kmh?: number | null; speed_max_kmh?: number | null }
 export interface PauseOpts { pause_enabled?: boolean; pause_min?: number; pause_max?: number }
 const sp = (o?: SpeedOpts) => ({

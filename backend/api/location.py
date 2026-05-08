@@ -2,6 +2,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from services.location_service import DeviceLostError
+from core.goldditto import GoldDittoLockedError
 
 from models.schemas import (
     MovementMode,
@@ -17,6 +18,7 @@ from models.schemas import (
     CooldownStatus,
     CoordFormatRequest,
     CoordinateFormat,
+    GoldDittoCycleRequest,
 )
 
 router = APIRouter(prefix="/api/location", tags=["location"])
@@ -383,6 +385,35 @@ async def restore(udid: str | None = None):
     engine = await _engine(udid)
     await engine.restore()
     return {"status": "restored"}
+
+
+@router.post("/goldditto/cycle")
+async def goldditto_cycle(req: GoldDittoCycleRequest):
+    """拉金盆 cycle: teleport → asyncio.sleep(wait) → restore, atomic."""
+    engine = await _engine(req.udid)
+    try:
+        result = await engine.goldditto_cycle(
+            target=req.target,
+            lat_a=req.lat_a, lng_a=req.lng_a,
+            lat_b=req.lat_b, lng_b=req.lng_b,
+            wait_seconds=req.wait_seconds,
+        )
+    except GoldDittoLockedError:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "cycle_in_progress",
+                    "message": "拉金盆 cycle already in progress, wait for it to finish"},
+        )
+    except DeviceLostError as e:
+        action_udid = req.udid
+        from main import app_state as _app_state
+        action_udid = action_udid or _app_state._primary_udid
+        raise (await _handle_device_lost(e, action_udid))
+    except Exception as e:
+        import logging, traceback
+        logging.getLogger("locwarp").error("Gold Ditto cycle failed:\n%s", traceback.format_exc())
+        raise HTTPException(status_code=500, detail=str(e))
+    return {"status": "completed", **result}
 
 
 @router.post("/stop")

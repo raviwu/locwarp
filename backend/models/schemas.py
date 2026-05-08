@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from enum import Enum
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 
@@ -266,3 +268,20 @@ class RouteOptimizeResponse(BaseModel):
     # (OSRM /table unavailable or too many waypoints). Frontend uses this
     # to label the result as an estimate vs a road-distance optimum.
     used_estimate: bool = False
+
+
+# ── Pull-Gold-Ditto ───────────────────────────────────────
+class GoldDittoCycleRequest(BaseModel):
+    """Pull-Gold-Ditto cycle request.
+
+    target=A → use (lat_a, lng_a)
+    target=B → use (lat_b, lng_b)
+    target=auto → backend picks farther-from-current point
+    """
+    udid: str | None = None
+    target: Literal["A", "B", "auto"]
+    lat_a: float = Field(..., ge=-90.0, le=90.0)
+    lng_a: float = Field(..., ge=-180.0, le=180.0)
+    lat_b: float = Field(..., ge=-90.0, le=90.0)
+    lng_b: float = Field(..., ge=-180.0, le=180.0)
+    wait_seconds: float = Field(..., ge=0.5, le=10.0)

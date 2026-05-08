@@ -79,6 +79,15 @@ const App: React.FC = () => {
     try { localStorage.setItem('locwarp.show_bookmark_pins', v ? '1' : '0') } catch { /* ignore */ }
   }
   const [toastMsg, setToastMsg] = useState<string | null>(null)
+  // Gold Ditto (拉金盆) shared state. externalA receives a "lat, lng" coord
+  // pushed in by the map right-click handler so the panel's A-input updates
+  // without the user having to copy. We wrap the coord in an object so that
+  // every set creates a fresh reference, even when the user picks the same
+  // coord twice — the panel's useEffect dep then always re-fires. mapCenter
+  // is fed by MapView's `moveend` event (and once on init) so the panel's
+  // "use map center" B-button is always enabled with a fresh coord.
+  const [goldDittoExternalA, setGoldDittoExternalA] = useState<{ coord: string } | null>(null)
+  const [mapCenter, setMapCenter] = useState<{ lat: number; lng: number } | null>(null)
   // Active avatar selection + persistent custom-PNG slot. Stored in two
   // separate localStorage keys so picking a preset doesn't drop the user's
   // uploaded image.
@@ -855,6 +864,110 @@ const App: React.FC = () => {
     }
   }, [sim, device, t, showToast])
 
+  // Gold Ditto: map right-click → push lat,lng into the panel's A field.
+  // Wrap in an object so every set creates a new reference; the panel's
+  // useEffect will fire even if the user picks the same coord twice in a
+  // row (otherwise the dep array wouldn't change).
+  const handleSetGoldDittoA = useCallback((lat: number, lng: number) => {
+    setGoldDittoExternalA({ coord: `${lat.toFixed(6)}, ${lng.toFixed(6)}` })
+  }, [])
+
+  // Gold Ditto: "Confirm Location" = simple teleport to A. Reuses the
+  // same fanout / single-device split as handleTeleport so multi-device
+  // setups still get a fan-out toast.
+  const handleGoldDittoConfirm = useCallback(async (lat: number, lng: number) => {
+    const udids = device.connectedDevices.map((d) => d.udid)
+    if (udids.length >= 2) {
+      sim.setCurrentPosition({ lat, lng })
+      const outcome = await sim.teleportAll(udids, lat, lng)
+      showToast(toastForFanout(t, t('mode.goldditto'), outcome, device.connectedDevices))
+    } else {
+      sim.teleport(lat, lng)
+    }
+  }, [sim, device, t, showToast])
+
+  // Gold Ditto cycle. Adapter: GoldDittoPanel.onCycle splits target out
+  // of args, but useSimulation.goldDittoCycleAll wants target merged in.
+  // Re-merge here at the boundary.
+  const handleGoldDittoCycle = useCallback(async (
+    target: 'A' | 'B' | 'auto',
+    args: { lat_a: number; lng_a: number; lat_b: number; lng_b: number; wait_seconds: number },
+  ) => {
+    const udids = device.connectedDevices.map((d) => d.udid)
+    if (udids.length === 0) return
+    const outcome = await sim.goldDittoCycleAll(udids, { target, ...args })
+    if (udids.length >= 2) {
+      showToast(toastForFanout(t, t('mode.goldditto'), outcome, device.connectedDevices))
+    }
+  }, [sim, device, t, showToast])
+
+  // Subscribe to backend goldditto_cycle phase events. Three terminal phases
+  // are possible:
+  //   teleported    — start a 200ms-tick countdown that updates the toast
+  //                   live with `goldditto.toast.waiting` until the timer
+  //                   matches the user-configured wait_seconds (read from
+  //                   the same localStorage key the panel writes to).
+  //   restored      — clear the countdown, show success toast.
+  //   restore_failed — clear the countdown, show a persistent (8s) red
+  //                    warning toast. The device is left simulated; spec
+  //                    §8 row 5 wants the user to manually tap 一鍵還原.
+  //
+  // The countdown timer is held in a ref so a) re-renders don't lose it and
+  // b) the cleanup function below can clear it on unmount.
+  //
+  // Depend on ws.subscribe (stable useCallback) — NOT the whole ws object,
+  // whose identity changes every render and would re-subscribe on every
+  // render.
+  const goldDittoCountdownRef = useRef<{ timer: ReturnType<typeof setInterval> | null; endAt: number }>({ timer: null, endAt: 0 })
+  useEffect(() => {
+    const clearCountdown = () => {
+      if (goldDittoCountdownRef.current.timer !== null) {
+        clearInterval(goldDittoCountdownRef.current.timer)
+      }
+      goldDittoCountdownRef.current = { timer: null, endAt: 0 }
+    }
+    const unsub = ws.subscribe((msg) => {
+      if (msg?.type !== 'goldditto_cycle') return
+      const data: any = msg.data ?? {}
+      const phase = String(data.phase ?? '')
+      if (phase === 'teleported') {
+        const target = String(data.target ?? '')
+        showToast(t('goldditto.toast.teleported', { target }))
+        // Read wait_seconds back from the same localStorage key the panel
+        // writes to. Avoids plumbing it as a prop through every layer just
+        // for this one timer. Falls back to 3.0 (panel default).
+        const raw = localStorage.getItem('goldditto.wait_seconds') ?? '3.0'
+        const parsed = parseFloat(raw)
+        const waitS = Number.isFinite(parsed) && parsed > 0 ? parsed : 3.0
+        const endAt = Date.now() + waitS * 1000
+        clearCountdown()
+        const timer = setInterval(() => {
+          const remaining = Math.max(0, (goldDittoCountdownRef.current.endAt - Date.now()) / 1000)
+          if (remaining <= 0) {
+            clearCountdown()
+            return
+          }
+          showToast(t('goldditto.toast.waiting', { remaining: remaining.toFixed(1) }))
+        }, 200)
+        goldDittoCountdownRef.current = { timer, endAt }
+      } else if (phase === 'restored') {
+        clearCountdown()
+        showToast(t('goldditto.toast.restored'))
+      } else if (phase === 'restore_failed') {
+        clearCountdown()
+        // 8s persistent red banner — see goldditto.toast.restore_failed key
+        // for the warning text. Spec §8 row 5.
+        showToast(t('goldditto.toast.restore_failed'), 8000)
+      }
+    })
+    return () => {
+      // Component unmount or effect re-run: drop the WS subscription AND
+      // kill any pending countdown timer so it doesn't leak past unmount.
+      unsub?.()
+      clearCountdown()
+    }
+  }, [ws.subscribe, t, showToast])
+
   const handleOpenLog = useCallback(async () => {
     try {
       // Open the folder, not the file — log can be large and copy/paste
@@ -1188,6 +1301,12 @@ const App: React.FC = () => {
           jumpInterval={sim.jumpInterval}
           onJumpIntervalChange={sim.setJumpInterval}
           openLibraryToken={openLibraryToken}
+          goldDittoConnectedUdids={device.connectedDevices.map((d) => d.udid)}
+          goldDittoCycling={sim.goldDittoCycling}
+          goldDittoMapCenter={mapCenter}
+          goldDittoExternalA={goldDittoExternalA}
+          onGoldDittoConfirm={handleGoldDittoConfirm}
+          onGoldDittoCycle={handleGoldDittoCycle}
           modeExtraSection={(sim.mode === SimMode.Loop || sim.mode === SimMode.MultiStop) ? (
           <div className="section" style={{ margin: '0 0 8px 0' }}>
             <div className="section-title" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -1522,6 +1641,7 @@ const App: React.FC = () => {
           onNavigate={handleNavigate}
           onAddBookmark={handleAddBookmark}
           onAddWaypoint={handleAddWaypoint}
+          onSetAsGoldDittoA={handleSetGoldDittoA}
           showWaypointOption={sim.mode === SimMode.Loop || sim.mode === SimMode.MultiStop || sim.mode === SimMode.Navigate}
           deviceConnected={device.connectedDevice !== null}
           onShowToast={showToast}
@@ -1550,6 +1670,7 @@ const App: React.FC = () => {
           onResume={handleResume}
           showBulkPasteOnMap={sim.mode === SimMode.Loop || sim.mode === SimMode.MultiStop}
           onBulkPasteOpen={() => { setRoutePasteText(''); setRoutePasteOpen(true); }}
+          onMapCenterChange={(lat, lng) => setMapCenter({ lat, lng })}
         />
         {avatarPickerOpen && (
           <UserAvatarPicker

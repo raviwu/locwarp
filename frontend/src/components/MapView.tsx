@@ -49,6 +49,10 @@ interface MapViewProps {
   onNavigate: (lat: number, lng: number, source?: 'menu' | 'coord') => void;
   onAddBookmark: (lat: number, lng: number) => void;
   onAddWaypoint?: (lat: number, lng: number) => void;
+  // Map right-click → push lat,lng into the GoldDitto panel's A field.
+  // Only shown when the device is connected and the parent provides the
+  // callback, so non-GoldDitto users don't see it.
+  onSetAsGoldDittoA?: (lat: number, lng: number) => void;
   showWaypointOption?: boolean;
   deviceConnected?: boolean;
   onShowToast?: (msg: string) => void;
@@ -100,6 +104,10 @@ interface MapViewProps {
   // visible only in MultiStop / Loop modes.
   showBulkPasteOnMap?: boolean;
   onBulkPasteOpen?: () => void;
+  // Fires after the user moves the map (Leaflet `moveend`) and once on
+  // mount with the initial center. Used by the GoldDitto panel's "use
+  // map center" B-coordinate button.
+  onMapCenterChange?: (lat: number, lng: number) => void;
 }
 
 // Transport (Start / Stop / Pause / Resume) — bottom-left of the map,
@@ -226,6 +234,7 @@ const MapView: React.FC<MapViewProps> = ({
   onNavigate,
   onAddBookmark,
   onAddWaypoint,
+  onSetAsGoldDittoA,
   showWaypointOption,
   deviceConnected = true,
   onShowToast,
@@ -250,6 +259,7 @@ const MapView: React.FC<MapViewProps> = ({
   onResume,
   showBulkPasteOnMap,
   onBulkPasteOpen,
+  onMapCenterChange,
 }) => {
   // Dual-mode rendering disabled by design: with pre-sync (both devices
   // teleport to the same start before any group action) and shared random
@@ -313,6 +323,11 @@ const MapView: React.FC<MapViewProps> = ({
   // prop changes mid-session take effect.
   const onShowToastRef = useRef(onShowToast);
   useEffect(() => { onShowToastRef.current = onShowToast; }, [onShowToast]);
+  // onMapCenterChange — same ref pattern as onShowToast. The moveend handler
+  // is wired once at mount inside the map-init useEffect, so it must read
+  // the latest callback through a ref.
+  const onMapCenterChangeRef = useRef(onMapCenterChange);
+  useEffect(() => { onMapCenterChangeRef.current = onMapCenterChange; }, [onMapCenterChange]);
   // clickMarkerRef removed — left-click no longer drops a pin.
   const radiusCircleRef = useRef<L.Circle | null>(null);
 
@@ -604,6 +619,21 @@ const MapView: React.FC<MapViewProps> = ({
       setFollowMode(false);
       try {
         onShowToastRef.current?.(tRef.current('map.follow_disabled_toast'));
+      } catch { /* ignore */ }
+    });
+
+    // Map center change — fed up to App so the GoldDitto panel can offer
+    // "use map center" as a one-click B-coord setter. Fire once on mount
+    // with the initial center so the parent state is never stale-null.
+    try {
+      const c0 = map.getCenter();
+      onMapCenterChangeRef.current?.(c0.lat, c0.lng);
+    } catch { /* ignore */ }
+    map.on('moveend', () => {
+      if (!onMapCenterChangeRef.current) return;
+      try {
+        const c = map.getCenter();
+        onMapCenterChangeRef.current(c.lat, c.lng);
       } catch { /* ignore */ }
     });
 
@@ -2374,6 +2404,23 @@ const MapView: React.FC<MapViewProps> = ({
                 </svg>
                 {t('map.navigate_here')}
               </div>
+              {onSetAsGoldDittoA && (
+                <div
+                  className="context-menu-item"
+                  style={contextMenuItemStyle}
+                  onMouseEnter={highlightItem}
+                  onMouseLeave={unhighlightItem}
+                  onClick={() => {
+                    onSetAsGoldDittoA(contextMenu.lat, contextMenu.lng);
+                    closeContextMenu();
+                  }}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: 8 }}>
+                    <path d="M12 2 L13.5 9 L21 12 L13.5 15 L12 22 L10.5 15 L3 12 L10.5 9 Z" />
+                  </svg>
+                  {t('goldditto.set_as_a')}
+                </div>
+              )}
             </>
           ) : (
             <div

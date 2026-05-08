@@ -70,6 +70,7 @@ const modeLabelKeys: Record<SimMode, StringKey> = {
   [SimMode.MultiStop]: 'mode.multi_stop',
   [SimMode.RandomWalk]: 'mode.random_walk',
   [SimMode.Joystick]: 'mode.joystick',
+  [SimMode.GoldDitto]: 'mode.goldditto',
 };
 
 function formatCooldown(seconds: number): string {

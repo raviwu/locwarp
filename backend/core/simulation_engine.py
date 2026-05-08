@@ -25,6 +25,7 @@ from core.joystick import JoystickHandler
 from core.multi_stop import MultiStopNavigator
 from core.random_walk import RandomWalkHandler
 from core.restore import RestoreHandler
+from core.goldditto import GoldDittoHandler
 
 logger = logging.getLogger(__name__)
 
@@ -121,6 +122,7 @@ class SimulationEngine:
         self._multi_stop = MultiStopNavigator(self)
         self._random_walk = RandomWalkHandler(self)
         self._restore_handler = RestoreHandler(self)
+        self._goldditto_handler = GoldDittoHandler(self)
 
         # Status tracking
         self.distance_traveled: float = 0.0
@@ -400,6 +402,24 @@ class SimulationEngine:
     async def restore(self) -> None:
         """Stop everything and clear the simulated location."""
         await self._restore_handler.restore()
+
+    async def goldditto_cycle(
+        self,
+        *,
+        target: str,
+        lat_a: float,
+        lng_a: float,
+        lat_b: float,
+        lng_b: float,
+        wait_seconds: float,
+    ) -> dict:
+        """Run a Gold Ditto cycle: teleport → sleep → restore (atomic)."""
+        return await self._goldditto_handler.cycle(
+            target=target,
+            lat_a=lat_a, lng_a=lng_a,
+            lat_b=lat_b, lng_b=lng_b,
+            wait_seconds=wait_seconds,
+        )
 
     async def stop(self) -> None:
         """Stop the current movement gracefully.

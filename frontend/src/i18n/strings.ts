@@ -138,6 +138,24 @@ export const STRINGS = {
   'mode.multi_stop': { zh: '多點導航', en: 'Multi-stop' },
   'mode.random_walk': { zh: '隨機漫步', en: 'Random Walk' },
   'mode.joystick': { zh: '搖桿操控', en: 'Joystick' },
+  'mode.goldditto': { zh: '拉金盆', en: 'Gold Ditto' },
+
+  // ── Gold Ditto ───────────────────────────────
+  'goldditto.a_label': { zh: 'A 點 (金盆位置 / 花點)', en: 'A (Gold Ditto / Flower spot)' },
+  'goldditto.b_label': { zh: 'B 點 (你的真實 GPS)', en: 'B (Your real GPS)' },
+  'goldditto.wait_label': { zh: '等待秒數', en: 'Wait seconds' },
+  'goldditto.confirm': { zh: 'Confirm Location', en: 'Confirm Location' },
+  'goldditto.first_try': { zh: '1st try', en: '1st try' },
+  'goldditto.retries': { zh: 'retries', en: 'retries' },
+  'goldditto.random_b': { zh: '🎲 隨機台灣 B 點', en: '🎲 Random Taiwan B' },
+  'goldditto.use_map_center': { zh: '📍 用目前地圖中心', en: '📍 Use current map center' },
+  'goldditto.toast.teleported': { zh: '拉金盆: 已瞬移到 {target}', en: 'Gold Ditto: teleported to {target}' },
+  'goldditto.toast.waiting': { zh: '拉金盆: 等待 {remaining}s ⋯ 即將還原', en: 'Gold Ditto: waiting {remaining}s ⋯' },
+  'goldditto.toast.restored': { zh: '拉金盆: 還原完成,可以開始拉花苞 ✨', en: 'Gold Ditto: restored, pull away ✨' },
+  'goldditto.toast.restore_failed': { zh: '⚠ 已瞬移但還原失敗,請手動按一鍵還原', en: '⚠ Teleported but restore failed — please tap 一鍵還原 manually' },
+  'goldditto.error.no_device': { zh: '請先連接 iPhone', en: 'Connect an iPhone first' },
+  'goldditto.warn_same_ab': { zh: '⚠ A 跟 B 是同一點,輪流會無效', en: '⚠ A and B are identical, alternation has no effect' },
+  'goldditto.set_as_a': { zh: '設為拉金盆 A 點', en: 'Set as Gold Ditto A' },
 
   // ── Move mode (speed presets) ────────────────
   'move.walking': { zh: '走路', en: 'Walking' },
