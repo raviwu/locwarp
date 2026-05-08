@@ -33,6 +33,7 @@ import PauseControl from './PauseControl';
 import { SimMode, MoveMode } from '../hooks/useSimulation';
 import AddressSearch from './AddressSearch';
 import BookmarkList from './BookmarkList';
+import GoldDittoPanel from './GoldDittoPanel';
 
 interface Position {
   lat: number;
@@ -138,6 +139,19 @@ interface ControlPanelProps {
   openLibraryToken?: number;
   // Which tab to show when opening via the token. Defaults to 'bookmarks'.
   openLibraryTab?: 'bookmarks' | 'routes';
+  // -- Gold Ditto (拉金盆) mode props --
+  // List of currently-connected device UDIDs. GoldDittoPanel needs the
+  // count to gate its buttons (any-device-connected, not specifically
+  // dual-device); App.tsx maps device.connectedDevices to a string[].
+  goldDittoConnectedUdids?: string[];
+  goldDittoCycling?: boolean;
+  goldDittoMapCenter?: { lat: number; lng: number } | null;
+  goldDittoExternalA?: string | null;
+  onGoldDittoConfirm?: (lat: number, lng: number) => Promise<void> | void;
+  onGoldDittoCycle?: (
+    target: 'A' | 'B' | 'auto',
+    args: { lat_a: number; lng_a: number; lat_b: number; lng_b: number; wait_seconds: number },
+  ) => Promise<void> | void;
 }
 
 interface SectionState {
@@ -286,6 +300,12 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
   onJumpIntervalChange,
   openLibraryToken,
   openLibraryTab,
+  goldDittoConnectedUdids = [],
+  goldDittoCycling = false,
+  goldDittoMapCenter = null,
+  goldDittoExternalA = null,
+  onGoldDittoConfirm,
+  onGoldDittoCycle,
 }) => {
   const [sections, setSections] = useState<SectionState>({
     mode: true,
@@ -581,6 +601,28 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
               </div>
             )}
           </div>
+        </div>
+      )}
+
+      {/* Gold Ditto (拉金盆) — A↔B teleport-cycle UI. Only mounts when this
+          mode is selected so we don't waste localStorage reads / parser
+          churn for users who never use it. */}
+      {simMode === SimMode.GoldDitto && onGoldDittoConfirm && onGoldDittoCycle && (
+        <div className="section" style={{ margin: '0 0 8px 0' }}>
+          <div className="section-title" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M12 2 L13.5 9 L21 12 L13.5 15 L12 22 L10.5 15 L3 12 L10.5 9 Z" />
+            </svg>
+            {t('mode.goldditto')}
+          </div>
+          <GoldDittoPanel
+            connectedUdids={goldDittoConnectedUdids}
+            isCycling={goldDittoCycling}
+            mapCenter={goldDittoMapCenter}
+            externalAValue={goldDittoExternalA}
+            onConfirmLocation={onGoldDittoConfirm}
+            onCycle={onGoldDittoCycle}
+          />
         </div>
       )}
 

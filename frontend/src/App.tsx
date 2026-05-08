@@ -79,6 +79,13 @@ const App: React.FC = () => {
     try { localStorage.setItem('locwarp.show_bookmark_pins', v ? '1' : '0') } catch { /* ignore */ }
   }
   const [toastMsg, setToastMsg] = useState<string | null>(null)
+  // Gold Ditto (拉金盆) shared state. externalA receives a "lat, lng" string
+  // pushed in by Task 8's map right-click handler so the panel's A-input
+  // updates without the user having to copy the coord. mapCenter is exposed
+  // for the panel's "use map center" B-button — Task 7 keeps it as null
+  // (button stays disabled); a follow-up can wire it from MapView.
+  const [goldDittoExternalA, setGoldDittoExternalA] = useState<string | null>(null)
+  const [mapCenter, _setMapCenter] = useState<{ lat: number; lng: number } | null>(null)
   // Active avatar selection + persistent custom-PNG slot. Stored in two
   // separate localStorage keys so picking a preset doesn't drop the user's
   // uploaded image.
@@ -855,6 +862,57 @@ const App: React.FC = () => {
     }
   }, [sim, device, t, showToast])
 
+  // Gold Ditto: "Confirm Location" = simple teleport to A. Reuses the
+  // same fanout / single-device split as handleTeleport so multi-device
+  // setups still get a fan-out toast.
+  const handleGoldDittoConfirm = useCallback(async (lat: number, lng: number) => {
+    const udids = device.connectedDevices.map((d) => d.udid)
+    if (udids.length >= 2) {
+      sim.setCurrentPosition({ lat, lng })
+      const outcome = await sim.teleportAll(udids, lat, lng)
+      showToast(toastForFanout(t, t('mode.goldditto'), outcome, device.connectedDevices))
+    } else {
+      sim.teleport(lat, lng)
+    }
+  }, [sim, device, t, showToast])
+
+  // Gold Ditto cycle. Adapter: GoldDittoPanel.onCycle splits target out
+  // of args, but useSimulation.goldDittoCycleAll wants target merged in.
+  // Re-merge here at the boundary.
+  const handleGoldDittoCycle = useCallback(async (
+    target: 'A' | 'B' | 'auto',
+    args: { lat_a: number; lng_a: number; lat_b: number; lng_b: number; wait_seconds: number },
+  ) => {
+    const udids = device.connectedDevices.map((d) => d.udid)
+    if (udids.length === 0) return
+    const outcome = await sim.goldDittoCycleAll(udids, { target, ...args })
+    if (udids.length >= 2) {
+      showToast(toastForFanout(t, t('mode.goldditto'), outcome, device.connectedDevices))
+    }
+  }, [sim, device, t, showToast])
+
+  // Subscribe to backend goldditto_cycle phase events (teleported / restored
+  // / failed). Depend on ws.subscribe (stable useCallback) — NOT the whole
+  // ws object, whose identity changes every render and would re-subscribe
+  // on every render. Returning the unsubscribe fn keeps handler set clean.
+  useEffect(() => {
+    return ws.subscribe((msg) => {
+      if (msg?.type !== 'goldditto_cycle') return
+      const data: any = msg.data ?? {}
+      const phase = String(data.phase ?? '')
+      if (phase === 'teleported') {
+        const target = String(data.target ?? '')
+        showToast(t('goldditto.toast.teleported', { target }))
+      } else if (phase === 'restored') {
+        showToast(t('goldditto.toast.restored'))
+      } else if (phase === 'failed') {
+        const reason = String(data.reason ?? '')
+        const failedPhase = String(data.failed_phase ?? phase)
+        showToast(t('goldditto.toast.failed', { phase: failedPhase, reason }))
+      }
+    })
+  }, [ws.subscribe, t, showToast])
+
   const handleOpenLog = useCallback(async () => {
     try {
       // Open the folder, not the file — log can be large and copy/paste
@@ -1188,6 +1246,12 @@ const App: React.FC = () => {
           jumpInterval={sim.jumpInterval}
           onJumpIntervalChange={sim.setJumpInterval}
           openLibraryToken={openLibraryToken}
+          goldDittoConnectedUdids={device.connectedDevices.map((d) => d.udid)}
+          goldDittoCycling={sim.goldDittoCycling}
+          goldDittoMapCenter={mapCenter}
+          goldDittoExternalA={goldDittoExternalA}
+          onGoldDittoConfirm={handleGoldDittoConfirm}
+          onGoldDittoCycle={handleGoldDittoCycle}
           modeExtraSection={(sim.mode === SimMode.Loop || sim.mode === SimMode.MultiStop) ? (
           <div className="section" style={{ margin: '0 0 8px 0' }}>
             <div className="section-title" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
