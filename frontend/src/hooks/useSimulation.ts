@@ -814,6 +814,26 @@ export function useSimulation(subscribe?: WsSubscribe, primaryUdid?: string | nu
 
   const teleportAll = useCallback((udids: string[], lat: number, lng: number) =>
     fanout(udids, 'teleport', (u) => api.teleport(lat, lng, u)), [fanout])
+
+  const [goldDittoCycling, setGoldDittoCycling] = useState(false)
+
+  const goldDittoCycleAll = useCallback(async (
+    udids: string[],
+    args: {
+      target: 'A' | 'B' | 'auto';
+      lat_a: number; lng_a: number;
+      lat_b: number; lng_b: number;
+      wait_seconds: number;
+    },
+  ) => {
+    setGoldDittoCycling(true)
+    try {
+      return await fanout(udids, 'goldditto_cycle', (u) => api.goldDittoCycle(args, u))
+    } finally {
+      setGoldDittoCycling(false)
+    }
+  }, [fanout])
+
   const navigateAll = useCallback(async (udids: string[], lat: number, lng: number) => {
     await preSyncStart(udids)
     return fanout(udids, 'navigate', (u) => api.navigate(lat, lng, moveMode, { speed_kmh: customSpeedKmh, speed_min_kmh: speedMinKmh, speed_max_kmh: speedMaxKmh }, u, straightLine, routeEngine))
@@ -888,6 +908,8 @@ export function useSimulation(subscribe?: WsSubscribe, primaryUdid?: string | nu
     primaryRuntime,
     anyRunning,
     teleportAll,
+    goldDittoCycleAll,
+    goldDittoCycling,
     navigateAll,
     startLoopAll,
     multiStopAll,
