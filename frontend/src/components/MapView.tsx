@@ -104,6 +104,10 @@ interface MapViewProps {
   // visible only in MultiStop / Loop modes.
   showBulkPasteOnMap?: boolean;
   onBulkPasteOpen?: () => void;
+  // Fires after the user moves the map (Leaflet `moveend`) and once on
+  // mount with the initial center. Used by the GoldDitto panel's "use
+  // map center" B-coordinate button.
+  onMapCenterChange?: (lat: number, lng: number) => void;
 }
 
 // Transport (Start / Stop / Pause / Resume) — bottom-left of the map,
@@ -255,6 +259,7 @@ const MapView: React.FC<MapViewProps> = ({
   onResume,
   showBulkPasteOnMap,
   onBulkPasteOpen,
+  onMapCenterChange,
 }) => {
   // Dual-mode rendering disabled by design: with pre-sync (both devices
   // teleport to the same start before any group action) and shared random
@@ -318,6 +323,11 @@ const MapView: React.FC<MapViewProps> = ({
   // prop changes mid-session take effect.
   const onShowToastRef = useRef(onShowToast);
   useEffect(() => { onShowToastRef.current = onShowToast; }, [onShowToast]);
+  // onMapCenterChange — same ref pattern as onShowToast. The moveend handler
+  // is wired once at mount inside the map-init useEffect, so it must read
+  // the latest callback through a ref.
+  const onMapCenterChangeRef = useRef(onMapCenterChange);
+  useEffect(() => { onMapCenterChangeRef.current = onMapCenterChange; }, [onMapCenterChange]);
   // clickMarkerRef removed — left-click no longer drops a pin.
   const radiusCircleRef = useRef<L.Circle | null>(null);
 
@@ -609,6 +619,21 @@ const MapView: React.FC<MapViewProps> = ({
       setFollowMode(false);
       try {
         onShowToastRef.current?.(tRef.current('map.follow_disabled_toast'));
+      } catch { /* ignore */ }
+    });
+
+    // Map center change — fed up to App so the GoldDitto panel can offer
+    // "use map center" as a one-click B-coord setter. Fire once on mount
+    // with the initial center so the parent state is never stale-null.
+    try {
+      const c0 = map.getCenter();
+      onMapCenterChangeRef.current?.(c0.lat, c0.lng);
+    } catch { /* ignore */ }
+    map.on('moveend', () => {
+      if (!onMapCenterChangeRef.current) return;
+      try {
+        const c = map.getCenter();
+        onMapCenterChangeRef.current(c.lat, c.lng);
       } catch { /* ignore */ }
     });
 

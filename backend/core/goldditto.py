@@ -87,7 +87,25 @@ class GoldDittoHandler:
 
             await asyncio.sleep(wait_seconds)
 
-            await self.engine.restore()
+            try:
+                await self.engine.restore()
+            except Exception as e:
+                # Device is left simulated. Spec §8 row 5 wants the user to
+                # see a red banner / persistent toast and manually retry the
+                # one-click restore. Emit a phase event so the frontend WS
+                # handler can show that banner, then re-raise so the API
+                # layer returns a non-2xx and the caller knows the cycle
+                # failed despite teleport succeeding.
+                logger.exception(
+                    "Gold Ditto restore failed after teleport — device left simulated"
+                )
+                await self.engine._emit("goldditto_cycle", {
+                    "phase": "restore_failed",
+                    "target": label,
+                    "error": str(e),
+                })
+                raise
+
             await self.engine._emit("goldditto_cycle", {
                 "phase": "restored",
                 "target": label,

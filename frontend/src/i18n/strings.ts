@@ -152,10 +152,8 @@ export const STRINGS = {
   'goldditto.toast.teleported': { zh: '拉金盆: 已瞬移到 {target}', en: 'Gold Ditto: teleported to {target}' },
   'goldditto.toast.waiting': { zh: '拉金盆: 等待 {remaining}s ⋯ 即將還原', en: 'Gold Ditto: waiting {remaining}s ⋯' },
   'goldditto.toast.restored': { zh: '拉金盆: 還原完成,可以開始拉花苞 ✨', en: 'Gold Ditto: restored, pull away ✨' },
-  'goldditto.toast.failed': { zh: '拉金盆失敗: {phase} - {reason}', en: 'Gold Ditto failed: {phase} - {reason}' },
+  'goldditto.toast.restore_failed': { zh: '⚠ 已瞬移但還原失敗,請手動按一鍵還原', en: '⚠ Teleported but restore failed — please tap 一鍵還原 manually' },
   'goldditto.error.no_device': { zh: '請先連接 iPhone', en: 'Connect an iPhone first' },
-  'goldditto.error.invalid_a': { zh: '請先填 A 座標 (lat,lng)', en: 'Enter A coordinates (lat,lng)' },
-  'goldditto.error.invalid_b': { zh: '請先填 B 座標 (lat,lng)', en: 'Enter B coordinates (lat,lng)' },
   'goldditto.warn_same_ab': { zh: '⚠ A 跟 B 是同一點,輪流會無效', en: '⚠ A and B are identical, alternation has no effect' },
   'goldditto.set_as_a': { zh: '設為拉金盆 A 點', en: 'Set as Gold Ditto A' },
 

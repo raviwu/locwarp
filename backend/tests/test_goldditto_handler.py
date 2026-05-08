@@ -145,6 +145,28 @@ async def test_teleport_failure_skips_sleep_and_restore(handler, engine):
     assert engine.restore_calls == 0
 
 
+@pytest.mark.asyncio
+async def test_restore_failure_emits_phase_event_and_propagates(handler, engine):
+    """If restore fails after a successful teleport, the cycle must:
+    1. emit a `restore_failed` phase event so the FE can show the red banner,
+    2. NOT emit a `restored` event,
+    3. re-raise so the API layer returns 4xx / 5xx.
+    """
+    async def fail_restore():
+        raise RuntimeError("device unplugged during restore")
+    engine.restore = fail_restore
+
+    with pytest.raises(RuntimeError, match="device unplugged"):
+        await handler.cycle(target="A", lat_a=A[0], lng_a=A[1],
+                            lat_b=B[0], lng_b=B[1], wait_seconds=0.01)
+
+    events = [e for e in engine.emitted if e[0] == "goldditto_cycle"]
+    phases = [e[1]["phase"] for e in events]
+    assert "teleported" in phases
+    assert "restore_failed" in phases
+    assert "restored" not in phases
+
+
 # ── Lock release after exception ──────────────────────────────────────────
 
 @pytest.mark.asyncio
