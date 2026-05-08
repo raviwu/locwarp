@@ -25,6 +25,7 @@ from core.joystick import JoystickHandler
 from core.multi_stop import MultiStopNavigator
 from core.random_walk import RandomWalkHandler
 from core.restore import RestoreHandler
+from core.goldditto import GoldDittoHandler
 
 logger = logging.getLogger(__name__)
 
@@ -121,7 +122,6 @@ class SimulationEngine:
         self._multi_stop = MultiStopNavigator(self)
         self._random_walk = RandomWalkHandler(self)
         self._restore_handler = RestoreHandler(self)
-        from core.goldditto import GoldDittoHandler  # local import to avoid circular
         self._goldditto_handler = GoldDittoHandler(self)
 
         # Status tracking

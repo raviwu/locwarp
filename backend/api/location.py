@@ -2,6 +2,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from services.location_service import DeviceLostError
+from core.goldditto import GoldDittoLockedError
 
 from models.schemas import (
     MovementMode,
@@ -389,7 +390,6 @@ async def restore(udid: str | None = None):
 @router.post("/goldditto/cycle")
 async def goldditto_cycle(req: GoldDittoCycleRequest):
     """拉金盆 cycle: teleport → asyncio.sleep(wait) → restore, atomic."""
-    from core.goldditto import GoldDittoLockedError
     engine = await _engine(req.udid)
     try:
         result = await engine.goldditto_cycle(

@@ -1,7 +1,6 @@
 """FastAPI integration tests for /api/location/goldditto/cycle."""
 from __future__ import annotations
 
-import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -28,7 +27,7 @@ def _payload(**overrides):
 
 def test_endpoint_validates_payload(client):
     resp = client.post("/api/location/goldditto/cycle",
-                        json=_payload(wait_seconds=0.1, target="bad"))
+                        json=_payload(target="bad"))
     assert resp.status_code == 422
 
 
