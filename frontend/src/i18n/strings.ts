@@ -157,6 +157,7 @@ export const STRINGS = {
   'goldditto.error.invalid_a': { zh: '請先填 A 座標 (lat,lng)', en: 'Enter A coordinates (lat,lng)' },
   'goldditto.error.invalid_b': { zh: '請先填 B 座標 (lat,lng)', en: 'Enter B coordinates (lat,lng)' },
   'goldditto.warn_same_ab': { zh: '⚠ A 跟 B 是同一點,輪流會無效', en: '⚠ A and B are identical, alternation has no effect' },
+  'goldditto.set_as_a': { zh: '設為拉金盆 A 點', en: 'Set as Gold Ditto A' },
 
   // ── Move mode (speed presets) ────────────────
   'move.walking': { zh: '走路', en: 'Walking' },

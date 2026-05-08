@@ -49,6 +49,10 @@ interface MapViewProps {
   onNavigate: (lat: number, lng: number, source?: 'menu' | 'coord') => void;
   onAddBookmark: (lat: number, lng: number) => void;
   onAddWaypoint?: (lat: number, lng: number) => void;
+  // Map right-click → push lat,lng into the GoldDitto panel's A field.
+  // Only shown when the device is connected and the parent provides the
+  // callback, so non-GoldDitto users don't see it.
+  onSetAsGoldDittoA?: (lat: number, lng: number) => void;
   showWaypointOption?: boolean;
   deviceConnected?: boolean;
   onShowToast?: (msg: string) => void;
@@ -226,6 +230,7 @@ const MapView: React.FC<MapViewProps> = ({
   onNavigate,
   onAddBookmark,
   onAddWaypoint,
+  onSetAsGoldDittoA,
   showWaypointOption,
   deviceConnected = true,
   onShowToast,
@@ -2374,6 +2379,23 @@ const MapView: React.FC<MapViewProps> = ({
                 </svg>
                 {t('map.navigate_here')}
               </div>
+              {onSetAsGoldDittoA && (
+                <div
+                  className="context-menu-item"
+                  style={contextMenuItemStyle}
+                  onMouseEnter={highlightItem}
+                  onMouseLeave={unhighlightItem}
+                  onClick={() => {
+                    onSetAsGoldDittoA(contextMenu.lat, contextMenu.lng);
+                    closeContextMenu();
+                  }}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: 8 }}>
+                    <path d="M12 2 L13.5 9 L21 12 L13.5 15 L12 22 L10.5 15 L3 12 L10.5 9 Z" />
+                  </svg>
+                  {t('goldditto.set_as_a')}
+                </div>
+              )}
             </>
           ) : (
             <div

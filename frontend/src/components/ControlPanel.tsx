@@ -146,7 +146,7 @@ interface ControlPanelProps {
   goldDittoConnectedUdids?: string[];
   goldDittoCycling?: boolean;
   goldDittoMapCenter?: { lat: number; lng: number } | null;
-  goldDittoExternalA?: string | null;
+  goldDittoExternalA?: { coord: string } | null;
   onGoldDittoConfirm?: (lat: number, lng: number) => Promise<void> | void;
   onGoldDittoCycle?: (
     target: 'A' | 'B' | 'auto',

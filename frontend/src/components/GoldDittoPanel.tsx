@@ -5,8 +5,11 @@ interface Props {
   connectedUdids: string[]
   isCycling: boolean
   mapCenter: { lat: number; lng: number } | null
-  // External A-setter — called when MapView right-click "設為拉金盆 A 點" fires.
-  externalAValue: string | null
+  // External A-setter — pushed in by MapView right-click "設為拉金盆 A 點".
+  // We wrap the coord in an object so every push creates a fresh reference;
+  // the useEffect dep then re-fires even if the user picks the same coord
+  // twice in a row.
+  externalAValue: { coord: string } | null
   onConfirmLocation: (lat: number, lng: number) => Promise<void> | void
   onCycle: (
     target: 'A' | 'B' | 'auto',
@@ -59,7 +62,7 @@ export const GoldDittoPanel: React.FC<Props> = ({
 
   // External A setter (map right-click).
   useEffect(() => {
-    if (externalAValue) setAText(externalAValue)
+    if (externalAValue) setAText(externalAValue.coord)
   }, [externalAValue])
 
   const a = useMemo(() => parseLatLng(aText), [aText])

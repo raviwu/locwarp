@@ -79,12 +79,14 @@ const App: React.FC = () => {
     try { localStorage.setItem('locwarp.show_bookmark_pins', v ? '1' : '0') } catch { /* ignore */ }
   }
   const [toastMsg, setToastMsg] = useState<string | null>(null)
-  // Gold Ditto (拉金盆) shared state. externalA receives a "lat, lng" string
-  // pushed in by Task 8's map right-click handler so the panel's A-input
-  // updates without the user having to copy the coord. mapCenter is exposed
-  // for the panel's "use map center" B-button — Task 7 keeps it as null
-  // (button stays disabled); a follow-up can wire it from MapView.
-  const [goldDittoExternalA, setGoldDittoExternalA] = useState<string | null>(null)
+  // Gold Ditto (拉金盆) shared state. externalA receives a "lat, lng" coord
+  // pushed in by the map right-click handler so the panel's A-input updates
+  // without the user having to copy. We wrap the coord in an object so that
+  // every set creates a fresh reference, even when the user picks the same
+  // coord twice — the panel's useEffect dep then always re-fires. mapCenter
+  // is exposed for the panel's "use map center" B-button — Task 7 keeps it
+  // as null (button stays disabled); a follow-up can wire it from MapView.
+  const [goldDittoExternalA, setGoldDittoExternalA] = useState<{ coord: string } | null>(null)
   const [mapCenter, _setMapCenter] = useState<{ lat: number; lng: number } | null>(null)
   // Active avatar selection + persistent custom-PNG slot. Stored in two
   // separate localStorage keys so picking a preset doesn't drop the user's
@@ -862,6 +864,14 @@ const App: React.FC = () => {
     }
   }, [sim, device, t, showToast])
 
+  // Gold Ditto: map right-click → push lat,lng into the panel's A field.
+  // Wrap in an object so every set creates a new reference; the panel's
+  // useEffect will fire even if the user picks the same coord twice in a
+  // row (otherwise the dep array wouldn't change).
+  const handleSetGoldDittoA = useCallback((lat: number, lng: number) => {
+    setGoldDittoExternalA({ coord: `${lat.toFixed(6)}, ${lng.toFixed(6)}` })
+  }, [])
+
   // Gold Ditto: "Confirm Location" = simple teleport to A. Reuses the
   // same fanout / single-device split as handleTeleport so multi-device
   // setups still get a fan-out toast.
@@ -1586,6 +1596,7 @@ const App: React.FC = () => {
           onNavigate={handleNavigate}
           onAddBookmark={handleAddBookmark}
           onAddWaypoint={handleAddWaypoint}
+          onSetAsGoldDittoA={handleSetGoldDittoA}
           showWaypointOption={sim.mode === SimMode.Loop || sim.mode === SimMode.MultiStop || sim.mode === SimMode.Navigate}
           deviceConnected={device.connectedDevice !== null}
           onShowToast={showToast}
