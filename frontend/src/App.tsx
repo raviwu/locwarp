@@ -1307,6 +1307,11 @@ const App: React.FC = () => {
           goldDittoExternalA={goldDittoExternalA}
           onGoldDittoConfirm={handleGoldDittoConfirm}
           onGoldDittoCycle={handleGoldDittoCycle}
+          goldDittoBookmarks={bm.bookmarks}
+          goldDittoCategories={bm.categories}
+          onCategoryDeleteCascade={(categoryId: string) =>
+            bm.deleteCategory(categoryId, true)
+          }
           modeExtraSection={(sim.mode === SimMode.Loop || sim.mode === SimMode.MultiStop) ? (
           <div className="section" style={{ margin: '0 0 8px 0' }}>
             <div className="section-title" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>

@@ -94,8 +94,8 @@ export function useBookmarks() {
   )
 
   const deleteCategory = useCallback(
-    async (id: string) => {
-      await api.deleteCategory(id)
+    async (id: string, cascade = false) => {
+      await api.deleteCategory(id, cascade)
       await refresh()
     },
     [refresh],

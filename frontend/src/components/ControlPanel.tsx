@@ -152,6 +152,13 @@ interface ControlPanelProps {
     target: 'A' | 'B' | 'auto',
     args: { lat_a: number; lng_a: number; lat_b: number; lng_b: number; wait_seconds: number },
   ) => Promise<void> | void;
+  // Raw bookmark data forwarded to GoldDittoPanel's picker UI.
+  // Named with the goldDitto prefix to avoid collision with the existing
+  // `bookmarks: Bookmark[]` prop (which carries the UI-shaped list for
+  // BookmarkList and uses the legacy `category` string field).
+  goldDittoBookmarks?: any[];
+  goldDittoCategories?: any[];
+  onCategoryDeleteCascade?: (categoryId: string) => Promise<void> | void;
 }
 
 interface SectionState {
@@ -306,6 +313,9 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
   goldDittoExternalA = null,
   onGoldDittoConfirm,
   onGoldDittoCycle,
+  goldDittoBookmarks = [],
+  goldDittoCategories = [],
+  onCategoryDeleteCascade,
 }) => {
   const [sections, setSections] = useState<SectionState>({
     mode: true,
@@ -622,6 +632,9 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
             externalAValue={goldDittoExternalA}
             onConfirmLocation={onGoldDittoConfirm}
             onCycle={onGoldDittoCycle}
+            bookmarks={goldDittoBookmarks}
+            categories={goldDittoCategories}
+            onCategoryDeleteCascade={onCategoryDeleteCascade ?? (() => {})}
           />
         </div>
       )}
