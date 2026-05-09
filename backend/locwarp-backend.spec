@@ -72,6 +72,7 @@ a = Analysis(
     binaries=[*pmd_binaries, *pytun_binaries, *ddi_binaries, *pyimg4_binaries,
               *ps_binaries],
     datas=[*pmd_datas, *pytun_datas, *ddi_datas, *pyimg4_datas, *pyimg4_meta,
+           *ps_datas,
            ('static/phone.html', 'static'),
            ('static/catalog.json', 'static')],
     hiddenimports=hidden,

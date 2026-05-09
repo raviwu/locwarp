@@ -49,6 +49,18 @@ interface MapViewProps {
   onNavigate: (lat: number, lng: number, source?: 'menu' | 'coord') => void;
   onAddBookmark: (lat: number, lng: number) => void;
   onAddWaypoint?: (lat: number, lng: number) => void;
+  // Left-click on a waypoint marker opens a small action menu. Both
+  // handlers are optional — when undefined, the waypoint marker stays
+  // tooltip-only (legacy behaviour).
+  onSetWpAsStart?: (index: number) => void;
+  onRemoveWaypoint?: (index: number) => void;
+  // Arms a one-shot "insert after this waypoint" mode. Parent shows
+  // the cancel banner and turns insertAfterActive on; the next map
+  // click consumes the mode and inserts the new waypoint at index+1.
+  onInsertAfterWp?: (index: number) => void;
+  // When true the map cursor swaps to crosshair so the user knows the
+  // next click will splice a new waypoint into the route.
+  insertAfterActive?: boolean;
   // Map right-click → push lat,lng into the GoldDitto panel's A field.
   // Only shown when the device is connected and the parent provides the
   // callback, so non-GoldDitto users don't see it.
@@ -234,6 +246,10 @@ const MapView: React.FC<MapViewProps> = ({
   onNavigate,
   onAddBookmark,
   onAddWaypoint,
+  onSetWpAsStart,
+  onRemoveWaypoint,
+  onInsertAfterWp,
+  insertAfterActive,
   onSetAsGoldDittoA,
   showWaypointOption,
   deviceConnected = true,
@@ -323,6 +339,24 @@ const MapView: React.FC<MapViewProps> = ({
   // prop changes mid-session take effect.
   const onShowToastRef = useRef(onShowToast);
   useEffect(() => { onShowToastRef.current = onShowToast; }, [onShowToast]);
+  // Waypoint marker click handlers — kept in refs so the per-marker click
+  // handler captured inside the waypoints useEffect always calls the
+  // freshest prop without re-creating every marker on each prop change.
+  const onSetWpAsStartRef = useRef(onSetWpAsStart);
+  useEffect(() => { onSetWpAsStartRef.current = onSetWpAsStart; }, [onSetWpAsStart]);
+  const onRemoveWaypointRef = useRef(onRemoveWaypoint);
+  useEffect(() => { onRemoveWaypointRef.current = onRemoveWaypoint; }, [onRemoveWaypoint]);
+  const onInsertAfterWpRef = useRef(onInsertAfterWp);
+  useEffect(() => { onInsertAfterWpRef.current = onInsertAfterWp; }, [onInsertAfterWp]);
+  // Mini context menu shown on left-click of a waypoint marker.
+  // Independent from the right-click `contextMenu` so opening one does
+  // not close / reposition the other.
+  const [wpMenu, setWpMenu] = useState<{
+    visible: boolean; x: number; y: number; index: number; isStart: boolean;
+  }>({ visible: false, x: 0, y: 0, index: 0, isStart: false });
+  const closeWpMenu = useCallback(() => {
+    setWpMenu((prev) => prev.visible ? { ...prev, visible: false } : prev);
+  }, []);
   // onMapCenterChange — same ref pattern as onShowToast. The moveend handler
   // is wired once at mount inside the map-init useEffect, so it must read
   // the latest callback through a ref.

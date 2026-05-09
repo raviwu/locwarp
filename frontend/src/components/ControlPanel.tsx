@@ -35,6 +35,7 @@ import AddressSearch from './AddressSearch';
 import BookmarkList from './BookmarkList';
 import GoldDittoPanel from './GoldDittoPanel';
 import ExportPopover from './ExportPopover';
+import RouteList, { RouteCategory, SavedRoute } from './RouteList';
 
 interface Position {
   lat: number;
