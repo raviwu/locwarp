@@ -64,6 +64,7 @@ interface BookmarkListProps {
   catalogStatus?: 'loading' | 'ok' | 'missing' | 'failed';
   catalogNewCount?: number;
   catalogError?: string | null;
+  catalogRefreshing?: boolean;
   onCatalogRefresh?: () => Promise<void> | void;
   // Bulk paste: opens a textarea dialog where the user can drop
   // whitespace-separated "lat lng name" lines and push them all as
@@ -124,6 +125,7 @@ const BookmarkList: React.FC<BookmarkListProps> = ({
   catalogStatus,
   catalogNewCount,
   catalogError,
+  catalogRefreshing,
   onCatalogRefresh,
   onBulkPaste,
   onExportClick,
@@ -539,7 +541,7 @@ const BookmarkList: React.FC<BookmarkListProps> = ({
           const failed = catalogStatus === 'failed';
           const count = catalogNewCount ?? 0;
           const upToDate = catalogStatus === 'ok' && count === 0;
-          const disabled = loading || failed || upToDate;
+          const disabled = loading || failed || upToDate || !!catalogRefreshing;
           const label = failed
             ? t('bm.catalog.failed')
             : upToDate

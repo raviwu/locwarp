@@ -109,6 +109,7 @@ interface ControlPanelProps {
   catalogStatus?: 'loading' | 'ok' | 'missing' | 'failed';
   catalogNewCount?: number;
   catalogError?: string | null;
+  catalogRefreshing?: boolean;
   onCatalogRefresh?: () => Promise<void> | void;
   onBookmarkBulkPaste?: () => void;
   bookmarkExportUrl?: string;
@@ -289,6 +290,7 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
   catalogStatus,
   catalogNewCount,
   catalogError,
+  catalogRefreshing,
   onCatalogRefresh,
   onBookmarkBulkPaste,
   bookmarkExportUrl,
@@ -915,6 +917,7 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
                     catalogStatus={catalogStatus}
                     catalogNewCount={catalogNewCount}
                     catalogError={catalogError}
+                    catalogRefreshing={catalogRefreshing}
                     onCatalogRefresh={onCatalogRefresh}
                     onBulkPaste={onBookmarkBulkPaste}
                     exportUrl={bookmarkExportUrl}

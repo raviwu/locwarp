@@ -1016,14 +1016,14 @@ const App: React.FC = () => {
       setCatalog(data)
       setCatalogStatus('ok')
       setCatalogError(null)
-    } catch (err: any) {
+    } catch (err: unknown) {
       setCatalog(null)
-      const msg = err?.message ?? 'unknown'
-      if (/404/.test(msg) || /not bundled/i.test(msg)) {
+      const status = err instanceof api.HttpError ? err.status : 0
+      if (status === 404) {
         setCatalogStatus('missing')
       } else {
         setCatalogStatus('failed')
-        setCatalogError(msg)
+        setCatalogError(err instanceof Error ? err.message : 'unknown')
       }
     }
   }, [])
@@ -1038,19 +1038,23 @@ const App: React.FC = () => {
     return catalog.bookmarks.filter((cb) => !existingIds.has(cb.id)).length
   }, [catalog, bm.bookmarks])
 
+  const [catalogRefreshing, setCatalogRefreshing] = useState(false)
+
   const handleCatalogRefresh = useCallback(async () => {
-    if (!catalog) return
+    if (!catalog || catalogRefreshing) return
+    setCatalogRefreshing(true)
     try {
-      const res = await api.importBookmarks(catalog as unknown as Record<string, unknown>)
+      const res = await api.importBookmarks(catalog)
       await bm.refresh()
-      await fetchCatalog()
-      const imported = (res as any).imported ?? 0
-      const skipped = (res as any).skipped ?? 0
-      showToast(t('bm.catalog.imported', { imported, skipped }))
-    } catch (err: any) {
-      showToast(err?.message ?? t('bm.catalog.failed'))
+      // bm.refresh() already invalidates catalogNewCount via the bm.bookmarks dep,
+      // so no need to refetch the catalog file (its content is unchanged).
+      showToast(t('bm.catalog.imported', { imported: res.imported, skipped: res.skipped ?? 0 }))
+    } catch (err: unknown) {
+      showToast(err instanceof Error ? err.message : t('bm.catalog.failed'))
+    } finally {
+      setCatalogRefreshing(false)
     }
-  }, [catalog, bm, fetchCatalog, showToast, t])
+  }, [catalog, catalogRefreshing, bm, showToast, t])
 
   const handleRouteRename = useCallback(async (id: string, name: string) => {
     try {
@@ -1333,6 +1337,7 @@ const App: React.FC = () => {
           catalogStatus={catalogStatus}
           catalogNewCount={catalogNewCount}
           catalogError={catalogError}
+          catalogRefreshing={catalogRefreshing}
           onCatalogRefresh={handleCatalogRefresh}
           onBookmarkBulkPaste={() => {
             setBulkPasteText('')

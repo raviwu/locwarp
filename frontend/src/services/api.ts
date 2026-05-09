@@ -74,6 +74,15 @@ function formatError(detail: unknown, fallback: string): string {
   return maybeAttachDevModeHint(fallback)
 }
 
+export class HttpError extends Error {
+  status: number
+  constructor(message: string, status: number) {
+    super(message)
+    this.name = 'HttpError'
+    this.status = status
+  }
+}
+
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
   const opts: RequestInit = {
     method,
@@ -83,7 +92,7 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   const res = await fetchWithRetry(`${API}${path}`, opts)
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }))
-    throw new Error(formatError(err.detail, res.statusText))
+    throw new HttpError(formatError(err.detail, res.statusText), res.status)
   }
   return res.json()
 }
@@ -302,7 +311,13 @@ export const getRecent = () => request<RecentEntry[]>('GET', '/api/recent')
 export const pushRecent = (entry: { lat: number; lng: number; kind: RecentKind; name?: string | null }) =>
   request<RecentEntry>('POST', '/api/recent', entry)
 export const clearRecent = () => request<{ status: string }>('DELETE', '/api/recent')
-export const importBookmarks = (data: any) => request<{ imported: number }>('POST', '/api/bookmarks/import', data)
+export interface ImportResult {
+  scope?: string;
+  imported: number;
+  skipped?: number;
+}
+
+export const importBookmarks = (data: unknown) => request<ImportResult>('POST', '/api/bookmarks/import', data)
 
 export interface CatalogBookmark {
   id: string;
