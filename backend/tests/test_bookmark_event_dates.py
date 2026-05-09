@@ -106,3 +106,58 @@ def test_validate_date_range_rejects_inverted_range():
         _validate_date_range("2026-06-30", "2026-06-29")
     assert excinfo.value.status_code == 422
     assert "<= end_date" in excinfo.value.detail
+
+
+def _make_manager(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        "services.bookmarks.BOOKMARKS_FILE",
+        tmp_path / "bookmarks.json",
+    )
+    from services.bookmarks import BookmarkManager
+    return BookmarkManager()
+
+
+def test_create_category_persists_event_dates(tmp_path, monkeypatch):
+    bm = _make_manager(tmp_path, monkeypatch)
+    cat = bm.create_category(
+        name="Sanga",
+        color="#ef4444",
+        start_date="2026-02-06",
+        end_date="2026-06-07",
+    )
+    assert cat.start_date == "2026-02-06"
+    assert cat.end_date == "2026-06-07"
+
+    # Reload from disk to confirm persistence
+    from services.bookmarks import BookmarkManager
+    reloaded = BookmarkManager()
+    found = next(c for c in reloaded.list_categories() if c.id == cat.id)
+    assert found.start_date == "2026-02-06"
+    assert found.end_date == "2026-06-07"
+
+
+def test_update_category_with_empty_string_clears_date(tmp_path, monkeypatch):
+    bm = _make_manager(tmp_path, monkeypatch)
+    cat = bm.create_category(
+        name="Sanga",
+        start_date="2026-02-06",
+        end_date="2026-06-07",
+    )
+    updated = bm.update_category(cat.id, start_date="", end_date="")
+    assert updated is not None
+    assert updated.start_date == ""
+    assert updated.end_date == ""
+
+
+def test_update_category_with_none_preserves_date(tmp_path, monkeypatch):
+    bm = _make_manager(tmp_path, monkeypatch)
+    cat = bm.create_category(
+        name="Sanga",
+        start_date="2026-02-06",
+        end_date="2026-06-07",
+    )
+    updated = bm.update_category(cat.id, name="Renamed")
+    assert updated is not None
+    assert updated.name == "Renamed"
+    assert updated.start_date == "2026-02-06"
+    assert updated.end_date == "2026-06-07"

@@ -81,6 +81,8 @@ class BookmarkManager:
         self,
         name: str,
         color: str = "#6c8cff",
+        start_date: str = "",
+        end_date: str = "",
     ) -> BookmarkCategory:
         """Create and return a new category."""
         max_order = max((c.sort_order for c in self.store.categories), default=-1)
@@ -90,6 +92,8 @@ class BookmarkManager:
             color=color,
             sort_order=max_order + 1,
             created_at=_now_iso(),
+            start_date=start_date,
+            end_date=end_date,
         )
         self.store.categories.append(cat)
         self._save()
@@ -100,8 +104,14 @@ class BookmarkManager:
         cat_id: str,
         name: str | None = None,
         color: str | None = None,
+        start_date: str | None = None,
+        end_date: str | None = None,
     ) -> BookmarkCategory | None:
-        """Update a category's name or colour. Returns ``None`` if not found."""
+        """Update a category's mutable fields. Returns ``None`` if not found.
+
+        ``None`` for any field means "do not modify"; pass an empty string
+        to clear ``start_date`` or ``end_date``.
+        """
         cat = self._find_category(cat_id)
         if cat is None:
             return None
@@ -109,6 +119,10 @@ class BookmarkManager:
             cat.name = name
         if color is not None:
             cat.color = color
+        if start_date is not None:
+            cat.start_date = start_date
+        if end_date is not None:
+            cat.end_date = end_date
         self._save()
         return cat
 
