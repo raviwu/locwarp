@@ -2,6 +2,12 @@ import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useT } from '../i18n';
 import { getBookmarkUiState, setBookmarkUiState } from '../services/api';
+import {
+  getCategoryStatus,
+  todayLocal,
+  formatChipDate,
+  type CategoryStatus,
+} from '../utils/categoryStatus';
 
 const AUTO_COLLAPSE_THRESHOLD = 30;
 
@@ -303,10 +309,17 @@ const BookmarkList: React.FC<BookmarkListProps> = ({
   useEffect(() => {
     if (!uiStateLoaded) return;
     if (categories.length === 0) return;
+    // Inline default-collapse calc so the effect deps stay on
+    // `categoryDates` rather than a per-render helper closure.
+    const today = todayLocal();
+    const defaultCollapsedFor = (cat: string): boolean => {
+      const d = categoryDates?.[cat];
+      if (!d) return false;
+      const s = getCategoryStatus(d.start_date, d.end_date, today);
+      return s === 'ended' || s === 'upcoming';
+    };
     const isOver = bookmarks.length > AUTO_COLLAPSE_THRESHOLD;
     const wasOver = prevOverThresholdRef.current;
-    // Only reset when crossing the threshold, or on the very first eval.
-    // Between crossings the user's manual toggles are preserved.
     if (wasOver === null || isOver !== wasOver) {
       if (isOver) {
         const all: Record<string, boolean> = {};
@@ -315,17 +328,23 @@ const BookmarkList: React.FC<BookmarkListProps> = ({
       } else {
         const saved = savedExpandedRef.current;
         if (saved === null) {
-          setCollapsed({});
+          const next: Record<string, boolean> = {};
+          categories.forEach((c) => { next[c] = defaultCollapsedFor(c); });
+          setCollapsed(next);
         } else {
           const savedSet = new Set(saved);
           const next: Record<string, boolean> = {};
-          categories.forEach((c) => { next[c] = !savedSet.has(c); });
+          categories.forEach((c) => {
+            // Saved snapshot wins: any explicitly-expanded category stays
+            // expanded even if it later flips to ended/upcoming.
+            next[c] = savedSet.has(c) ? false : defaultCollapsedFor(c);
+          });
           setCollapsed(next);
         }
       }
     }
     prevOverThresholdRef.current = isOver;
-  }, [uiStateLoaded, bookmarks.length, categories]);
+  }, [uiStateLoaded, bookmarks.length, categories, categoryDates]);
 
   // Debounce saves so that rapid open/close of several categories sends
   // one POST 400ms after the last flip, not one per click.
@@ -1038,8 +1057,14 @@ const BookmarkList: React.FC<BookmarkListProps> = ({
         const selectedInCat = catIds.filter((id) => selectedIds.has(id)).length;
         const allSelectedInCat = catIds.length > 0 && selectedInCat === catIds.length;
         const someSelectedInCat = selectedInCat > 0 && !allSelectedInCat;
+        const _d = categoryDates?.[cat];
+        const status: CategoryStatus = _d
+          ? getCategoryStatus(_d.start_date, _d.end_date, todayLocal())
+          : 'evergreen';
+        const headerOpacity =
+          status === 'ended' ? 0.5 : status === 'upcoming' ? 0.7 : 1;
         return (
-        <div key={cat} className="bookmark-group" style={{ marginBottom: 4 }}>
+        <div key={cat} className="bookmark-group" style={{ marginBottom: 4, opacity: headerOpacity }}>
           <div
             style={{
               display: 'flex',
@@ -1098,6 +1123,23 @@ const BookmarkList: React.FC<BookmarkListProps> = ({
               }}
             />
             <span>{displayCat(cat)}</span>
+            {status === 'ended' && (
+              <span style={{
+                fontSize: 10, padding: '1px 6px', borderRadius: 4,
+                background: '#3a3a3e', color: '#9aa0a6', marginLeft: 4,
+              }}>{t('bm.cat.status_ended')}</span>
+            )}
+            {status === 'upcoming' && _d && (
+              <span style={{
+                fontSize: 10, padding: '1px 6px', borderRadius: 4,
+                background: 'rgba(59,130,246,0.18)', color: '#7aa9ff', marginLeft: 4,
+              }}>
+                {t('bm.cat.status_upcoming').replace(
+                  '{date}',
+                  formatChipDate(_d.start_date, navigator.language || 'en-US'),
+                )}
+              </span>
+            )}
             <span style={{ marginLeft: 'auto', opacity: 0.4, fontWeight: 400, fontSize: 10 }}>
               {bms.length}
             </span>
