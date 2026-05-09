@@ -52,6 +52,9 @@ interface BookmarkListProps {
   // bookmarks at once. Wired separately from onImport so the file-
   // picker flow stays untouched.
   onBulkPaste?: () => void;
+  // Replaces exportUrl. The legacy single-URL property is retained for
+  // backward compat but ignored when onExportClick is wired.
+  onExportClick?: (anchor: DOMRect) => void;
   exportUrl?: string;
 }
 
@@ -101,6 +104,7 @@ const BookmarkList: React.FC<BookmarkListProps> = ({
   onShowOnMapChange,
   onImport,
   onBulkPaste,
+  onExportClick,
   exportUrl,
 }) => {
   // Prefer the stored color (set at creation, editable via color picker). Only
@@ -447,12 +451,15 @@ const BookmarkList: React.FC<BookmarkListProps> = ({
           </svg>
           {t('bm.add_custom')}
         </button>
-        {exportUrl && (
-          <a
+        {(onExportClick || exportUrl) && (
+          <button
             className="action-btn"
-            href={exportUrl}
-            download="bookmarks.json"
-            style={{ padding: '3px 6px', fontSize: 12, marginLeft: 'auto', textDecoration: 'none', display: 'inline-flex', alignItems: 'center' }}
+            onClick={(e) => {
+              if (onExportClick) {
+                onExportClick((e.currentTarget as HTMLButtonElement).getBoundingClientRect())
+              }
+            }}
+            style={{ padding: '3px 6px', fontSize: 12, marginLeft: 'auto', display: 'inline-flex', alignItems: 'center' }}
             title={t('bm.export_tooltip')}
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -460,13 +467,13 @@ const BookmarkList: React.FC<BookmarkListProps> = ({
               <polyline points="7 10 12 15 17 10" />
               <line x1="12" y1="15" x2="12" y2="3" />
             </svg>
-          </a>
+          </button>
         )}
         {onBulkPaste && (
           <button
             className="action-btn"
             onClick={onBulkPaste}
-            style={{ padding: '3px 6px', fontSize: 12, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', marginLeft: exportUrl ? 0 : 'auto' }}
+            style={{ padding: '3px 6px', fontSize: 12, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', marginLeft: (onExportClick || exportUrl) ? 0 : 'auto' }}
             title={t('bm.bulk_paste_tooltip')}
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -480,7 +487,7 @@ const BookmarkList: React.FC<BookmarkListProps> = ({
         {onImport && (
           <label
             className="action-btn"
-            style={{ padding: '3px 6px', fontSize: 12, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', marginLeft: (exportUrl || onBulkPaste) ? 0 : 'auto' }}
+            style={{ padding: '3px 6px', fontSize: 12, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', marginLeft: (onExportClick || exportUrl || onBulkPaste) ? 0 : 'auto' }}
             title={t('bm.import_tooltip')}
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">

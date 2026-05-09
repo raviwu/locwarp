@@ -34,6 +34,7 @@ import { SimMode, MoveMode } from '../hooks/useSimulation';
 import AddressSearch from './AddressSearch';
 import BookmarkList from './BookmarkList';
 import GoldDittoPanel from './GoldDittoPanel';
+import ExportPopover from './ExportPopover';
 
 interface Position {
   lat: number;
@@ -325,6 +326,7 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
     bookmarks: true,
     routes: true,
   });
+  const [exportAnchor, setExportAnchor] = useState<DOMRect | null>(null);
 
   const t = useT();
   const [coordLat, setCoordLat] = useState('');
@@ -877,30 +879,39 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
             </div>
             <div style={{ padding: 12, overflowY: 'auto', flex: 1 }}>
               {libraryTab === 'bookmarks' ? (
-                <BookmarkList
-                  bookmarks={bookmarks}
-                  categories={bookmarkCategories}
-                  categoryColors={bookmarkCategoryColors}
-                  currentPosition={currentPosition}
-                  onBookmarkClick={(b) => { onBookmarkClick(b); }}
-                  onBookmarkPreview={onBookmarkPreview}
-                  onBookmarkAdd={onBookmarkAdd}
-                  onBookmarkDelete={onBookmarkDelete}
-                  onBookmarkEdit={onBookmarkEdit}
-                  onCategoryAdd={onCategoryAdd}
-                  onCategoryDelete={onCategoryDelete}
-                  onCategoryDeleteCascade={(name, _count) => {
-                    const cat = goldDittoCategories.find((c: any) => c.name === name)
-                    if (cat && onCategoryDeleteCascade) onCategoryDeleteCascade(cat.id)
-                  }}
-                  onCategoryRename={onCategoryRename}
-                  onCategoryRecolor={onCategoryRecolor}
-                  showOnMap={bookmarkShowOnMap}
-                  onShowOnMapChange={onBookmarkShowOnMapChange}
-                  onImport={onBookmarkImport}
-                  onBulkPaste={onBookmarkBulkPaste}
-                  exportUrl={bookmarkExportUrl}
-                />
+                <>
+                  <BookmarkList
+                    bookmarks={bookmarks}
+                    categories={bookmarkCategories}
+                    categoryColors={bookmarkCategoryColors}
+                    currentPosition={currentPosition}
+                    onBookmarkClick={(b) => { onBookmarkClick(b); }}
+                    onBookmarkPreview={onBookmarkPreview}
+                    onBookmarkAdd={onBookmarkAdd}
+                    onBookmarkDelete={onBookmarkDelete}
+                    onBookmarkEdit={onBookmarkEdit}
+                    onCategoryAdd={onCategoryAdd}
+                    onCategoryDelete={onCategoryDelete}
+                    onCategoryDeleteCascade={(name, _count) => {
+                      const cat = goldDittoCategories.find((c: any) => c.name === name)
+                      if (cat && onCategoryDeleteCascade) onCategoryDeleteCascade(cat.id)
+                    }}
+                    onCategoryRename={onCategoryRename}
+                    onCategoryRecolor={onCategoryRecolor}
+                    showOnMap={bookmarkShowOnMap}
+                    onShowOnMapChange={onBookmarkShowOnMapChange}
+                    onImport={onBookmarkImport}
+                    onBulkPaste={onBookmarkBulkPaste}
+                    exportUrl={bookmarkExportUrl}
+                    onExportClick={(rect: DOMRect) => setExportAnchor(rect)}
+                  />
+                  <ExportPopover
+                    open={exportAnchor !== null}
+                    anchorRect={exportAnchor}
+                    categories={goldDittoCategories}
+                    onClose={() => setExportAnchor(null)}
+                  />
+                </>
               ) : (
                 <>
                   <div style={{ fontSize: 11, opacity: 0.6, marginBottom: 6 }}>
