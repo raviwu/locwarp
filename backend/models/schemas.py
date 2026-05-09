@@ -179,6 +179,11 @@ class BookmarkCategory(BaseModel):
     color: str = "#6c8cff"
     sort_order: int = 0
     created_at: str = ""
+    # ISO 8601 date 'YYYY-MM-DD'. Empty string = unbounded on that side.
+    # Both empty → evergreen (never archives). Validation lives in the
+    # API layer (api/bookmarks.py::_validate_date_range).
+    start_date: str = ""
+    end_date: str = ""
 
 
 class Bookmark(BaseModel):
