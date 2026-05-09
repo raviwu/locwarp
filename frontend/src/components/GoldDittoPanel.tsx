@@ -1,5 +1,21 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react'
+import { createPortal } from 'react-dom'
 import { useT } from '../i18n'
+import BookmarkPickerPopover from './BookmarkPickerPopover'
+
+interface Bookmark {
+  id?: string
+  name: string
+  lat: number
+  lng: number
+  category_id?: string
+}
+
+interface Category {
+  id: string
+  name: string
+  color?: string
+}
 
 interface Props {
   connectedUdids: string[]
@@ -10,11 +26,17 @@ interface Props {
   // the useEffect dep then re-fires even if the user picks the same coord
   // twice in a row.
   externalAValue: { coord: string } | null
+  // New: bookmark sources for the picker
+  bookmarks: Bookmark[]
+  categories: Category[]
   onConfirmLocation: (lat: number, lng: number) => Promise<void> | void
   onCycle: (
     target: 'A' | 'B' | 'auto',
     args: { lat_a: number; lng_a: number; lat_b: number; lng_b: number; wait_seconds: number },
   ) => Promise<void> | void
+  // New: cascade delete callback. Returning a Promise lets the panel close
+  // the popover only after the API roundtrip succeeds.
+  onCategoryDeleteCascade: (categoryId: string) => Promise<void> | void
 }
 
 const DEFAULT_B = '25.034897, 121.545827'
@@ -44,8 +66,11 @@ export const GoldDittoPanel: React.FC<Props> = ({
   isCycling,
   mapCenter,
   externalAValue,
+  bookmarks,
+  categories,
   onConfirmLocation,
   onCycle,
+  onCategoryDeleteCascade,
 }) => {
   const t = useT()
 
@@ -54,6 +79,30 @@ export const GoldDittoPanel: React.FC<Props> = ({
   const [waitText, setWaitText] = useState(
     () => localStorage.getItem(LS_WAIT) ?? '3.0',
   )
+
+  const [pickerSide, setPickerSide] = useState<'A' | 'B' | null>(null)
+  const [pickerAnchor, setPickerAnchor] = useState<DOMRect | null>(null)
+  const aBtnRef = React.useRef<HTMLButtonElement | null>(null)
+  const bBtnRef = React.useRef<HTMLButtonElement | null>(null)
+
+  const [pickerCatA, setPickerCatA] = useState<string | null>(
+    () => localStorage.getItem('goldditto.picker.A.lastCategory'),
+  )
+  const [pickerCatB, setPickerCatB] = useState<string | null>(
+    () => localStorage.getItem('goldditto.picker.B.lastCategory'),
+  )
+
+  const bookmarksByCategoryId = useMemo(() => {
+    const out: Record<string, Bookmark[]> = {}
+    for (const bm of bookmarks) {
+      const cid = bm.category_id ?? 'default'
+      if (!out[cid]) out[cid] = []
+      out[cid].push(bm)
+    }
+    return out
+  }, [bookmarks])
+
+  const [confirmEnd, setConfirmEnd] = useState<{ catId: string; count: number } | null>(null)
 
   // Persist on change.
   useEffect(() => { localStorage.setItem(LS_A, aText) }, [aText])
@@ -112,6 +161,39 @@ export const GoldDittoPanel: React.FC<Props> = ({
     if (mapCenter) setBText(`${mapCenter.lat.toFixed(6)}, ${mapCenter.lng.toFixed(6)}`)
   }
 
+  const openPicker = (side: 'A' | 'B', btn: HTMLButtonElement | null) => {
+    if (!btn) return
+    setPickerSide(side)
+    setPickerAnchor(btn.getBoundingClientRect())
+  }
+
+  const handlePick = (bm: { lat: number; lng: number }) => {
+    const text = `${bm.lat.toFixed(6)}, ${bm.lng.toFixed(6)}`
+    if (pickerSide === 'A') setAText(text)
+    else if (pickerSide === 'B') setBText(text)
+  }
+
+  const handleCategoryChange = (catId: string) => {
+    if (pickerSide === 'A') {
+      setPickerCatA(catId)
+      try { localStorage.setItem('goldditto.picker.A.lastCategory', catId) } catch { /* ignore */ }
+    } else if (pickerSide === 'B') {
+      setPickerCatB(catId)
+      try { localStorage.setItem('goldditto.picker.B.lastCategory', catId) } catch { /* ignore */ }
+    }
+  }
+
+  const handleEndEventRequest = (catId: string, count: number) => {
+    setConfirmEnd({ catId, count })
+  }
+
+  const handleEndEventConfirm = async () => {
+    if (!confirmEnd) return
+    await onCategoryDeleteCascade(confirmEnd.catId)
+    setConfirmEnd(null)
+    setPickerSide(null)
+  }
+
   return (
     <div className="goldditto-panel" style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: 8 }}>
       {noDevice && (
@@ -120,36 +202,58 @@ export const GoldDittoPanel: React.FC<Props> = ({
 
       <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
         <span style={{ fontSize: 12, color: '#9ca3af' }}>{t('goldditto.a_label')}</span>
-        <input
-          type="text"
-          value={aText}
-          onChange={(e) => setAText(e.target.value)}
-          placeholder="lat, lng"
-          style={{
-            padding: '6px 8px',
-            border: aValid || aText === '' ? '1px solid #4b5563' : '1px solid #f87171',
-            borderRadius: 4,
-            background: '#1f2937',
-            color: '#fff',
-          }}
-        />
+        <div style={{ display: 'flex', gap: 4 }}>
+          <input
+            type="text"
+            value={aText}
+            onChange={(e) => setAText(e.target.value)}
+            placeholder="lat, lng"
+            style={{
+              flex: 1,
+              padding: '6px 8px',
+              border: aValid || aText === '' ? '1px solid #4b5563' : '1px solid #f87171',
+              borderRadius: 4,
+              background: '#1f2937',
+              color: '#fff',
+            }}
+          />
+          <button
+            ref={aBtnRef}
+            type="button"
+            className="action-btn"
+            title={t('goldditto.pick_from_bookmarks_tooltip_a')}
+            onClick={() => openPicker('A', aBtnRef.current)}
+            style={{ padding: '6px 8px', fontSize: 12 }}
+          >📚</button>
+        </div>
       </label>
 
       <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
         <span style={{ fontSize: 12, color: '#9ca3af' }}>{t('goldditto.b_label')}</span>
-        <input
-          type="text"
-          value={bText}
-          onChange={(e) => setBText(e.target.value)}
-          placeholder="lat, lng"
-          style={{
-            padding: '6px 8px',
-            border: bValid ? '1px solid #4b5563' : '1px solid #f87171',
-            borderRadius: 4,
-            background: '#1f2937',
-            color: '#fff',
-          }}
-        />
+        <div style={{ display: 'flex', gap: 4 }}>
+          <input
+            type="text"
+            value={bText}
+            onChange={(e) => setBText(e.target.value)}
+            placeholder="lat, lng"
+            style={{
+              flex: 1,
+              padding: '6px 8px',
+              border: bValid ? '1px solid #4b5563' : '1px solid #f87171',
+              borderRadius: 4,
+              background: '#1f2937',
+              color: '#fff',
+            }}
+          />
+          <button
+            ref={bBtnRef}
+            type="button"
+            className="action-btn"
+            title={t('goldditto.pick_from_bookmarks_tooltip_b')}
+            onClick={() => openPicker('B', bBtnRef.current)}
+            style={{ padding: '6px 8px', fontSize: 12 }}
+          >📚</button>
+        </div>
         <div style={{ display: 'flex', gap: 6 }}>
           <button onClick={handleRandomB} className="action-btn" style={{ fontSize: 12, flex: 1 }}>
             {t('goldditto.random_b')}
@@ -211,6 +315,66 @@ export const GoldDittoPanel: React.FC<Props> = ({
           ③ {t('goldditto.retries')}
         </button>
       </div>
+
+      <BookmarkPickerPopover
+        open={pickerSide !== null}
+        side={pickerSide ?? 'A'}
+        anchorRect={pickerAnchor}
+        categories={categories}
+        bookmarksByCategoryId={bookmarksByCategoryId}
+        initialCategoryId={pickerSide === 'A' ? pickerCatA : pickerCatB}
+        isCycling={isCycling}
+        onClose={() => setPickerSide(null)}
+        onPickCoord={handlePick}
+        onCategoryChange={handleCategoryChange}
+        onEndEvent={handleEndEventRequest}
+      />
+
+      {confirmEnd && createPortal(
+        <div
+          onClick={() => setConfirmEnd(null)}
+          style={{
+            position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+            background: 'rgba(8,10,20,0.55)',
+            backdropFilter: 'blur(4px)',
+            zIndex: 10000,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: 'rgba(26,29,39,0.96)',
+              border: '1px solid rgba(255,107,107,0.35)',
+              borderRadius: 12,
+              padding: 18, width: 320,
+              boxShadow: '0 20px 60px rgba(12,18,40,0.65)',
+              color: '#e0e0e0',
+            }}
+          >
+            <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 10 }}>
+              {t('bm.delete.cascade_title').replace('{name}',
+                categories.find(c => c.id === confirmEnd.catId)?.name ?? '')}
+            </div>
+            <div style={{ fontSize: 12, marginBottom: 14 }}>
+              {t('bm.delete.cascade_body').replace('{n}', String(confirmEnd.count))}
+            </div>
+            <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+              <button className="action-btn" onClick={() => setConfirmEnd(null)}>
+                {t('generic.cancel')}
+              </button>
+              <button
+                className="action-btn"
+                onClick={handleEndEventConfirm}
+                style={{ color: '#ff6b6b', borderColor: 'rgba(255,107,107,0.4)' }}
+              >
+                {t('bm.delete.cascade_confirm')}
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body,
+      )}
     </div>
   )
 }
