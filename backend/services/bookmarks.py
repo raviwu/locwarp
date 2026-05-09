@@ -112,10 +112,17 @@ class BookmarkManager:
         self._save()
         return cat
 
-    def delete_category(self, cat_id: str) -> bool:
-        """Delete a category and move its bookmarks to *default*.
+    def delete_category(self, cat_id: str, cascade: bool = False) -> dict | bool:
+        """Delete a category.
 
-        The *default* category cannot be deleted.
+        With ``cascade=False`` (default), bookmarks in the deleted category are
+        moved to ``default``. With ``cascade=True``, those bookmarks are
+        deleted along with the category.
+
+        The ``default`` category cannot be deleted in either mode.
+
+        Returns ``False`` when the category is missing or is ``default``.
+        Otherwise returns ``{"deleted": True, "deleted_bookmarks": N}``.
         """
         if cat_id == "default":
             logger.warning("Cannot delete the default category")
@@ -125,14 +132,23 @@ class BookmarkManager:
         if cat is None:
             return False
 
-        # Move orphaned bookmarks
-        for bm in self.store.bookmarks:
-            if bm.category_id == cat_id:
-                bm.category_id = "default"
+        deleted_count = 0
+        if cascade:
+            kept = []
+            for bm in self.store.bookmarks:
+                if bm.category_id == cat_id:
+                    deleted_count += 1
+                else:
+                    kept.append(bm)
+            self.store.bookmarks = kept
+        else:
+            for bm in self.store.bookmarks:
+                if bm.category_id == cat_id:
+                    bm.category_id = "default"
 
         self.store.categories = [c for c in self.store.categories if c.id != cat_id]
         self._save()
-        return True
+        return {"deleted": True, "deleted_bookmarks": deleted_count}
 
     def list_categories(self) -> list[BookmarkCategory]:
         return sorted(self.store.categories, key=lambda c: c.sort_order)
