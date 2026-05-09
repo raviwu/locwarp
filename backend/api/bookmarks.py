@@ -96,13 +96,14 @@ async def update_category(cat_id: str, cat: BookmarkCategory):
 
 
 @router.delete("/categories/{cat_id}")
-async def delete_category(cat_id: str):
+async def delete_category(cat_id: str, cascade: bool = False):
     bm = _bm()
     if cat_id == "default":
         raise HTTPException(status_code=400, detail="Cannot delete default category")
-    if not bm.delete_category(cat_id):
+    result = bm.delete_category(cat_id, cascade=cascade)
+    if result is False:
         raise HTTPException(status_code=404, detail="Category not found")
-    return {"status": "deleted"}
+    return {"status": "deleted", "deleted_bookmarks": result["deleted_bookmarks"]}
 
 
 # ── Import / Export ───────────────────────────────────────
