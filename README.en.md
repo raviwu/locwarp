@@ -567,6 +567,22 @@ xattr -d com.apple.quarantine /Applications/LocWarp.app
 
 Apple Silicon (M1/M2/M3...) only. No official Intel Mac build.
 
+### iOS 17+ devices require launching as administrator
+
+To connect to an iOS 17+ iPhone (including iOS 18 / 26+), the LocWarp backend creates a utun interface for the RSD tunnel, which **requires admin privileges**. Launching by double-click will fail with "Failed to create device tunnel" and the device chip row stays empty.
+
+**Option 1 — use the launcher script (recommended)**
+
+Download `LocWarp-admin.command` (shipped alongside the DMG), double-click it, and enter your macOS password. macOS shows a standard admin authorization dialog.
+
+**Option 2 — terminal sudo**
+
+```bash
+sudo /Applications/LocWarp.app/Contents/MacOS/LocWarp
+```
+
+> The Windows installer triggers UAC automatically; macOS has no equivalent, so admin elevation is a manual step. Code-signing with the `networkextension` entitlement could fix this long-term but requires the $99/year Apple Developer Program plus Apple's approval.
+
 ## Release Process (For Maintainers)
 
 ```bash

@@ -579,6 +579,22 @@ xattr -d com.apple.quarantine /Applications/LocWarp.app
 
 僅支援 Apple Silicon (M1/M2/M3...)。Intel Mac 目前不提供官方 build。
 
+### iOS 17+ 裝置連線需以 administrator 啟動
+
+連 iOS 17 以上的 iPhone (含 iOS 18 / 26+) 時,LocWarp 後端要建立 utun 網路介面跑 RSD tunnel,**這需要管理員權限**。如果直接雙擊啟動,會看到「無法建立裝置通道」錯誤,且裝置欄位空白。
+
+**方法 1:用 launcher script (推薦)**
+
+下載 `LocWarp-admin.command` (跟 DMG 一起),雙擊它,輸入 macOS 密碼即可。系統會跳出標準的 admin 認證對話框。
+
+**方法 2:terminal 直接 sudo**
+
+```bash
+sudo /Applications/LocWarp.app/Contents/MacOS/LocWarp
+```
+
+> Windows 版本透過 NSIS 自動觸發 UAC,Mac 沒有對應機制,所以這個是必須的步驟。長期會評估 Apple Developer ID 簽名 + `networkextension` entitlement,但代價較高 ($99/年 + Apple 審核)。
+
 ## 發布流程 (For Maintainers)
 
 ```bash
