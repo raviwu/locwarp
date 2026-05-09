@@ -4,7 +4,8 @@
     "description": "Sample bookmark store covering known Pikmin Bloom GPS events. Importable via POST /api/bookmarks/import. The start_date / end_date fields require the soft-archive feature (docs/superpowers/specs/2026-05-09-event-soft-archive-design.md); on older builds those fields are silently ignored.",
     "source_notes": [
       "Sapporo Pikmin Bloom Tour — https://pikminbloom.com/zh/news/apr26-sapporotour (常設活動，每年可參加一次)",
-      "Sanga Stadium by KYOCERA — https://pikminbloom.com/en/news/feb26-kyotosanga (2026/2/6 ~ 2026/6/7)"
+      "Sanga Stadium by KYOCERA — https://pikminbloom.com/en/news/feb26-kyotosanga (2026/2/6 ~ 2026/6/7)",
+      "京都散步 — Kyoto walking spots curated from Pikmin Bloom community lists (沒有截止期限)"
     ],
     "compiled_at": "2026-05-09",
     "format_version": 1
@@ -20,10 +21,19 @@
       "end_date": ""
     },
     {
+      "id": "seed-kyoto-walk",
+      "name": "京都散步",
+      "color": "#22c55e",
+      "sort_order": 2,
+      "created_at": "2026-05-09T00:00:00Z",
+      "start_date": "",
+      "end_date": ""
+    },
+    {
       "id": "seed-sanga-stadium",
       "name": "Sanga Stadium by KYOCERA",
       "color": "#ef4444",
-      "sort_order": 2,
+      "sort_order": 3,
       "created_at": "2026-05-09T00:00:00Z",
       "start_date": "2026-02-06",
       "end_date": "2026-06-07"
@@ -158,6 +168,259 @@
       "lng": 141.358446,
       "address": "",
       "category_id": "seed-sapporo-tour",
+      "created_at": "2026-05-09T00:00:00Z",
+      "last_used_at": "2026-05-09T00:00:00Z",
+      "country_code": "jp"
+    },
+    {
+      "id": "seed-kyoto-001",
+      "name": "京北 - 常照皇寺",
+      "lat": 35.200425,
+      "lng": 135.685626,
+      "address": "",
+      "category_id": "seed-kyoto-walk",
+      "created_at": "2026-05-09T00:00:00Z",
+      "last_used_at": "2026-05-09T00:00:00Z",
+      "country_code": "jp"
+    },
+    {
+      "id": "seed-kyoto-002",
+      "name": "京北 - 山國神社",
+      "lat": 35.173026,
+      "lng": 135.655441,
+      "address": "",
+      "category_id": "seed-kyoto-walk",
+      "created_at": "2026-05-09T00:00:00Z",
+      "last_used_at": "2026-05-09T00:00:00Z",
+      "country_code": "jp"
+    },
+    {
+      "id": "seed-kyoto-003",
+      "name": "京北 - 金花山寶泉寺",
+      "lat": 35.167609,
+      "lng": 135.610546,
+      "address": "",
+      "category_id": "seed-kyoto-walk",
+      "created_at": "2026-05-09T00:00:00Z",
+      "last_used_at": "2026-05-09T00:00:00Z",
+      "country_code": "jp"
+    },
+    {
+      "id": "seed-kyoto-004",
+      "name": "京北 - 公路休息站Woody京北（ウッディー京北）",
+      "lat": 35.156081,
+      "lng": 135.6331576,
+      "address": "",
+      "category_id": "seed-kyoto-walk",
+      "created_at": "2026-05-09T00:00:00Z",
+      "last_used_at": "2026-05-09T00:00:00Z",
+      "country_code": "jp"
+    },
+    {
+      "id": "seed-kyoto-005",
+      "name": "京北 - Orai黑田屋（おーらい黒田屋）",
+      "lat": 35.204023,
+      "lng": 135.7206,
+      "address": "",
+      "category_id": "seed-kyoto-walk",
+      "created_at": "2026-05-09T00:00:00Z",
+      "last_used_at": "2026-05-09T00:00:00Z",
+      "country_code": "jp"
+    },
+    {
+      "id": "seed-kyoto-006",
+      "name": "大原 - 三千院",
+      "lat": 35.119725,
+      "lng": 135.834403,
+      "address": "",
+      "category_id": "seed-kyoto-walk",
+      "created_at": "2026-05-09T00:00:00Z",
+      "last_used_at": "2026-05-09T00:00:00Z",
+      "country_code": "jp"
+    },
+    {
+      "id": "seed-kyoto-007",
+      "name": "大原 - 寂光院",
+      "lat": 35.124098,
+      "lng": 135.821046,
+      "address": "",
+      "category_id": "seed-kyoto-walk",
+      "created_at": "2026-05-09T00:00:00Z",
+      "last_used_at": "2026-05-09T00:00:00Z",
+      "country_code": "jp"
+    },
+    {
+      "id": "seed-kyoto-008",
+      "name": "大原 - 京都巴士大原服務中心",
+      "lat": 35.119845,
+      "lng": 135.829015,
+      "address": "",
+      "category_id": "seed-kyoto-walk",
+      "created_at": "2026-05-09T00:00:00Z",
+      "last_used_at": "2026-05-09T00:00:00Z",
+      "country_code": "jp"
+    },
+    {
+      "id": "seed-kyoto-009",
+      "name": "高雄 - 神護寺",
+      "lat": 35.054643,
+      "lng": 135.671266,
+      "address": "",
+      "category_id": "seed-kyoto-walk",
+      "created_at": "2026-05-09T00:00:00Z",
+      "last_used_at": "2026-05-09T00:00:00Z",
+      "country_code": "jp"
+    },
+    {
+      "id": "seed-kyoto-010",
+      "name": "高雄 - 平岡八幡宮",
+      "lat": 35.040742,
+      "lng": 135.687772,
+      "address": "",
+      "category_id": "seed-kyoto-walk",
+      "created_at": "2026-05-09T00:00:00Z",
+      "last_used_at": "2026-05-09T00:00:00Z",
+      "country_code": "jp"
+    },
+    {
+      "id": "seed-kyoto-011",
+      "name": "高雄 - 指月橋",
+      "lat": 35.056453,
+      "lng": 135.675168,
+      "address": "",
+      "category_id": "seed-kyoto-walk",
+      "created_at": "2026-05-09T00:00:00Z",
+      "last_used_at": "2026-05-09T00:00:00Z",
+      "country_code": "jp"
+    },
+    {
+      "id": "seed-kyoto-012",
+      "name": "山科 - 大石神社",
+      "lat": 34.970182,
+      "lng": 135.796014,
+      "address": "",
+      "category_id": "seed-kyoto-walk",
+      "created_at": "2026-05-09T00:00:00Z",
+      "last_used_at": "2026-05-09T00:00:00Z",
+      "country_code": "jp"
+    },
+    {
+      "id": "seed-kyoto-013",
+      "name": "山科 - 折上稻荷神社",
+      "lat": 34.972288,
+      "lng": 135.803133,
+      "address": "",
+      "category_id": "seed-kyoto-walk",
+      "created_at": "2026-05-09T00:00:00Z",
+      "last_used_at": "2026-05-09T00:00:00Z",
+      "country_code": "jp"
+    },
+    {
+      "id": "seed-kyoto-014",
+      "name": "山科 - 隨心院",
+      "lat": 34.959668,
+      "lng": 135.81505,
+      "address": "",
+      "category_id": "seed-kyoto-walk",
+      "created_at": "2026-05-09T00:00:00Z",
+      "last_used_at": "2026-05-09T00:00:00Z",
+      "country_code": "jp"
+    },
+    {
+      "id": "seed-kyoto-015",
+      "name": "西京 - 地藏院",
+      "lat": 34.990394,
+      "lng": 135.68606,
+      "address": "",
+      "category_id": "seed-kyoto-walk",
+      "created_at": "2026-05-09T00:00:00Z",
+      "last_used_at": "2026-05-09T00:00:00Z",
+      "country_code": "jp"
+    },
+    {
+      "id": "seed-kyoto-016",
+      "name": "西京 - 淨住寺",
+      "lat": 34.988794,
+      "lng": 135.686268,
+      "address": "",
+      "category_id": "seed-kyoto-walk",
+      "created_at": "2026-05-09T00:00:00Z",
+      "last_used_at": "2026-05-09T00:00:00Z",
+      "country_code": "jp"
+    },
+    {
+      "id": "seed-kyoto-017",
+      "name": "西京 - 正法寺",
+      "lat": 34.9570566,
+      "lng": 135.6556978,
+      "address": "",
+      "category_id": "seed-kyoto-walk",
+      "created_at": "2026-05-09T00:00:00Z",
+      "last_used_at": "2026-05-09T00:00:00Z",
+      "country_code": "jp"
+    },
+    {
+      "id": "seed-kyoto-018",
+      "name": "西京 - 大越神社",
+      "lat": 34.950705,
+      "lng": 135.666385,
+      "address": "",
+      "category_id": "seed-kyoto-walk",
+      "created_at": "2026-05-09T00:00:00Z",
+      "last_used_at": "2026-05-09T00:00:00Z",
+      "country_code": "jp"
+    },
+    {
+      "id": "seed-kyoto-019",
+      "name": "西京 - 京都洛西竹林公園（竹之徑）",
+      "lat": 34.959852,
+      "lng": 135.686904,
+      "address": "",
+      "category_id": "seed-kyoto-walk",
+      "created_at": "2026-05-09T00:00:00Z",
+      "last_used_at": "2026-05-09T00:00:00Z",
+      "country_code": "jp"
+    },
+    {
+      "id": "seed-kyoto-020",
+      "name": "伏見 - 長尾天滿宮",
+      "lat": 34.952447,
+      "lng": 135.823089,
+      "address": "",
+      "category_id": "seed-kyoto-walk",
+      "created_at": "2026-05-09T00:00:00Z",
+      "last_used_at": "2026-05-09T00:00:00Z",
+      "country_code": "jp"
+    },
+    {
+      "id": "seed-kyoto-021",
+      "name": "伏見 - 御香宮神社",
+      "lat": 34.933274,
+      "lng": 135.767434,
+      "address": "",
+      "category_id": "seed-kyoto-walk",
+      "created_at": "2026-05-09T00:00:00Z",
+      "last_used_at": "2026-05-09T00:00:00Z",
+      "country_code": "jp"
+    },
+    {
+      "id": "seed-kyoto-022",
+      "name": "伏見 - 藤森神社",
+      "lat": 34.95136,
+      "lng": 135.77171,
+      "address": "",
+      "category_id": "seed-kyoto-walk",
+      "created_at": "2026-05-09T00:00:00Z",
+      "last_used_at": "2026-05-09T00:00:00Z",
+      "country_code": "jp"
+    },
+    {
+      "id": "seed-kyoto-023",
+      "name": "伏見 - 金札宮",
+      "lat": 34.936782,
+      "lng": 135.761236,
+      "address": "",
+      "category_id": "seed-kyoto-walk",
       "created_at": "2026-05-09T00:00:00Z",
       "last_used_at": "2026-05-09T00:00:00Z",
       "country_code": "jp"
