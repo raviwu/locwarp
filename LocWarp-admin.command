@@ -25,9 +25,13 @@ fi
 # propagate to the LocWarp process. `open -a` would launch via launchd,
 # which strips root and runs the app as the user.
 #
-# We background the launch with `&` and `disown` so the osascript dialog
-# can dismiss without keeping a Terminal window open. nohup + redirect
-# output to a log so the parent shell can exit cleanly.
+# osascript's `do shell script` runs without a TTY, so `nohup` fails
+# with "Inappropriate ioctl for device". Instead we just redirect the
+# three stdio streams and background with `&` — that's enough to
+# detach the child from the (already TTY-less) parent shell.
+# --no-sandbox: Electron 20+ refuses to run as root by default. The Chromium
+# sandbox can't drop privileges from root, so it errors out. We're explicitly
+# running as root for utun anyway, so this is intentional.
 osascript <<EOF
-do shell script "nohup '$EXE' >/tmp/locwarp-stdout.log 2>/tmp/locwarp-stderr.log &" with administrator privileges with prompt "LocWarp needs administrator privileges to talk to iOS 17+ devices over USB."
+do shell script "'$EXE' --no-sandbox </dev/null >/tmp/locwarp-stdout.log 2>/tmp/locwarp-stderr.log &" with administrator privileges with prompt "LocWarp needs administrator privileges to talk to iOS 17+ devices over USB."
 EOF
