@@ -157,6 +157,11 @@ export const STRINGS = {
   'goldditto.warn_same_ab': { zh: '⚠ A 跟 B 是同一點,輪流會無效', en: '⚠ A and B are identical, alternation has no effect' },
   'goldditto.set_as_a': { zh: '設為拉金盆 A 點', en: 'Set as Gold Ditto A' },
 
+  // GoldDitto panel — picker entry buttons
+  'goldditto.pick_from_bookmarks': { zh: '📚', en: '📚' },
+  'goldditto.pick_from_bookmarks_tooltip_a': { zh: '從書籤選 A 點', en: 'Pick A from bookmarks' },
+  'goldditto.pick_from_bookmarks_tooltip_b': { zh: '從書籤選 B 點', en: 'Pick B from bookmarks' },
+
   // ── Move mode (speed presets) ────────────────
   'move.walking': { zh: '走路', en: 'Walking' },
   'move.running': { zh: '腳踏車', en: 'Cycling' },
@@ -514,6 +519,33 @@ export const STRINGS = {
   'update.later': { zh: '稍後提醒', en: 'Later' },
   'bm.edit': { zh: '編輯', en: 'Edit' },
   'bm.move_to': { zh: '移動到:', en: 'Move to:' },
+
+  // Bookmark picker (used by GoldDitto panel)
+  'bm.picker.title_a': { zh: '從書籤選 A 點', en: 'Pick A from bookmarks' },
+  'bm.picker.title_b': { zh: '從書籤選 B 點', en: 'Pick B from bookmarks' },
+  'bm.picker.category_label': { zh: '分類', en: 'Category' },
+  'bm.picker.empty': { zh: '此分類沒有書籤', en: 'No bookmarks in this category' },
+  'bm.picker.close': { zh: '關閉', en: 'Close' },
+  'bm.picker.end_event': { zh: '結束此活動 🗑', en: 'End event 🗑' },
+  'bm.picker.end_event_disabled_cycling': { zh: '請先等本次拉金盆完成', en: 'Wait for the cycle to finish' },
+
+  // Cascade-delete confirm
+  'bm.delete.cascade_title': { zh: '結束「{name}」?', en: 'End event "{name}"?' },
+  'bm.delete.cascade_body': { zh: '⚠ 將同時刪除分類內的 {n} 個書籤,無法復原。', en: '⚠ This will also delete the {n} bookmarks in this category. Cannot be undone.' },
+  'bm.delete.cascade_confirm': { zh: '刪除活動', en: 'Delete event' },
+  'bm.delete.softdelete_label': { zh: '只刪分類 (書籤搬到預設)', en: 'Delete category only (move bookmarks to Default)' },
+  'bm.delete.cascade_label': { zh: '連書籤一起刪 ({n} 個)', en: 'Delete category + {n} bookmarks' },
+
+  // Export popover
+  'bm.export.title': { zh: '匯出', en: 'Export' },
+  'bm.export.scope_all': { zh: '全部', en: 'All bookmarks' },
+  'bm.export.scope_one': { zh: '單一分類', en: 'A single category' },
+  'bm.export.format_label': { zh: '格式', en: 'Format' },
+  'bm.export.format_json': { zh: 'JSON (round-trip)', en: 'JSON (round-trip)' },
+  'bm.export.format_markdown': { zh: 'Markdown (人類可讀)', en: 'Markdown (human-readable)' },
+  'bm.export.format_geojson': { zh: 'GeoJSON', en: 'GeoJSON' },
+  'bm.export.format_csv': { zh: 'CSV', en: 'CSV' },
+  'bm.export.download': { zh: '下載', en: 'Download' },
 
   // ── Address search ───────────────────────────
   'search.placeholder': { zh: '搜尋地址...', en: 'Search address...' },
