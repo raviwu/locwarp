@@ -94,3 +94,36 @@ def test_geojson_missing_category_raises(store):
     from services.bookmark_export import to_geojson
     with pytest.raises(KeyError):
         to_geojson(store, category_id="missing")
+
+
+def test_csv_single_category(store):
+    import csv
+    import io
+    from services.bookmark_export import to_csv
+    out = to_csv(store, category_id="cat-kyoto")
+    # CSV begins with UTF-8 BOM for Excel compatibility
+    assert out.startswith("﻿")
+    rows = list(csv.DictReader(io.StringIO(out.lstrip("﻿"))))
+    assert [r["name"] for r in rows] == ["京北 - 常照皇寺", "京北 - 山國神社"]
+    assert rows[0]["lat"] == "35.200425"
+    assert rows[0]["lng"] == "135.685626"
+    assert rows[0]["category"] == "京都散步"
+
+
+def test_csv_full_store(store):
+    import csv
+    import io
+    from services.bookmark_export import to_csv
+    out = to_csv(store, category_id=None)
+    rows = list(csv.DictReader(io.StringIO(out.lstrip("﻿"))))
+    assert len(rows) == 2  # only kyoto bookmarks; default has zero
+
+
+def test_csv_quotes_names_with_commas(store):
+    from models.schemas import Bookmark
+    from services.bookmark_export import to_csv
+    store.bookmarks.append(Bookmark(id="b3", name="a,b", lat=0.0, lng=0.0,
+                                    category_id="cat-kyoto",
+                                    created_at="", last_used_at=""))
+    out = to_csv(store, category_id="cat-kyoto")
+    assert '"a,b"' in out

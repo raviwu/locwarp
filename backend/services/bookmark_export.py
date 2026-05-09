@@ -84,3 +84,30 @@ def to_geojson(store: BookmarkStore, category_id: str | None = None) -> dict:
         })
 
     return {"type": "FeatureCollection", "name": name, "features": features}
+
+
+def to_csv(store: BookmarkStore, category_id: str | None = None) -> str:
+    import csv
+    import io
+
+    cats_by_id = {c.id: c for c in store.categories}
+    if category_id is not None:
+        if category_id not in cats_by_id:
+            raise KeyError(category_id)
+        bms = _category_bookmarks(store, category_id)
+    else:
+        bms = list(store.bookmarks)
+
+    buf = io.StringIO()
+    buf.write("﻿")  # UTF-8 BOM for Excel
+    writer = csv.DictWriter(buf, fieldnames=["name", "lat", "lng", "category"])
+    writer.writeheader()
+    for bm in bms:
+        cat_name = cats_by_id.get(bm.category_id).name if bm.category_id in cats_by_id else ""
+        writer.writerow({
+            "name": bm.name,
+            "lat": f"{bm.lat:.6f}",
+            "lng": f"{bm.lng:.6f}",
+            "category": cat_name,
+        })
+    return buf.getvalue()
