@@ -34,6 +34,9 @@ def detect_and_import(manager, raw: str | bytes) -> dict:
     if "_meta" in payload and "category" in payload and "bookmarks" in payload:
         return _import_single_category(manager, payload)
 
+    if payload.get("type") == "FeatureCollection" and isinstance(payload.get("features"), list):
+        return _import_geojson(manager, payload)
+
     raise InvalidImportError("Unrecognised import shape")
 
 
@@ -88,3 +91,48 @@ def _import_single_category(manager, payload: dict) -> dict:
     manager._save()  # always persist (we appended a category)
 
     return {"scope": "category", "imported": imported, "skipped": 0}
+
+
+def _import_geojson(manager, payload: dict) -> dict:
+    name = payload.get("name") or "Imported"
+    cat = manager.create_category(name=name)
+
+    existing_bm_ids = {b.id for b in manager.store.bookmarks}
+    imported = 0
+    skipped = 0
+    for feat in payload.get("features", []):
+        try:
+            geom = feat.get("geometry") or {}
+            if geom.get("type") != "Point":
+                skipped += 1
+                continue
+            coords = geom.get("coordinates") or []
+            if len(coords) < 2:
+                skipped += 1
+                continue
+            lng, lat = float(coords[0]), float(coords[1])
+            props = feat.get("properties") or {}
+            bm_name = props.get("name") or "(unnamed)"
+
+            bm_id = str(uuid.uuid4())
+            while bm_id in existing_bm_ids:
+                bm_id = str(uuid.uuid4())
+
+            bm = Bookmark(
+                id=bm_id,
+                name=bm_name,
+                lat=lat,
+                lng=lng,
+                category_id=cat.id,
+                country_code=str(props.get("country_code", "")).lower(),
+                created_at="",
+                last_used_at="",
+            )
+            manager.store.bookmarks.append(bm)
+            existing_bm_ids.add(bm_id)
+            imported += 1
+        except (KeyError, TypeError, ValueError):
+            skipped += 1
+
+    manager._save()
+    return {"scope": "geojson", "imported": imported, "skipped": skipped}

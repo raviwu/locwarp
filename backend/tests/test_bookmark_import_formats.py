@@ -80,3 +80,57 @@ def test_garbage_payload_raises(manager):
     from services.bookmark_import import detect_and_import, InvalidImportError
     with pytest.raises(InvalidImportError):
         detect_and_import(manager, json.dumps({"random": "shape"}))
+
+
+def test_geojson_import_creates_category_and_features(manager):
+    from services.bookmark_import import detect_and_import
+    payload = json.dumps({
+        "type": "FeatureCollection",
+        "name": "京都散步",
+        "features": [
+            {"type": "Feature", "geometry": {"type": "Point", "coordinates": [135.685626, 35.200425]},
+             "properties": {"name": "常照皇寺", "country_code": "jp"}},
+            {"type": "Feature", "geometry": {"type": "Point", "coordinates": [135.655441, 35.173026]},
+             "properties": {"name": "山國神社"}},
+        ],
+    })
+    result = detect_and_import(manager, payload)
+    assert result["scope"] == "geojson"
+    assert result["imported"] == 2
+    cat = next(c for c in manager.store.categories if c.name == "京都散步")
+    bms = [b for b in manager.store.bookmarks if b.category_id == cat.id]
+    assert {b.name for b in bms} == {"常照皇寺", "山國神社"}
+
+
+def test_geojson_import_no_name_uses_default_label(manager):
+    from services.bookmark_import import detect_and_import
+    payload = json.dumps({
+        "type": "FeatureCollection",
+        "features": [
+            {"type": "Feature",
+             "geometry": {"type": "Point", "coordinates": [121.5, 25.0]},
+             "properties": {"name": "X"}},
+        ],
+    })
+    result = detect_and_import(manager, payload)
+    assert result["imported"] == 1
+    assert any(c.name == "Imported" for c in manager.store.categories)
+
+
+def test_geojson_import_skips_malformed_feature(manager):
+    from services.bookmark_import import detect_and_import
+    payload = json.dumps({
+        "type": "FeatureCollection",
+        "name": "test",
+        "features": [
+            {"type": "Feature",
+             "geometry": {"type": "Point", "coordinates": [121.0, 25.0]},
+             "properties": {"name": "good"}},
+            {"type": "Feature", "geometry": None, "properties": {"name": "broken"}},
+            {"type": "Feature",
+             "geometry": {"type": "LineString", "coordinates": []}, "properties": {"name": "wrong-geom"}},
+        ],
+    })
+    result = detect_and_import(manager, payload)
+    assert result["imported"] == 1
+    assert result["skipped"] == 2
