@@ -304,6 +304,28 @@ export const pushRecent = (entry: { lat: number; lng: number; kind: RecentKind; 
 export const clearRecent = () => request<{ status: string }>('DELETE', '/api/recent')
 export const importBookmarks = (data: any) => request<{ imported: number }>('POST', '/api/bookmarks/import', data)
 
+export interface CatalogBookmark {
+  id: string;
+  name: string;
+  lat: number;
+  lng: number;
+  category_id: string;
+  address?: string;
+  country_code?: string;
+  created_at?: string;
+  last_used_at?: string;
+}
+
+export interface CatalogPayload {
+  // _meta is informational; the import endpoint ignores it.
+  _meta?: Record<string, unknown>;
+  categories: CategoryResponse[];
+  bookmarks: CatalogBookmark[];
+}
+
+export const getCatalog = () =>
+  request<CatalogPayload>('GET', '/api/bookmarks/catalog')
+
 export const getInitialPosition = () =>
   request<{ position: { lat: number; lng: number } | null }>('GET', '/api/location/settings/initial-position')
 export const setInitialPosition = (lat: number | null, lng: number | null) =>
