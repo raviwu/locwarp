@@ -807,6 +807,7 @@ const BookmarkList: React.FC<BookmarkListProps> = ({
             position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
             background: 'rgba(8,10,20,0.55)',
             backdropFilter: 'blur(4px)',
+            WebkitBackdropFilter: 'blur(4px)',
             zIndex: 10000,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
           }}
@@ -825,7 +826,7 @@ const BookmarkList: React.FC<BookmarkListProps> = ({
             <div style={{ fontSize: 14, fontWeight: 600 }}>{t('bm.cat.edit_title')}</div>
 
             <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-              <span style={{ opacity: 0.7, fontSize: 11 }}>{t('bm.add_category')}</span>
+              <span style={{ opacity: 0.7, fontSize: 11 }}>{t('bm.cat.name')}</span>
               <input
                 className="search-input"
                 value={editCatNewName}
@@ -835,7 +836,7 @@ const BookmarkList: React.FC<BookmarkListProps> = ({
             </label>
 
             <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-              <span style={{ opacity: 0.7, fontSize: 11 }}>{t('bm.recolor_tooltip')}</span>
+              <span style={{ opacity: 0.7, fontSize: 11 }}>{t('bm.cat.color')}</span>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 28px)', gap: 6 }}>
                 {COLOR_PALETTE.map((c) => (
                   <button
@@ -910,7 +911,7 @@ const BookmarkList: React.FC<BookmarkListProps> = ({
 
             <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', marginTop: 4 }}>
               <button className="action-btn" onClick={closeEditCategory} style={{ fontSize: 11 }}>
-                {t('bm.picker.close')}
+                {t('generic.cancel')}
               </button>
               <button
                 className="action-btn"

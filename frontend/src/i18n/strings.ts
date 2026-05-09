@@ -495,6 +495,8 @@ export const STRINGS = {
   'bm.cat.dates_clear':      { zh: '清空',                        en: 'Clear' },
   'bm.cat.dates_invalid':    { zh: '結束日期須晚於或等於開始日期', en: 'End date must be on or after start date' },
   'bm.cat.save':             { zh: '儲存',                        en: 'Save' },
+  'bm.cat.name':             { zh: '名稱',                        en: 'Name' },
+  'bm.cat.color':            { zh: '顏色',                        en: 'Color' },
 
   // — Soft-archive status chips —
   'bm.cat.status_ended':     { zh: '已結束',                      en: 'Ended' },
