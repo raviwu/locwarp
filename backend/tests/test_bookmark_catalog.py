@@ -21,34 +21,39 @@ def client(tmp_path, monkeypatch):
 
 
 def test_get_catalog_returns_bundled_payload(client):
+    """Endpoint contract — does NOT lock specific curated content.
+
+    Asserts: 200, valid full-store shape, non-empty payload,
+    every bookmark belongs to a real category, every non-empty
+    date string is valid ISO. Curator can add / rename / remove
+    entries in catalog.json without touching this test.
+    """
+    import re
+    from datetime import date
+
     resp = client.get("/api/bookmarks/catalog")
     assert resp.status_code == 200
     body = resp.json()
-    assert "categories" in body
-    assert "bookmarks" in body
-    # Sanity: the seed file currently has six curated categories.
-    # (Update this list when the curator adds a new entry.)
-    cat_names = [c["name"] for c in body["categories"]]
-    assert "Sapporo Pikmin Bloom Tour" in cat_names
-    assert "京都散步" in cat_names
-    assert "每月拿禮物" in cat_names
-    assert "每月照片鈕扣" in cat_names
-    assert "Sanga Stadium by KYOCERA" in cat_names
-    assert "宮島 SA 活動" in cat_names
-    # Dates round-trip on time-bound entries.
-    sanga = next(c for c in body["categories"] if c["name"] == "Sanga Stadium by KYOCERA")
-    assert sanga["start_date"] == "2026-02-06"
-    assert sanga["end_date"] == "2026-06-07"
-    miyajima = next(c for c in body["categories"] if c["name"] == "宮島 SA 活動")
-    assert miyajima["start_date"] == "2026-03-01"
-    assert miyajima["end_date"] == "2026-05-10"
-    # Evergreen entries leave both dates empty.
-    kyoto = next(c for c in body["categories"] if c["name"] == "京都散步")
-    assert kyoto["start_date"] == ""
-    assert kyoto["end_date"] == ""
-    monthly_gifts = next(c for c in body["categories"] if c["name"] == "每月拿禮物")
-    assert monthly_gifts["start_date"] == ""
-    assert monthly_gifts["end_date"] == ""
+
+    # Shape
+    assert isinstance(body.get("categories"), list)
+    assert isinstance(body.get("bookmarks"), list)
+    assert body["categories"], "catalog must have at least one category"
+    assert body["bookmarks"], "catalog must have at least one bookmark"
+
+    # Referential integrity — every bookmark.category_id resolves.
+    cat_ids = {c["id"] for c in body["categories"]}
+    orphans = [b["name"] for b in body["bookmarks"] if b["category_id"] not in cat_ids]
+    assert not orphans, f"bookmarks reference unknown category: {orphans}"
+
+    # Date hygiene — empty strings allowed; non-empty must parse as ISO.
+    iso_re = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+    for c in body["categories"]:
+        for field in ("start_date", "end_date"):
+            v = c.get(field, "")
+            if v:
+                assert iso_re.match(v), f"{c['name']}.{field}={v!r} is not YYYY-MM-DD"
+                date.fromisoformat(v)  # raises if invalid calendar date
 
 
 def test_get_catalog_404_when_file_missing(client, tmp_path, monkeypatch):
