@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { useT } from '../i18n';
+import { useT, useI18n } from '../i18n';
 import { getBookmarkUiState, setBookmarkUiState } from '../services/api';
 import {
   getCategoryStatus,
@@ -126,6 +126,8 @@ const BookmarkList: React.FC<BookmarkListProps> = ({
     return getCategoryColor(name);
   };
   const t = useT();
+  const { lang } = useI18n();
+  const chipLocale = lang === 'zh' ? 'zh-TW' : 'en-US';
   // Backend may store the built-in default category as the Chinese '預設'.
   // Translate at render time so EN users see "Default" without touching storage.
   const displayCat = (name: string) => (name === '預設' ? t('bm.default') : name);
@@ -1134,10 +1136,9 @@ const BookmarkList: React.FC<BookmarkListProps> = ({
                 fontSize: 10, padding: '1px 6px', borderRadius: 4,
                 background: 'rgba(59,130,246,0.18)', color: '#7aa9ff', marginLeft: 4,
               }}>
-                {t('bm.cat.status_upcoming').replace(
-                  '{date}',
-                  formatChipDate(_d.start_date, navigator.language || 'en-US'),
-                )}
+                {t('bm.cat.status_upcoming', {
+                  date: formatChipDate(_d.start_date, chipLocale),
+                })}
               </span>
             )}
             <span style={{ marginLeft: 'auto', opacity: 0.4, fontWeight: 400, fontSize: 10 }}>

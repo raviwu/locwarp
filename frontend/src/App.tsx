@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect, useRef } from 'react'
+import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { useT } from './i18n'
 import { useWebSocket } from './hooks/useWebSocket'
@@ -60,6 +60,15 @@ const App: React.FC = () => {
   const sim = useSimulation(ws.subscribe, device.primaryDevice?.udid)
   const joystick = useJoystick(ws.sendMessage, sim.mode === SimMode.Joystick)
   const bm = useBookmarks()
+  const categoryDatesByName = useMemo(
+    () => Object.fromEntries(
+      bm.categories.map(c => [c.name, {
+        start_date: c.start_date ?? '',
+        end_date: c.end_date ?? '',
+      }]),
+    ),
+    [bm.categories],
+  )
 
   const [savedRoutes, setSavedRoutes] = useState<any[]>([])
   // Bumped every time an external trigger (currently the map topleft
@@ -1265,12 +1274,7 @@ const App: React.FC = () => {
               end_date: patch.end_date,
             });
           }}
-          categoryDates={Object.fromEntries(
-            bm.categories.map(c => [c.name, {
-              start_date: c.start_date ?? '',
-              end_date: c.end_date ?? '',
-            }]),
-          )}
+          categoryDates={categoryDatesByName}
           bookmarkShowOnMap={showBookmarkPins}
           onBookmarkShowOnMapChange={setShowBookmarkPins}
           onBookmarkImport={handleBookmarkImport}

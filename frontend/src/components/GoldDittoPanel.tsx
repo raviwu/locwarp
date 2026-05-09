@@ -104,6 +104,16 @@ export const GoldDittoPanel: React.FC<Props> = ({
     return out
   }, [bookmarks])
 
+  const categoryDatesById = useMemo(
+    () => Object.fromEntries(
+      categories.map(c => [c.id, {
+        start_date: c.start_date ?? '',
+        end_date: c.end_date ?? '',
+      }]),
+    ),
+    [categories],
+  )
+
   const [confirmEnd, setConfirmEnd] = useState<{ catId: string; count: number } | null>(null)
 
   // Persist on change.
@@ -310,12 +320,7 @@ export const GoldDittoPanel: React.FC<Props> = ({
         anchorRect={pickerAnchor}
         categories={categories}
         bookmarksByCategoryId={bookmarksByCategoryId}
-        categoryDates={Object.fromEntries(
-          categories.map(c => [c.id, {
-            start_date: c.start_date ?? '',
-            end_date: c.end_date ?? '',
-          }]),
-        )}
+        categoryDates={categoryDatesById}
         initialCategoryId={pickerSide === 'A' ? pickerCatA : pickerCatB}
         isCycling={isCycling}
         onClose={() => setPickerSide(null)}
