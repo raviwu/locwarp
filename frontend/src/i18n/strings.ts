@@ -146,7 +146,6 @@ export const STRINGS = {
   'goldditto.wait_label': { zh: '等待秒數', en: 'Wait seconds' },
   'goldditto.confirm': { zh: 'Confirm Location', en: 'Confirm Location' },
   'goldditto.first_try': { zh: '1st try', en: '1st try' },
-  'goldditto.retries': { zh: 'retries', en: 'retries' },
   'goldditto.random_b': { zh: '🎲 隨機台灣 B 點', en: '🎲 Random Taiwan B' },
   'goldditto.use_map_center': { zh: '📍 用目前地圖中心', en: '📍 Use current map center' },
   'goldditto.toast.teleported': { zh: '拉金盆: 已瞬移到 {target}', en: 'Gold Ditto: teleported to {target}' },

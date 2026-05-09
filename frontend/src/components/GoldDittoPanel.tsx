@@ -139,7 +139,6 @@ export const GoldDittoPanel: React.FC<Props> = ({
 
   const disableConfirm = noDevice || !aValid || isCycling
   const disableFirstTry = noDevice || !aValid || !bValid || !waitValid || isCycling
-  const disableRetries = disableFirstTry
 
   const handleConfirm = useCallback(async () => {
     if (!a) return
@@ -149,11 +148,6 @@ export const GoldDittoPanel: React.FC<Props> = ({
   const handleFirstTry = useCallback(async () => {
     if (!cycleArgs) return
     await onCycle('B', cycleArgs)
-  }, [cycleArgs, onCycle])
-
-  const handleRetries = useCallback(async () => {
-    if (!cycleArgs) return
-    await onCycle('auto', cycleArgs)
   }, [cycleArgs, onCycle])
 
   const handleRandomB = () => setBText(randomTaiwanCoord())
@@ -305,14 +299,6 @@ export const GoldDittoPanel: React.FC<Props> = ({
           style={{ padding: '8px 12px', opacity: disableFirstTry ? 0.5 : 1 }}
         >
           ② {t('goldditto.first_try')}
-        </button>
-        <button
-          onClick={handleRetries}
-          disabled={disableRetries}
-          className="action-btn primary"
-          style={{ padding: '8px 12px', opacity: disableRetries ? 0.5 : 1 }}
-        >
-          ③ {t('goldditto.retries')}
         </button>
       </div>
 
