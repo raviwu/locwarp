@@ -549,3 +549,32 @@ Users must comply with the laws and regulations of their jurisdiction, including
 ---
 
 **By downloading, installing, or running this software, you acknowledge that you have read and agreed to all of the above. If you do not agree, stop using the software and remove it immediately.**
+
+---
+
+## macOS Install Notes
+
+The DMG is unsigned (no Apple Developer ID). On first launch macOS Gatekeeper will block it:
+
+1. Double-click the DMG, drag `LocWarp.app` to `/Applications`
+2. In `/Applications`, **right-click** `LocWarp.app` → Open → Open
+3. macOS remembers your choice; subsequent launches are normal
+
+Or strip quarantine with a one-liner:
+```bash
+xattr -d com.apple.quarantine /Applications/LocWarp.app
+```
+
+Apple Silicon (M1/M2/M3...) only. No official Intel Mac build.
+
+## Release Process (For Maintainers)
+
+```bash
+cd frontend
+npm version minor   # 0.x.y → 0.(x+1).0  — auto-commits + tags
+git push origin main --follow-tags
+```
+
+Pushing a `v*` tag triggers `.github/workflows/release.yml`, which builds the macOS DMG and creates a GitHub release.
+
+The Windows `.exe` is still built manually (`build-installer.bat`) and uploaded to the same release.
