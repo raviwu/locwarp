@@ -278,11 +278,13 @@ matching the style of `showAddDialog` / `showCustomDialog`.
 
 ### 6.2 Props
 
-`BookmarkList` adds `onCategoryEdit?: (id: string, patch: { name: string; color: string; start_date: string; end_date: string }) => void`.
+`BookmarkList` adds `onCategoryEdit: (id: string, patch: { name: string; color: string; start_date: string; end_date: string }) => void`.
 
-The legacy `onCategoryRename` and `onCategoryRecolor` props remain in the
-interface for backward compat with `App.tsx` callers but are unused once
-`onCategoryEdit` is wired. (They can be removed in a follow-up clean-up.)
+Legacy `onCategoryRename` and `onCategoryRecolor` are removed in this PR
+along with their inline call sites — `App.tsx` switches to a single
+`onCategoryEdit` handler that wraps `PUT /api/bookmarks/categories/{id}`
+with the full patch. Net diff is smaller than maintaining two parallel
+call paths.
 
 ### 6.3 i18n Keys (new)
 
@@ -369,7 +371,28 @@ no additional fading.
 'bm.cat.status_upcoming': { zh: '即將開始 {date}',  en: 'Starts {date}' },
 ```
 
-`{date}` formats as `M/D` (e.g. `6/1`) from `start_date`.
+`{date}` is locale-formatted from `start_date` via
+`Intl.DateTimeFormat(locale, { month: 'short', day: 'numeric' })`, where
+`locale` is the active i18n locale (`zh-TW` or `en-US`). Examples:
+
+| `start_date` | zh-TW | en-US |
+|---|---|---|
+| `2026-06-07` | `6月7日` | `Jun 7` |
+| `2026-12-25` | `12月25日` | `Dec 25` |
+
+A small helper lives next to `getCategoryStatus`:
+
+```ts
+export function formatChipDate(iso: string, locale: string): string {
+  // iso must be 'YYYY-MM-DD'; treat as UTC to avoid TZ-shift on the
+  // formatter (we only care about month/day, not wall-clock time).
+  const [y, m, d] = iso.split('-').map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  return new Intl.DateTimeFormat(locale, {
+    month: 'short', day: 'numeric', timeZone: 'UTC',
+  }).format(dt);
+}
+```
 
 ## 8. Frontend — GoldDitto Picker
 
@@ -516,12 +539,29 @@ The fallback does NOT write back to `localStorage`. If the user toggles
 5. Untick the checkbox, close the popover, reopen. Picker auto-falls-back to
    the first visible category.
 
-## 11. Open Questions
+## 11. Seed Data
+
+A sample `bookmarks.json` payload covering the data the user has already
+collected from Pikmin Bloom announcements lives at
+`docs/samples/pikmin-bloom-events.json`. It is a full-store import shape
+(`{ "categories": [...], "bookmarks": [...] }`) and round-trips through
+`POST /api/bookmarks/import`.
+
+Categories included:
+
+| Category | Dates | Bookmarks |
+|---|---|---|
+| Sapporo Pikmin Bloom Tour | evergreen (`""`, `""`) | 12 spots (A–L) |
+| Sanga Stadium by KYOCERA | `2026-02-06` ~ `2026-06-07` | 1 spot |
+
+The Sanga category exercises the `active → ended` transition (it is
+`active` while today ≤ `2026-06-07` and `ended` from `2026-06-08`
+onwards). Sapporo Tour is permanent. The seed lets reviewers verify the
+soft-archive behaviour against real coordinates without manual entry.
+
+## 12. Open Questions
 
 None at design approval time. Implementation may surface:
 
 - Whether `App.tsx` should expose the by-name and by-id date maps from a single
   selector, or compute both inline. Mechanical, resolved during implementation.
-- Whether the existing legacy `onCategoryRename` / `onCategoryRecolor` props
-  can be deleted in this PR or deferred to a follow-up — depends on how many
-  callers exist. Resolved during implementation.

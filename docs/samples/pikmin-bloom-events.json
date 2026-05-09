@@ -1,0 +1,177 @@
+{
+  "_meta": {
+    "title": "Pikmin Bloom GPS — sample event seed",
+    "description": "Sample bookmark store covering known Pikmin Bloom GPS events. Importable via POST /api/bookmarks/import. The start_date / end_date fields require the soft-archive feature (docs/superpowers/specs/2026-05-09-event-soft-archive-design.md); on older builds those fields are silently ignored.",
+    "source_notes": [
+      "Sapporo Pikmin Bloom Tour — https://pikminbloom.com/zh/news/apr26-sapporotour (常設活動，每年可參加一次)",
+      "Sanga Stadium by KYOCERA — https://pikminbloom.com/en/news/feb26-kyotosanga (2026/2/6 ~ 2026/6/7)"
+    ],
+    "compiled_at": "2026-05-09",
+    "format_version": 1
+  },
+  "categories": [
+    {
+      "id": "seed-sapporo-tour",
+      "name": "Sapporo Pikmin Bloom Tour",
+      "color": "#3b82f6",
+      "sort_order": 1,
+      "created_at": "2026-05-09T00:00:00Z",
+      "start_date": "",
+      "end_date": ""
+    },
+    {
+      "id": "seed-sanga-stadium",
+      "name": "Sanga Stadium by KYOCERA",
+      "color": "#ef4444",
+      "sort_order": 2,
+      "created_at": "2026-05-09T00:00:00Z",
+      "start_date": "2026-02-06",
+      "end_date": "2026-06-07"
+    }
+  ],
+  "bookmarks": [
+    {
+      "id": "seed-sapporo-a",
+      "name": "A ✔ 札幌駅 (Sapporo Station)",
+      "lat": 43.068027,
+      "lng": 141.350895,
+      "address": "",
+      "category_id": "seed-sapporo-tour",
+      "created_at": "2026-05-09T00:00:00Z",
+      "last_used_at": "2026-05-09T00:00:00Z",
+      "country_code": "jp"
+    },
+    {
+      "id": "seed-sapporo-b",
+      "name": "B ✔ 札幌ステラプレイス (Sapporo Stellar Place)",
+      "lat": 43.068027,
+      "lng": 141.350895,
+      "address": "",
+      "category_id": "seed-sapporo-tour",
+      "created_at": "2026-05-09T00:00:00Z",
+      "last_used_at": "2026-05-09T00:00:00Z",
+      "country_code": "jp"
+    },
+    {
+      "id": "seed-sapporo-c",
+      "name": "C ✔ 六花亭 札幌本店",
+      "lat": 43.066097,
+      "lng": 141.346571,
+      "address": "",
+      "category_id": "seed-sapporo-tour",
+      "created_at": "2026-05-09T00:00:00Z",
+      "last_used_at": "2026-05-09T00:00:00Z",
+      "country_code": "jp"
+    },
+    {
+      "id": "seed-sapporo-d",
+      "name": "D ✔ 札幌市北3条広場・アカプラ",
+      "lat": 43.064238,
+      "lng": 141.350382,
+      "address": "",
+      "category_id": "seed-sapporo-tour",
+      "created_at": "2026-05-09T00:00:00Z",
+      "last_used_at": "2026-05-09T00:00:00Z",
+      "country_code": "jp"
+    },
+    {
+      "id": "seed-sapporo-e",
+      "name": "E ✔ Japanese Ramen Noodle Lab Q",
+      "lat": 43.062451,
+      "lng": 141.353453,
+      "address": "",
+      "category_id": "seed-sapporo-tour",
+      "created_at": "2026-05-09T00:00:00Z",
+      "last_used_at": "2026-05-09T00:00:00Z",
+      "country_code": "jp"
+    },
+    {
+      "id": "seed-sapporo-f",
+      "name": "F ✔ 札幌市図書・情報館",
+      "lat": 43.063061,
+      "lng": 141.355916,
+      "address": "",
+      "category_id": "seed-sapporo-tour",
+      "created_at": "2026-05-09T00:00:00Z",
+      "last_used_at": "2026-05-09T00:00:00Z",
+      "country_code": "jp"
+    },
+    {
+      "id": "seed-sapporo-g",
+      "name": "G ✔ 北菓楼 札幌本館",
+      "lat": 43.061942,
+      "lng": 141.348869,
+      "address": "",
+      "category_id": "seed-sapporo-tour",
+      "created_at": "2026-05-09T00:00:00Z",
+      "last_used_at": "2026-05-09T00:00:00Z",
+      "country_code": "jp"
+    },
+    {
+      "id": "seed-sapporo-h",
+      "name": "H ✔ さっぽろテレビ塔 (札幌電視塔)",
+      "lat": 43.061105,
+      "lng": 141.356425,
+      "address": "",
+      "category_id": "seed-sapporo-tour",
+      "created_at": "2026-05-09T00:00:00Z",
+      "last_used_at": "2026-05-09T00:00:00Z",
+      "country_code": "jp"
+    },
+    {
+      "id": "seed-sapporo-i",
+      "name": "I ✔ 大通公園 噴水",
+      "lat": 43.060403,
+      "lng": 141.351321,
+      "address": "",
+      "category_id": "seed-sapporo-tour",
+      "created_at": "2026-05-09T00:00:00Z",
+      "last_used_at": "2026-05-09T00:00:00Z",
+      "country_code": "jp"
+    },
+    {
+      "id": "seed-sapporo-j",
+      "name": "J ? 大通公園 (可能暫時撤點)",
+      "lat": 43.060752,
+      "lng": 141.354431,
+      "address": "",
+      "category_id": "seed-sapporo-tour",
+      "created_at": "2026-05-09T00:00:00Z",
+      "last_used_at": "2026-05-09T00:00:00Z",
+      "country_code": "jp"
+    },
+    {
+      "id": "seed-sapporo-k",
+      "name": "K ✔ 札幌市資料館",
+      "lat": 43.058542,
+      "lng": 141.337573,
+      "address": "",
+      "category_id": "seed-sapporo-tour",
+      "created_at": "2026-05-09T00:00:00Z",
+      "last_used_at": "2026-05-09T00:00:00Z",
+      "country_code": "jp"
+    },
+    {
+      "id": "seed-sapporo-l",
+      "name": "L ✔ 二条市場",
+      "lat": 43.058299,
+      "lng": 141.358446,
+      "address": "",
+      "category_id": "seed-sapporo-tour",
+      "created_at": "2026-05-09T00:00:00Z",
+      "last_used_at": "2026-05-09T00:00:00Z",
+      "country_code": "jp"
+    },
+    {
+      "id": "seed-sanga-stadium",
+      "name": "Sanga Stadium by KYOCERA (京都不死鳥京瓷球場)",
+      "lat": 35.017212,
+      "lng": 135.584839,
+      "address": "",
+      "category_id": "seed-sanga-stadium",
+      "created_at": "2026-05-09T00:00:00Z",
+      "last_used_at": "2026-05-09T00:00:00Z",
+      "country_code": "jp"
+    }
+  ]
+}
