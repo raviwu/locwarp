@@ -1253,20 +1253,24 @@ const App: React.FC = () => {
             const cat = bm.categories.find(c => c.name === name)
             if (cat) bm.deleteCategory(cat.id)
           }}
-          onCategoryRename={(oldName: string, newName: string) => {
-            const cat = bm.categories.find(c => c.name === oldName)
-            if (!cat) return
-            // Default category is immutable (UI also hides the rename button
-            // for it, but guard here too in case a stale UI ref slips past).
-            if (cat.id === 'default') return
-            // Backend PUT requires the full BookmarkCategory shape, keep color.
-            bm.updateCategory(cat.id, { ...cat, name: newName })
+          onCategoryEdit={(oldName: string, patch) => {
+            const cat = bm.categories.find(c => c.name === oldName);
+            if (!cat) return;
+            // Default category is immutable.
+            if (cat.id === 'default') return;
+            bm.updateCategory(cat.id, {
+              name: patch.name,
+              color: patch.color,
+              start_date: patch.start_date,
+              end_date: patch.end_date,
+            });
           }}
-          onCategoryRecolor={(name: string, color: string) => {
-            const cat = bm.categories.find(c => c.name === name)
-            if (!cat) return
-            bm.updateCategory(cat.id, { ...cat, color })
-          }}
+          categoryDates={Object.fromEntries(
+            bm.categories.map(c => [c.name, {
+              start_date: c.start_date ?? '',
+              end_date: c.end_date ?? '',
+            }]),
+          )}
           bookmarkShowOnMap={showBookmarkPins}
           onBookmarkShowOnMapChange={setShowBookmarkPins}
           onBookmarkImport={handleBookmarkImport}

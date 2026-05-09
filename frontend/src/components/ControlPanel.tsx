@@ -98,8 +98,11 @@ interface ControlPanelProps {
   onBookmarkEdit: (id: string, bm: Partial<Bookmark>) => void;
   onCategoryAdd: (name: string) => void;
   onCategoryDelete: (name: string) => void;
-  onCategoryRename?: (oldName: string, newName: string) => void;
-  onCategoryRecolor?: (name: string, color: string) => void;
+  onCategoryEdit?: (
+    oldName: string,
+    patch: { name: string; color: string; start_date: string; end_date: string },
+  ) => void;
+  categoryDates?: Record<string, { start_date: string; end_date: string }>;
   bookmarkShowOnMap?: boolean;
   onBookmarkShowOnMapChange?: (v: boolean) => void;
   onBookmarkImport?: (file: File) => Promise<void>;
@@ -274,8 +277,8 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
   onBookmarkEdit,
   onCategoryAdd,
   onCategoryDelete,
-  onCategoryRename,
-  onCategoryRecolor,
+  onCategoryEdit,
+  categoryDates,
   bookmarkShowOnMap,
   onBookmarkShowOnMapChange,
   onBookmarkImport,
@@ -896,8 +899,8 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
                       const cat = goldDittoCategories.find((c: any) => c.name === name)
                       if (cat && onCategoryDeleteCascade) onCategoryDeleteCascade(cat.id)
                     }}
-                    onCategoryRename={onCategoryRename}
-                    onCategoryRecolor={onCategoryRecolor}
+                    onCategoryEdit={onCategoryEdit}
+                    categoryDates={categoryDates}
                     showOnMap={bookmarkShowOnMap}
                     onShowOnMapChange={onBookmarkShowOnMapChange}
                     onImport={onBookmarkImport}

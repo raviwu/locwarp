@@ -15,6 +15,8 @@ interface Category {
   id: string
   name: string
   color?: string
+  start_date?: string
+  end_date?: string
 }
 
 interface Props {
@@ -308,6 +310,12 @@ export const GoldDittoPanel: React.FC<Props> = ({
         anchorRect={pickerAnchor}
         categories={categories}
         bookmarksByCategoryId={bookmarksByCategoryId}
+        categoryDates={Object.fromEntries(
+          categories.map(c => [c.id, {
+            start_date: c.start_date ?? '',
+            end_date: c.end_date ?? '',
+          }]),
+        )}
         initialCategoryId={pickerSide === 'A' ? pickerCatA : pickerCatB}
         isCycling={isCycling}
         onClose={() => setPickerSide(null)}
