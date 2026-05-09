@@ -1000,6 +1000,58 @@ const App: React.FC = () => {
     }
   }, [bm, showToast, t])
 
+  // Bundled public-event catalog. Fetched once on mount; the "Refresh
+  // public events" button in the Library header reads from this state to
+  // decide whether there are new entries to pull, and the refresh handler
+  // pipes the catalog through the existing import endpoint.
+  type CatalogStatus = 'loading' | 'ok' | 'missing' | 'failed'
+
+  const [catalog, setCatalog] = useState<api.CatalogPayload | null>(null)
+  const [catalogStatus, setCatalogStatus] = useState<CatalogStatus>('loading')
+  const [catalogError, setCatalogError] = useState<string | null>(null)
+
+  const fetchCatalog = useCallback(async () => {
+    try {
+      const data = await api.getCatalog()
+      setCatalog(data)
+      setCatalogStatus('ok')
+      setCatalogError(null)
+    } catch (err: any) {
+      setCatalog(null)
+      const msg = err?.message ?? 'unknown'
+      if (/404/.test(msg) || /not bundled/i.test(msg)) {
+        setCatalogStatus('missing')
+      } else {
+        setCatalogStatus('failed')
+        setCatalogError(msg)
+      }
+    }
+  }, [])
+
+  useEffect(() => {
+    void fetchCatalog()
+  }, [fetchCatalog])
+
+  const catalogNewCount = useMemo(() => {
+    if (!catalog) return 0
+    const existingIds = new Set(bm.bookmarks.map((b) => b.id))
+    return catalog.bookmarks.filter((cb) => !existingIds.has(cb.id)).length
+  }, [catalog, bm.bookmarks])
+
+  const handleCatalogRefresh = useCallback(async () => {
+    if (!catalog) return
+    try {
+      const res = await api.importBookmarks(catalog as unknown as Record<string, unknown>)
+      await bm.refresh()
+      await fetchCatalog()
+      const imported = (res as any).imported ?? 0
+      const skipped = (res as any).skipped ?? 0
+      showToast(t('bm.catalog.imported', { imported, skipped }))
+    } catch (err: any) {
+      showToast(err?.message ?? t('bm.catalog.failed'))
+    }
+  }, [catalog, bm, fetchCatalog, showToast, t])
+
   const handleRouteRename = useCallback(async (id: string, name: string) => {
     try {
       await api.renameRoute(id, name)
@@ -1278,6 +1330,10 @@ const App: React.FC = () => {
           bookmarkShowOnMap={showBookmarkPins}
           onBookmarkShowOnMapChange={setShowBookmarkPins}
           onBookmarkImport={handleBookmarkImport}
+          catalogStatus={catalogStatus}
+          catalogNewCount={catalogNewCount}
+          catalogError={catalogError}
+          onCatalogRefresh={handleCatalogRefresh}
           onBookmarkBulkPaste={() => {
             setBulkPasteText('')
             setBulkPasteCategory(bm.categories[0]?.name || '預設')

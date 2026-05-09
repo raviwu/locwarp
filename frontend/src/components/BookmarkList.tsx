@@ -57,6 +57,14 @@ interface BookmarkListProps {
   showOnMap?: boolean;
   onShowOnMapChange?: (v: boolean) => void;
   onImport?: (file: File) => Promise<void>;
+  // Bundled public-event catalog "Refresh public events" button. The
+  // status drives label + disabled state; new-count is shown inline.
+  // When the catalog endpoint 404s the parent passes `missing`, which
+  // hides the button entirely.
+  catalogStatus?: 'loading' | 'ok' | 'missing' | 'failed';
+  catalogNewCount?: number;
+  catalogError?: string | null;
+  onCatalogRefresh?: () => Promise<void> | void;
   // Bulk paste: opens a textarea dialog where the user can drop
   // whitespace-separated "lat lng name" lines and push them all as
   // bookmarks at once. Wired separately from onImport so the file-
@@ -113,6 +121,10 @@ const BookmarkList: React.FC<BookmarkListProps> = ({
   showOnMap = false,
   onShowOnMapChange,
   onImport,
+  catalogStatus,
+  catalogNewCount,
+  catalogError,
+  onCatalogRefresh,
   onBulkPaste,
   onExportClick,
   exportUrl,
@@ -522,6 +534,41 @@ const BookmarkList: React.FC<BookmarkListProps> = ({
             />
           </label>
         )}
+        {onCatalogRefresh && catalogStatus !== 'missing' && (() => {
+          const loading = catalogStatus === 'loading';
+          const failed = catalogStatus === 'failed';
+          const count = catalogNewCount ?? 0;
+          const upToDate = catalogStatus === 'ok' && count === 0;
+          const disabled = loading || failed || upToDate;
+          const label = failed
+            ? t('bm.catalog.failed')
+            : upToDate
+              ? t('bm.catalog.up_to_date')
+              : loading
+                ? t('bm.catalog.refresh')
+                : t('bm.catalog.refresh_count', { n: count });
+          const title = failed
+            ? (catalogError ?? '')
+            : upToDate
+              ? t('bm.catalog.up_to_date_tooltip')
+              : '';
+          return (
+            <button
+              className="action-btn"
+              onClick={() => { void onCatalogRefresh(); }}
+              disabled={disabled}
+              title={title || undefined}
+              style={{ padding: '3px 8px', fontSize: 12, opacity: disabled ? 0.5 : 1 }}
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <polyline points="23 4 23 10 17 10" />
+                <polyline points="1 20 1 14 7 14" />
+                <path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15" />
+              </svg>
+              {label}
+            </button>
+          );
+        })()}
         <button
           className="action-btn"
           onClick={() => {

@@ -106,6 +106,10 @@ interface ControlPanelProps {
   bookmarkShowOnMap?: boolean;
   onBookmarkShowOnMapChange?: (v: boolean) => void;
   onBookmarkImport?: (file: File) => Promise<void>;
+  catalogStatus?: 'loading' | 'ok' | 'missing' | 'failed';
+  catalogNewCount?: number;
+  catalogError?: string | null;
+  onCatalogRefresh?: () => Promise<void> | void;
   onBookmarkBulkPaste?: () => void;
   bookmarkExportUrl?: string;
   savedRoutes: SavedRoute[];
@@ -282,6 +286,10 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
   bookmarkShowOnMap,
   onBookmarkShowOnMapChange,
   onBookmarkImport,
+  catalogStatus,
+  catalogNewCount,
+  catalogError,
+  onCatalogRefresh,
   onBookmarkBulkPaste,
   bookmarkExportUrl,
   savedRoutes,
@@ -904,6 +912,10 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
                     showOnMap={bookmarkShowOnMap}
                     onShowOnMapChange={onBookmarkShowOnMapChange}
                     onImport={onBookmarkImport}
+                    catalogStatus={catalogStatus}
+                    catalogNewCount={catalogNewCount}
+                    catalogError={catalogError}
+                    onCatalogRefresh={onCatalogRefresh}
                     onBulkPaste={onBookmarkBulkPaste}
                     exportUrl={bookmarkExportUrl}
                     onExportClick={(rect: DOMRect) => setExportAnchor(rect)}
