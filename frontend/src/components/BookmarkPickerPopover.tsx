@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import { useT } from '../i18n'
+import { getCategoryStatus, todayLocal } from '../utils/categoryStatus'
 
 interface Bookmark {
   id?: string
@@ -32,6 +33,9 @@ interface Props {
   onPickCoord: (bm: Bookmark) => void
   onCategoryChange: (catId: string) => void  // parent persists last-used per side
   onEndEvent?: (catId: string, bookmarkCount: number) => void  // omit for B side if you want
+  // Per-category event dates, keyed by category id (the picker has
+  // ids handy already; BookmarkList uses by-name because of legacy).
+  categoryDates?: Record<string, { start_date: string; end_date: string }>
 }
 
 const POPOVER_WIDTH = 280
@@ -40,19 +44,40 @@ const POPOVER_MAX_HEIGHT = 360
 export const BookmarkPickerPopover: React.FC<Props> = ({
   open, side, anchorRect, categories, bookmarksByCategoryId,
   initialCategoryId, isCycling, onClose, onPickCoord, onCategoryChange, onEndEvent,
+  categoryDates,
 }) => {
   const t = useT()
-  // Default to first category (or 'default') when no last-used category is
-  // saved — spec §9 requires the picker to open with something selected so
+  const includeEndedKey = `goldditto.picker.${side}.includeEnded`
+  const [includeEnded, setIncludeEnded] = useState<boolean>(
+    () => (typeof window !== 'undefined' ? localStorage.getItem(includeEndedKey) === 'true' : false),
+  )
+
+  const visibleCategories = useMemo(() => {
+    const today = todayLocal()
+    return categories.filter((c) => {
+      const d = categoryDates?.[c.id]
+      if (!d) return true
+      if (includeEnded) return true
+      return getCategoryStatus(d.start_date, d.end_date, today) !== 'ended'
+    })
+  }, [categories, categoryDates, includeEnded])
+
+  // Default to first visible category (or 'default') when no last-used category
+  // is saved — spec §9 requires the picker to open with something selected so
   // the user immediately sees content rather than a disabled '—' placeholder.
-  const fallbackCatId = categories[0]?.id ?? 'default'
+  const fallbackCatId = visibleCategories[0]?.id ?? categories[0]?.id ?? 'default'
   const [selectedCatId, setSelectedCatId] = useState<string | null>(
     initialCategoryId ?? fallbackCatId,
   )
 
   useEffect(() => {
-    setSelectedCatId(initialCategoryId ?? fallbackCatId)
-  }, [initialCategoryId, open, fallbackCatId])
+    const stillVisible = visibleCategories.some((c) => c.id === initialCategoryId)
+    setSelectedCatId(
+      initialCategoryId && stillVisible
+        ? initialCategoryId
+        : (visibleCategories[0]?.id ?? fallbackCatId),
+    )
+  }, [initialCategoryId, open, visibleCategories, fallbackCatId])
 
   // Dismiss on outside click / ESC
   useEffect(() => {
@@ -106,6 +131,19 @@ export const BookmarkPickerPopover: React.FC<Props> = ({
       <div style={{ fontSize: 12, fontWeight: 600 }}>
         {side === 'A' ? t('bm.picker.title_a') : t('bm.picker.title_b')}
       </div>
+      <label style={{ display: 'flex', gap: 4, alignItems: 'center', fontSize: 11, opacity: 0.7 }}>
+        <input
+          type="checkbox"
+          checked={includeEnded}
+          onChange={(e) => {
+            setIncludeEnded(e.target.checked)
+            try {
+              localStorage.setItem(includeEndedKey, String(e.target.checked))
+            } catch { /* ignore quota */ }
+          }}
+        />
+        {t('bm.picker.include_ended')}
+      </label>
       <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
         <span style={{ opacity: 0.7 }}>{t('bm.picker.category_label')}</span>
         <select
@@ -122,7 +160,7 @@ export const BookmarkPickerPopover: React.FC<Props> = ({
           }}
         >
           <option value="" disabled>—</option>
-          {categories.map((c) => (
+          {visibleCategories.map((c) => (
             <option key={c.id} value={c.id}>{c.name}</option>
           ))}
         </select>
