@@ -37,6 +37,7 @@ Thumbs.db
 # ── Claude Code (per-machine state) ─────────────────
 .claude/settings.local.json
 .claude/scheduled_tasks.lock
+.claude/worktrees/
 
 # ── Source images kept in repo root during dev ──────
 # (icon.png / icon.ico are kept in frontend/build/ — committed)
