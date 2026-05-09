@@ -253,9 +253,26 @@ export const moveBookmarks = (ids: string[], catId: string) =>
 export const getCategories = () => request<any[]>('GET', '/api/bookmarks/categories')
 export const createCategory = (cat: any) => request<any>('POST', '/api/bookmarks/categories', cat)
 export const updateCategory = (id: string, cat: any) => request<any>('PUT', `/api/bookmarks/categories/${id}`, cat)
-export const deleteCategory = (id: string) => request<any>('DELETE', `/api/bookmarks/categories/${id}`)
+export const deleteCategory = (id: string, cascade = false) =>
+  request<{ status: string; deleted_bookmarks: number }>(
+    'DELETE',
+    `/api/bookmarks/categories/${id}${cascade ? '?cascade=true' : ''}`,
+  )
 
-export const bookmarksExportUrl = () => `${API}/api/bookmarks/export`
+export type BookmarkExportFormat = 'json' | 'markdown' | 'geojson' | 'csv'
+
+export interface BookmarkExportOptions {
+  category_id?: string | null
+  format?: BookmarkExportFormat
+}
+
+export const bookmarksExportUrl = (opts: BookmarkExportOptions = {}): string => {
+  const params = new URLSearchParams()
+  if (opts.category_id) params.set('category_id', opts.category_id)
+  if (opts.format) params.set('format', opts.format)
+  const qs = params.toString()
+  return `${API}/api/bookmarks/export${qs ? `?${qs}` : ''}`
+}
 
 // Recent places: last 20 flights.
 // kind distinguishes the entry point AND the action, so the UI can show
