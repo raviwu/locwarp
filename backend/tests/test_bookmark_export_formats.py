@@ -127,3 +127,33 @@ def test_csv_quotes_names_with_commas(store):
                                     created_at="", last_used_at=""))
     out = to_csv(store, category_id="cat-kyoto")
     assert '"a,b"' in out
+
+
+def test_json_single_category_wraps_with_meta(store):
+    from services.bookmark_export import to_json
+    out = to_json(store, category_id="cat-kyoto", exported_at="2026-05-09T08:30:00Z")
+    assert out["_meta"] == {
+        "exported_at": "2026-05-09T08:30:00Z",
+        "format_version": 1,
+        "scope": "category",
+    }
+    assert out["category"]["id"] == "cat-kyoto"
+    assert out["category"]["name"] == "京都散步"
+    assert len(out["bookmarks"]) == 2
+    # internal bookmark ids preserved (round-trip needs them)
+    assert {b["id"] for b in out["bookmarks"]} == {"b1", "b2"}
+
+
+def test_json_full_store_unchanged_shape(store):
+    from services.bookmark_export import to_json
+    out = to_json(store, category_id=None, exported_at="2026-05-09T08:30:00Z")
+    # Whole-store mirrors BookmarkStore for round-trip with existing import
+    assert "_meta" not in out
+    assert {c["id"] for c in out["categories"]} == {"default", "cat-kyoto"}
+    assert len(out["bookmarks"]) == 2
+
+
+def test_json_missing_category_raises(store):
+    from services.bookmark_export import to_json
+    with pytest.raises(KeyError):
+        to_json(store, category_id="missing")

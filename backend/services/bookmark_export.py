@@ -111,3 +111,30 @@ def to_csv(store: BookmarkStore, category_id: str | None = None) -> str:
             "category": cat_name,
         })
     return buf.getvalue()
+
+
+def to_json(
+    store: BookmarkStore,
+    category_id: str | None = None,
+    exported_at: str | None = None,
+) -> dict:
+    if category_id is None:
+        # Whole-store: shape matches BookmarkStore for round-trip with existing import.
+        return {
+            "categories": [c.model_dump() for c in store.categories],
+            "bookmarks": [b.model_dump() for b in store.bookmarks],
+        }
+
+    cat = next((c for c in store.categories if c.id == category_id), None)
+    if cat is None:
+        raise KeyError(category_id)
+
+    return {
+        "_meta": {
+            "exported_at": exported_at or _now_iso(),
+            "format_version": 1,
+            "scope": "category",
+        },
+        "category": cat.model_dump(),
+        "bookmarks": [b.model_dump() for b in _category_bookmarks(store, category_id)],
+    }
