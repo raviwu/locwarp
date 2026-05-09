@@ -1723,7 +1723,10 @@ const CategoryDeleteDropdown: React.FC<DropdownProps> = ({
   }
 
   const confirmSoft = () => {
-    onSoftDelete()
+    const msg = t('bm.delete.soft_body').replace('{n}', String(bookmarkCount))
+    if (window.confirm(`${t('bm.delete.soft_title').replace('{name}', category)}\n\n${msg}`)) {
+      onSoftDelete()
+    }
   }
 
   return (

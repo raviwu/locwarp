@@ -560,6 +560,9 @@ export const STRINGS = {
   'bm.delete.cascade_confirm': { zh: '刪除活動', en: 'Delete event' },
   'bm.delete.softdelete_label': { zh: '只刪分類 (書籤搬到預設)', en: 'Delete category only (move bookmarks to Default)' },
   'bm.delete.cascade_label': { zh: '連書籤一起刪 ({n} 個)', en: 'Delete category + {n} bookmarks' },
+  // Soft-delete confirm (mirrors the cascade variant for symmetry)
+  'bm.delete.soft_title': { zh: '刪除分類「{name}」?', en: 'Delete category "{name}"?' },
+  'bm.delete.soft_body': { zh: '{n} 個書籤會搬到「預設」分類。', en: '{n} bookmarks will move to the Default category.' },
 
   // Export popover
   'bm.export.title': { zh: '匯出', en: 'Export' },
