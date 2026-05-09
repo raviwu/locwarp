@@ -58,3 +58,63 @@ def test_delete_category_cascade_true_removes_bookmarks(client):
 def test_delete_default_category_with_cascade_blocked(client):
     resp = client.delete("/api/bookmarks/categories/default?cascade=true")
     assert resp.status_code == 400
+
+
+def test_export_default_full_store_json(client):
+    cat = _create_category(client)
+    _create_bookmark(client, cat["id"])
+    resp = client.get("/api/bookmarks/export")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert "categories" in body and "bookmarks" in body
+
+
+def test_export_single_category_json(client):
+    cat = _create_category(client, name="京都散步")
+    _create_bookmark(client, cat["id"], name="常照皇寺", lat=35.200425, lng=135.685626)
+    resp = client.get(f"/api/bookmarks/export?category_id={cat['id']}&format=json")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["_meta"]["scope"] == "category"
+    assert body["category"]["name"] == "京都散步"
+    assert body["bookmarks"][0]["name"] == "常照皇寺"
+
+
+def test_export_markdown(client):
+    cat = _create_category(client, name="京都散步")
+    _create_bookmark(client, cat["id"], name="常照皇寺", lat=35.200425, lng=135.685626)
+    resp = client.get(f"/api/bookmarks/export?category_id={cat['id']}&format=markdown")
+    assert resp.status_code == 200
+    assert resp.headers["content-type"].startswith("text/markdown")
+    text = resp.text
+    assert text.startswith("## 京都散步\n")
+    assert "常照皇寺\n35.200425,135.685626\n" in text
+
+
+def test_export_geojson(client):
+    cat = _create_category(client, name="京都散步")
+    _create_bookmark(client, cat["id"], name="常照皇寺", lat=35.200425, lng=135.685626)
+    resp = client.get(f"/api/bookmarks/export?category_id={cat['id']}&format=geojson")
+    assert resp.status_code == 200
+    assert resp.headers["content-type"].startswith("application/geo+json")
+    body = resp.json()
+    assert body["type"] == "FeatureCollection"
+
+
+def test_export_csv(client):
+    cat = _create_category(client, name="京都散步")
+    _create_bookmark(client, cat["id"], name="常照皇寺", lat=35.200425, lng=135.685626)
+    resp = client.get(f"/api/bookmarks/export?category_id={cat['id']}&format=csv")
+    assert resp.status_code == 200
+    assert resp.headers["content-type"].startswith("text/csv")
+    assert "name,lat,lng,category" in resp.text
+
+
+def test_export_unknown_category_404(client):
+    resp = client.get("/api/bookmarks/export?category_id=nope&format=json")
+    assert resp.status_code == 404
+
+
+def test_export_invalid_format_422(client):
+    resp = client.get("/api/bookmarks/export?format=yaml")
+    assert resp.status_code == 422

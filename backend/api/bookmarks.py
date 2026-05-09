@@ -1,3 +1,5 @@
+from typing import Literal
+
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import Response
 from pydantic import BaseModel
@@ -108,12 +110,69 @@ async def delete_category(cat_id: str, cascade: bool = False):
 
 # ── Import / Export ───────────────────────────────────────
 
+ExportFormat = Literal["json", "markdown", "geojson", "csv"]
+
+_FORMAT_TO_MEDIA = {
+    "json": "application/json",
+    "markdown": "text/markdown; charset=utf-8",
+    "geojson": "application/geo+json",
+    "csv": "text/csv; charset=utf-8",
+}
+
+_FORMAT_TO_FILENAME_EXT = {
+    "json": "json",
+    "markdown": "md",
+    "geojson": "geojson",
+    "csv": "csv",
+}
+
+
 @router.get("/export")
-async def export_bookmarks():
+async def export_bookmarks(
+    category_id: str | None = None,
+    format: ExportFormat = "json",
+):
+    import json as _json
+    from services import bookmark_export
+
     bm = _bm()
-    data = bm.export_json()
-    return Response(content=data, media_type="application/json",
-                    headers={"Content-Disposition": 'attachment; filename="bookmarks.json"'})
+    store = bm.store
+
+    if category_id is not None and not any(c.id == category_id for c in store.categories):
+        raise HTTPException(status_code=404, detail="Category not found")
+
+    if format == "json":
+        body = _json.dumps(bookmark_export.to_json(store, category_id=category_id), ensure_ascii=False, indent=2)
+        content = body
+    elif format == "markdown":
+        content = bookmark_export.to_markdown(store, category_id=category_id)
+    elif format == "geojson":
+        content = _json.dumps(bookmark_export.to_geojson(store, category_id=category_id), ensure_ascii=False, indent=2)
+    elif format == "csv":
+        content = bookmark_export.to_csv(store, category_id=category_id)
+
+    from urllib.parse import quote
+
+    cat_slug = "bookmarks"
+    if category_id is not None:
+        cat = next(c for c in store.categories if c.id == category_id)
+        cat_slug = cat.name.replace("/", "_")
+    ext = _FORMAT_TO_FILENAME_EXT[format]
+    filename_utf8 = f"{cat_slug}.{ext}"
+    # Content-Disposition header value must be latin-1 safe; use RFC 5987
+    # filename* for non-ASCII names.
+    try:
+        filename_utf8.encode("latin-1")
+        disposition = f'attachment; filename="{filename_utf8}"'
+    except UnicodeEncodeError:
+        encoded = quote(filename_utf8, safe="")
+        disposition = f"attachment; filename*=UTF-8''{encoded}"
+
+    return Response(
+        content=content,
+        media_type=_FORMAT_TO_MEDIA[format],
+        headers={"Content-Disposition": disposition},
+    )
 
 
 @router.post("/import")
