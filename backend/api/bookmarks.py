@@ -111,14 +111,27 @@ async def list_categories():
 
 @router.post("/categories", response_model=BookmarkCategory)
 async def create_category(cat: BookmarkCategory):
+    _validate_date_range(cat.start_date, cat.end_date)
     bm = _bm()
-    return bm.create_category(name=cat.name, color=cat.color)
+    return bm.create_category(
+        name=cat.name,
+        color=cat.color,
+        start_date=cat.start_date,
+        end_date=cat.end_date,
+    )
 
 
 @router.put("/categories/{cat_id}", response_model=BookmarkCategory)
 async def update_category(cat_id: str, cat: BookmarkCategory):
+    _validate_date_range(cat.start_date, cat.end_date)
     bm = _bm()
-    updated = bm.update_category(cat_id, name=cat.name, color=cat.color)
+    updated = bm.update_category(
+        cat_id,
+        name=cat.name,
+        color=cat.color,
+        start_date=cat.start_date,
+        end_date=cat.end_date,
+    )
     if not updated:
         raise HTTPException(status_code=404, detail="Category not found")
     return updated

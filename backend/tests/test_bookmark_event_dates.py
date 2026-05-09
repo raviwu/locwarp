@@ -161,3 +161,74 @@ def test_update_category_with_none_preserves_date(tmp_path, monkeypatch):
     assert updated.name == "Renamed"
     assert updated.start_date == "2026-02-06"
     assert updated.end_date == "2026-06-07"
+
+
+def test_post_category_with_dates(client):
+    resp = client.post("/api/bookmarks/categories", json={
+        "name": "Sanga",
+        "color": "#ef4444",
+        "start_date": "2026-02-06",
+        "end_date": "2026-06-07",
+    })
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["start_date"] == "2026-02-06"
+    assert body["end_date"] == "2026-06-07"
+
+
+def test_post_category_rejects_bad_date_format(client):
+    resp = client.post("/api/bookmarks/categories", json={
+        "name": "Bad",
+        "start_date": "2026/02/06",
+    })
+    assert resp.status_code == 422
+
+
+def test_post_category_rejects_inverted_range(client):
+    resp = client.post("/api/bookmarks/categories", json={
+        "name": "Bad",
+        "start_date": "2026-06-07",
+        "end_date": "2026-02-06",
+    })
+    assert resp.status_code == 422
+
+
+def test_put_category_updates_dates(client):
+    create = client.post("/api/bookmarks/categories", json={
+        "name": "Sanga",
+        "start_date": "2026-02-06",
+        "end_date": "2026-06-07",
+    })
+    cat = create.json()
+    resp = client.put(f"/api/bookmarks/categories/{cat['id']}", json={
+        "name": cat["name"],
+        "color": cat["color"],
+        "start_date": "",
+        "end_date": "",
+    })
+    assert resp.status_code == 200
+    assert resp.json()["start_date"] == ""
+    assert resp.json()["end_date"] == ""
+
+
+def test_put_category_rejects_bad_format(client):
+    create = client.post("/api/bookmarks/categories", json={"name": "evt"})
+    cat = create.json()
+    resp = client.put(f"/api/bookmarks/categories/{cat['id']}", json={
+        "name": cat["name"],
+        "color": cat["color"],
+        "end_date": "tomorrow",
+    })
+    assert resp.status_code == 422
+
+
+def test_get_categories_returns_event_dates(client):
+    client.post("/api/bookmarks/categories", json={
+        "name": "Sanga",
+        "start_date": "2026-02-06",
+        "end_date": "2026-06-07",
+    })
+    listing = client.get("/api/bookmarks").json()
+    sanga = next(c for c in listing["categories"] if c["name"] == "Sanga")
+    assert sanga["start_date"] == "2026-02-06"
+    assert sanga["end_date"] == "2026-06-07"
