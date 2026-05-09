@@ -67,3 +67,30 @@ def test_markdown_strips_newlines_in_name(store):
     out = to_markdown(store, category_id="cat-kyoto", exported_at="2026-05-09T08:30:00Z")
     assert "weird name" in out
     assert "weird\nname" not in out
+
+
+def test_geojson_single_category(store):
+    from services.bookmark_export import to_geojson
+    out = to_geojson(store, category_id="cat-kyoto")
+    assert out["type"] == "FeatureCollection"
+    assert out["name"] == "京都散步"
+    assert len(out["features"]) == 2
+    f = out["features"][0]
+    assert f["type"] == "Feature"
+    assert f["geometry"] == {"type": "Point", "coordinates": [135.685626, 35.200425]}
+    assert f["properties"]["name"] == "京北 - 常照皇寺"
+    assert f["properties"]["category"] == "京都散步"
+    assert f["properties"]["country_code"] == "jp"
+
+
+def test_geojson_full_store_uses_all_bookmarks(store):
+    from services.bookmark_export import to_geojson
+    out = to_geojson(store, category_id=None)
+    assert out["name"] == "LocWarp Bookmarks"
+    assert len(out["features"]) == 2  # only the kyoto two; default has none
+
+
+def test_geojson_missing_category_raises(store):
+    from services.bookmark_export import to_geojson
+    with pytest.raises(KeyError):
+        to_geojson(store, category_id="missing")

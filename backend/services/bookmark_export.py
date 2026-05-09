@@ -55,3 +55,32 @@ def to_markdown(
     for cat in sorted(store.categories, key=lambda c: c.sort_order):
         sections.append(_markdown_section(cat, _category_bookmarks(store, cat.id), exported_at))
     return "\n".join(sections)
+
+
+def to_geojson(store: BookmarkStore, category_id: str | None = None) -> dict:
+    if category_id is not None:
+        cat = next((c for c in store.categories if c.id == category_id), None)
+        if cat is None:
+            raise KeyError(category_id)
+        cats = {cat.id: cat}
+        bms = _category_bookmarks(store, cat.id)
+        name = cat.name
+    else:
+        cats = {c.id: c for c in store.categories}
+        bms = list(store.bookmarks)
+        name = "LocWarp Bookmarks"
+
+    features = []
+    for bm in bms:
+        cat_name = cats.get(bm.category_id).name if bm.category_id in cats else ""
+        features.append({
+            "type": "Feature",
+            "geometry": {"type": "Point", "coordinates": [bm.lng, bm.lat]},
+            "properties": {
+                "name": bm.name,
+                "category": cat_name,
+                "country_code": bm.country_code,
+            },
+        })
+
+    return {"type": "FeatureCollection", "name": name, "features": features}
