@@ -9,7 +9,8 @@
     "build": "tsc && vite build",
     "electron": "electron .",
     "start": "concurrently \"vite\" \"wait-on http://localhost:5173 && electron .\"",
-    "dist": "electron-builder --win nsis"
+    "dist": "electron-builder --win nsis",
+    "dist:mac": "electron-builder --mac dmg"
   },
   "dependencies": {
     "@maplibre/maplibre-gl-leaflet": "^0.1.3",
@@ -61,6 +62,18 @@
       ],
       "requestedExecutionLevel": "requireAdministrator",
       "icon": "build/icon.ico"
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64"
+          ]
+        }
+      ],
+      "category": "public.app-category.developer-tools",
+      "icon": "build/icon.icns"
     },
     "nsis": {
       "oneClick": false,
