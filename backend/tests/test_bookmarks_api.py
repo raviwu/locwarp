@@ -118,3 +118,54 @@ def test_export_unknown_category_404(client):
 def test_export_invalid_format_422(client):
     resp = client.get("/api/bookmarks/export?format=yaml")
     assert resp.status_code == 422
+
+
+def test_import_full_store_via_api(client):
+    payload = {
+        "categories": [
+            {"id": "cat-x", "name": "X", "color": "#ef4444", "sort_order": 1, "created_at": ""},
+        ],
+        "bookmarks": [
+            {"id": "b1", "name": "p", "lat": 1.0, "lng": 2.0, "category_id": "cat-x",
+             "created_at": "", "last_used_at": ""},
+        ],
+    }
+    resp = client.post("/api/bookmarks/import", json=payload)
+    assert resp.status_code == 200
+    assert resp.json()["imported"] == 1
+
+
+def test_import_single_category_via_api(client):
+    payload = {
+        "_meta": {"exported_at": "2026-05-09T08:30:00Z", "format_version": 1, "scope": "category"},
+        "category": {"id": "shared-id", "name": "京都散步", "color": "#ef4444",
+                     "sort_order": 1, "created_at": ""},
+        "bookmarks": [
+            {"id": "b1", "name": "常照皇寺", "lat": 35.2, "lng": 135.7,
+             "category_id": "shared-id", "created_at": "", "last_used_at": ""},
+        ],
+    }
+    resp = client.post("/api/bookmarks/import", json=payload)
+    assert resp.status_code == 200
+    assert resp.json()["scope"] == "category"
+    assert resp.json()["imported"] == 1
+
+
+def test_import_geojson_via_api(client):
+    payload = {
+        "type": "FeatureCollection",
+        "name": "from-geojson",
+        "features": [
+            {"type": "Feature", "geometry": {"type": "Point", "coordinates": [121.5, 25.0]},
+             "properties": {"name": "x"}},
+        ],
+    }
+    resp = client.post("/api/bookmarks/import", json=payload)
+    assert resp.status_code == 200
+    assert resp.json()["scope"] == "geojson"
+    assert resp.json()["imported"] == 1
+
+
+def test_import_garbage_returns_400(client):
+    resp = client.post("/api/bookmarks/import", json={"random": True})
+    assert resp.status_code == 400

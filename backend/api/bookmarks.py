@@ -177,10 +177,15 @@ async def export_bookmarks(
 
 @router.post("/import")
 async def import_bookmarks(data: dict):
-    import json
+    import json as _json
+    from services.bookmark_import import detect_and_import, InvalidImportError
+
     bm = _bm()
-    count = bm.import_json(json.dumps(data))
-    return {"imported": count}
+    try:
+        result = detect_and_import(bm, _json.dumps(data))
+    except InvalidImportError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return result
 
 
 # ── UI state (persists per-category collapse in ~/.locwarp/settings.json) ──
