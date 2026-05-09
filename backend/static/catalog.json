@@ -568,8 +568,8 @@
     {
       "id": "seed-gifts-010",
       "name": "Niantic Park (金色禮物)",
-      "lat": 35.675424,
-      "lng": 139.712909,
+      "lat": 35.67495,
+      "lng": 139.71281,
       "address": "",
       "category_id": "seed-monthly-gifts",
       "created_at": "2026-05-09T00:00:00Z",
@@ -577,19 +577,8 @@
       "country_code": "jp"
     },
     {
-      "id": "seed-gifts-011",
-      "name": "香港海港城 (舊版位置)",
-      "lat": 22.294943,
-      "lng": 114.166371,
-      "address": "",
-      "category_id": "seed-monthly-gifts",
-      "created_at": "2026-05-09T00:00:00Z",
-      "last_used_at": "2026-05-09T00:00:00Z",
-      "country_code": "hk"
-    },
-    {
       "id": "seed-gifts-012",
-      "name": "香港海港城 (新版位置)",
+      "name": "香港海港城",
       "lat": 22.29482,
       "lng": 114.16581,
       "address": "",
