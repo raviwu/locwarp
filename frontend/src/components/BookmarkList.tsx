@@ -41,9 +41,13 @@ interface BookmarkListProps {
   onCategoryAdd: (name: string) => void;
   onCategoryDelete: (name: string) => void;
   onCategoryDeleteCascade?: (name: string, bookmarkCount: number) => void;
-  onCategoryRename?: (oldName: string, newName: string) => void;
-  // Persist a new color for a category (works for Default too).
-  onCategoryRecolor?: (name: string, color: string) => void;
+  onCategoryEdit?: (
+    name: string,
+    patch: { name: string; color: string; start_date: string; end_date: string },
+  ) => void;
+  // Per-category event dates, keyed by category name (matches the
+  // existing categoryColors prop).
+  categoryDates?: Record<string, { start_date: string; end_date: string }>;
   showOnMap?: boolean;
   onShowOnMapChange?: (v: boolean) => void;
   onImport?: (file: File) => Promise<void>;
@@ -98,8 +102,8 @@ const BookmarkList: React.FC<BookmarkListProps> = ({
   onCategoryAdd,
   onCategoryDelete,
   onCategoryDeleteCascade,
-  onCategoryRename,
-  onCategoryRecolor,
+  onCategoryEdit,
+  categoryDates,
   showOnMap = false,
   onShowOnMapChange,
   onImport,
@@ -115,8 +119,6 @@ const BookmarkList: React.FC<BookmarkListProps> = ({
     if (stored) return stored;
     return getCategoryColor(name);
   };
-  // Name of the category whose dot is currently being recolored (shows popover).
-  const [colorPickerFor, setColorPickerFor] = useState<string | null>(null);
   const t = useT();
   // Backend may store the built-in default category as the Chinese '預設'.
   // Translate at render time so EN users see "Default" without touching storage.
@@ -132,8 +134,22 @@ const BookmarkList: React.FC<BookmarkListProps> = ({
   const [newCategory, setNewCategory] = useState(categories[0] || 'Default');
   const [showCategoryMgr, setShowCategoryMgr] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState('');
-  const [editingCategory, setEditingCategory] = useState<string | null>(null);
-  const [editCategoryName, setEditCategoryName] = useState('');
+  // Edit-category dialog. Open when non-null; the value is the category
+  // name being edited. Form fields below are local to the dialog.
+  const [editCatName, setEditCatName] = useState<string | null>(null);
+  const [editCatNewName, setEditCatNewName] = useState('');
+  const [editCatColor, setEditCatColor] = useState('#6c8cff');
+  const [editCatStart, setEditCatStart] = useState('');
+  const [editCatEnd, setEditCatEnd] = useState('');
+  const openEditCategory = (cat: string) => {
+    setEditCatName(cat);
+    setEditCatNewName(cat);
+    setEditCatColor(resolveColor(cat));
+    const d = categoryDates?.[cat];
+    setEditCatStart(d?.start_date ?? '');
+    setEditCatEnd(d?.end_date ?? '');
+  };
+  const closeEditCategory = () => setEditCatName(null);
   // Split "24.14, 120.65" (or tab/whitespace) into [lat, lng] so a user can
   // paste a Google-Maps-style pair into just the lat field instead of
   // splitting it themselves.
@@ -250,28 +266,6 @@ const BookmarkList: React.FC<BookmarkListProps> = ({
       document.removeEventListener('keydown', onEsc);
     };
   }, [contextMenu]);
-
-  // Dismiss the category color picker on outside click / ESC.
-  useEffect(() => {
-    if (!colorPickerFor) return;
-    const onOutside = (e: Event) => {
-      const t = e.target as Element | null;
-      if (t && t.closest?.('[data-category-color-picker]')) return;
-      setColorPickerFor(null);
-    };
-    const onEsc = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setColorPickerFor(null);
-    };
-    const id = setTimeout(() => {
-      document.addEventListener('pointerdown', onOutside);
-      document.addEventListener('keydown', onEsc);
-    }, 0);
-    return () => {
-      clearTimeout(id);
-      document.removeEventListener('pointerdown', onOutside);
-      document.removeEventListener('keydown', onEsc);
-    };
-  }, [colorPickerFor]);
 
   // Collapse state is persisted in ~/.locwarp/settings.json via the
   // /api/bookmarks/ui-state endpoint. The rule, designed so "paste a lot
@@ -730,108 +724,22 @@ const BookmarkList: React.FC<BookmarkListProps> = ({
                 position: 'relative',
               }}
             >
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  if (!onCategoryRecolor) return;
-                  setColorPickerFor((prev) => (prev === cat ? null : cat));
-                }}
-                title={t('bm.recolor_tooltip')}
+              <div
                 style={{
                   width: 14,
                   height: 14,
                   borderRadius: '50%',
                   background: resolveColor(cat),
                   border: '1.5px solid rgba(255,255,255,0.15)',
-                  padding: 0,
-                  cursor: onCategoryRecolor ? 'pointer' : 'default',
                   flexShrink: 0,
                   boxShadow: '0 1px 2px rgba(0,0,0,0.3)',
                 }}
               />
-              {colorPickerFor === cat && onCategoryRecolor && (
-                <div
-                  data-category-color-picker
-                  onClick={(e) => e.stopPropagation()}
-                  style={{
-                    position: 'absolute',
-                    top: 22, left: 0, zIndex: 50,
-                    background: '#1e1e22',
-                    border: '1px solid rgba(255,255,255,0.15)',
-                    borderRadius: 6,
-                    padding: 6,
-                    boxShadow: '0 6px 18px rgba(0,0,0,0.5)',
-                    display: 'grid',
-                    gridTemplateColumns: 'repeat(5, 22px)',
-                    gap: 4,
-                  }}
-                >
-                  {COLOR_PALETTE.map((c) => {
-                    const selected = resolveColor(cat).toLowerCase() === c.toLowerCase();
-                    return (
-                      <button
-                        key={c}
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onCategoryRecolor(cat, c);
-                          setColorPickerFor(null);
-                        }}
-                        style={{
-                          width: 22, height: 22, borderRadius: '50%',
-                          background: c,
-                          border: selected
-                            ? '2px solid #fff'
-                            : '1.5px solid rgba(255,255,255,0.12)',
-                          cursor: 'pointer', padding: 0,
-                          transition: 'transform 0.1s',
-                        }}
-                        title={c}
-                      />
-                    );
-                  })}
-                  <input
-                    type="color"
-                    value={resolveColor(cat)}
-                    onChange={(e) => onCategoryRecolor(cat, e.target.value)}
-                    title={t('bm.recolor_custom')}
-                    style={{
-                      gridColumn: '1 / span 5',
-                      width: '100%', height: 22,
-                      border: '1px solid rgba(255,255,255,0.12)',
-                      borderRadius: 4, padding: 0, marginTop: 2,
-                      background: '#1e1e22',
-                      cursor: 'pointer',
-                    }}
-                  />
-                </div>
-              )}
-              {editingCategory === cat ? (
-                <input
-                  type="text"
-                  className="search-input"
-                  autoFocus
-                  value={editCategoryName}
-                  onChange={(e) => setEditCategoryName(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      const next = editCategoryName.trim();
-                      if (next && next !== cat && onCategoryRename) onCategoryRename(cat, next);
-                      setEditingCategory(null);
-                    }
-                    if (e.key === 'Escape') setEditingCategory(null);
-                  }}
-                  onBlur={() => setEditingCategory(null)}
-                  style={{ flex: 1, padding: '2px 4px', fontSize: 12 }}
-                />
-              ) : (
-                <span style={{ flex: 1 }}>{displayCat(cat)}</span>
-              )}
-              {cat !== 'Default' && cat !== '預設' && onCategoryRename && editingCategory !== cat && (
+              <span style={{ flex: 1 }}>{displayCat(cat)}</span>
+              {cat !== 'Default' && cat !== '預設' && onCategoryEdit && (
                 <button
-                  onClick={() => { setEditingCategory(cat); setEditCategoryName(cat); }}
-                  title={t('bm.rename_category')}
+                  onClick={() => openEditCategory(cat)}
+                  title={t('bm.cat.edit_title')}
                   style={{
                     background: 'none',
                     border: 'none',
@@ -890,6 +798,147 @@ const BookmarkList: React.FC<BookmarkListProps> = ({
             </button>
           </div>
         </div>
+      )}
+
+      {editCatName !== null && createPortal(
+        <div
+          onClick={closeEditCategory}
+          style={{
+            position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+            background: 'rgba(8,10,20,0.55)',
+            backdropFilter: 'blur(4px)',
+            zIndex: 10000,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: 'rgba(26,29,39,0.96)',
+              border: '1px solid rgba(108,140,255,0.35)',
+              borderRadius: 12, padding: 18, width: 340,
+              boxShadow: '0 20px 60px rgba(12,18,40,0.65)',
+              color: '#e0e0e0',
+              display: 'flex', flexDirection: 'column', gap: 10,
+            }}
+          >
+            <div style={{ fontSize: 14, fontWeight: 600 }}>{t('bm.cat.edit_title')}</div>
+
+            <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <span style={{ opacity: 0.7, fontSize: 11 }}>{t('bm.add_category')}</span>
+              <input
+                className="search-input"
+                value={editCatNewName}
+                onChange={(e) => setEditCatNewName(e.target.value)}
+                style={{ padding: '4px 6px' }}
+              />
+            </label>
+
+            <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <span style={{ opacity: 0.7, fontSize: 11 }}>{t('bm.recolor_tooltip')}</span>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 28px)', gap: 6 }}>
+                {COLOR_PALETTE.map((c) => (
+                  <button
+                    key={c}
+                    type="button"
+                    onClick={() => setEditCatColor(c)}
+                    style={{
+                      width: 28, height: 28, borderRadius: '50%',
+                      background: c,
+                      border: editCatColor.toLowerCase() === c.toLowerCase()
+                        ? '2px solid #fff'
+                        : '1.5px solid rgba(255,255,255,0.12)',
+                      cursor: 'pointer', padding: 0,
+                    }}
+                    title={c}
+                  />
+                ))}
+              </div>
+              <input
+                type="color"
+                value={editCatColor}
+                onChange={(e) => setEditCatColor(e.target.value)}
+                title={t('bm.recolor_custom')}
+                style={{ width: '100%', height: 28, border: 'none', borderRadius: 4, padding: 0, marginTop: 4 }}
+              />
+            </label>
+
+            <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <span style={{ opacity: 0.7, fontSize: 11 }}>{t('bm.cat.starts')}</span>
+              <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                <input
+                  type="date"
+                  value={editCatStart}
+                  onChange={(e) => setEditCatStart(e.target.value)}
+                  style={{ flex: 1, padding: '4px 6px', background: '#1e1e22', color: '#e0e0e0', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 4 }}
+                />
+                <button
+                  className="action-btn"
+                  onClick={() => setEditCatStart('')}
+                  disabled={!editCatStart}
+                  style={{ fontSize: 11, padding: '3px 8px', opacity: editCatStart ? 1 : 0.4 }}
+                >
+                  ✕ {t('bm.cat.dates_clear')}
+                </button>
+              </div>
+            </label>
+
+            <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <span style={{ opacity: 0.7, fontSize: 11 }}>{t('bm.cat.ends')}</span>
+              <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                <input
+                  type="date"
+                  value={editCatEnd}
+                  onChange={(e) => setEditCatEnd(e.target.value)}
+                  style={{ flex: 1, padding: '4px 6px', background: '#1e1e22', color: '#e0e0e0', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 4 }}
+                />
+                <button
+                  className="action-btn"
+                  onClick={() => setEditCatEnd('')}
+                  disabled={!editCatEnd}
+                  style={{ fontSize: 11, padding: '3px 8px', opacity: editCatEnd ? 1 : 0.4 }}
+                >
+                  ✕ {t('bm.cat.dates_clear')}
+                </button>
+              </div>
+            </label>
+
+            <div style={{ fontSize: 10, opacity: 0.55 }}>{t('bm.cat.dates_hint')}</div>
+            {editCatStart && editCatEnd && editCatStart > editCatEnd && (
+              <div style={{ fontSize: 11, color: '#f87171' }}>{t('bm.cat.dates_invalid')}</div>
+            )}
+
+            <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', marginTop: 4 }}>
+              <button className="action-btn" onClick={closeEditCategory} style={{ fontSize: 11 }}>
+                {t('bm.picker.close')}
+              </button>
+              <button
+                className="action-btn"
+                disabled={
+                  !editCatNewName.trim() ||
+                  (!!editCatStart && !!editCatEnd && editCatStart > editCatEnd)
+                }
+                onClick={() => {
+                  if (!onCategoryEdit || !editCatName) return;
+                  const next = editCatNewName.trim();
+                  if (!next) return;
+                  if (editCatStart && editCatEnd && editCatStart > editCatEnd) return;
+                  onCategoryEdit(editCatName, {
+                    name: next,
+                    color: editCatColor,
+                    start_date: editCatStart,
+                    end_date: editCatEnd,
+                  });
+                  closeEditCategory();
+                }}
+                style={{ fontSize: 11 }}
+              >
+                {t('bm.cat.save')}
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body,
       )}
 
       {/* Search mode: flat filtered list, no category grouping */}
