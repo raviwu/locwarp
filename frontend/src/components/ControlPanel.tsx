@@ -889,6 +889,10 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
                   onBookmarkEdit={onBookmarkEdit}
                   onCategoryAdd={onCategoryAdd}
                   onCategoryDelete={onCategoryDelete}
+                  onCategoryDeleteCascade={(name, _count) => {
+                    const cat = goldDittoCategories.find((c: any) => c.name === name)
+                    if (cat && onCategoryDeleteCascade) onCategoryDeleteCascade(cat.id)
+                  }}
                   onCategoryRename={onCategoryRename}
                   onCategoryRecolor={onCategoryRecolor}
                   showOnMap={bookmarkShowOnMap}

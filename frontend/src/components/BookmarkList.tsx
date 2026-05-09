@@ -40,6 +40,7 @@ interface BookmarkListProps {
   onBookmarkEdit: (id: string, bm: Partial<Bookmark>) => void;
   onCategoryAdd: (name: string) => void;
   onCategoryDelete: (name: string) => void;
+  onCategoryDeleteCascade?: (name: string, bookmarkCount: number) => void;
   onCategoryRename?: (oldName: string, newName: string) => void;
   // Persist a new color for a category (works for Default too).
   onCategoryRecolor?: (name: string, color: string) => void;
@@ -93,6 +94,7 @@ const BookmarkList: React.FC<BookmarkListProps> = ({
   onBookmarkEdit,
   onCategoryAdd,
   onCategoryDelete,
+  onCategoryDeleteCascade,
   onCategoryRename,
   onCategoryRecolor,
   showOnMap = false,
@@ -839,22 +841,16 @@ const BookmarkList: React.FC<BookmarkListProps> = ({
                 </button>
               )}
               {cat !== 'Default' && cat !== '預設' && (
-                <button
-                  onClick={() => onCategoryDelete(cat)}
-                  style={{
-                    background: 'none',
-                    border: 'none',
-                    color: '#f44336',
-                    cursor: 'pointer',
-                    padding: '2px 4px',
-                    fontSize: 11,
-                  }}
-                >
-                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <line x1="18" y1="6" x2="6" y2="18" />
-                    <line x1="6" y1="6" x2="18" y2="18" />
-                  </svg>
-                </button>
+                <CategoryDeleteDropdown
+                  category={cat}
+                  bookmarkCount={(bookmarksByCategory[cat] ?? []).length}
+                  onSoftDelete={() => onCategoryDelete(cat)}
+                  onCascadeDelete={
+                    onCategoryDeleteCascade
+                      ? () => onCategoryDeleteCascade(cat, (bookmarksByCategory[cat] ?? []).length)
+                      : undefined
+                  }
+                />
               )}
             </div>
           ))}
@@ -1544,6 +1540,96 @@ function ctxHighlight(e: React.MouseEvent<HTMLDivElement>) {
 }
 function ctxUnhighlight(e: React.MouseEvent<HTMLDivElement>) {
   (e.currentTarget as HTMLDivElement).style.background = 'transparent';
+}
+
+interface DropdownProps {
+  category: string
+  bookmarkCount: number
+  onSoftDelete: () => void
+  onCascadeDelete?: () => void
+}
+
+const CategoryDeleteDropdown: React.FC<DropdownProps> = ({
+  category, bookmarkCount, onSoftDelete, onCascadeDelete,
+}) => {
+  const t = useT()
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement | null>(null)
+
+  useEffect(() => {
+    if (!open) return
+    const onOutside = (e: Event) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('pointerdown', onOutside)
+    return () => document.removeEventListener('pointerdown', onOutside)
+  }, [open])
+
+  const confirmCascade = () => {
+    if (!onCascadeDelete) return
+    const msg = t('bm.delete.cascade_body').replace('{n}', String(bookmarkCount))
+    if (window.confirm(`${t('bm.delete.cascade_title').replace('{name}', category)}\n\n${msg}`)) {
+      onCascadeDelete()
+    }
+  }
+
+  const confirmSoft = () => {
+    onSoftDelete()
+  }
+
+  return (
+    <div ref={ref} style={{ position: 'relative' }}>
+      <button
+        onClick={() => setOpen((v) => !v)}
+        style={{
+          background: 'none', border: 'none',
+          color: '#f44336', cursor: 'pointer',
+          padding: '2px 4px', fontSize: 11,
+        }}
+      >
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <polyline points="3,6 5,6 21,6" />
+          <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2" />
+        </svg>
+      </button>
+      {open && (
+        <div
+          style={{
+            position: 'absolute',
+            top: '100%', right: 0, zIndex: 50,
+            background: '#2a2a2e',
+            border: '1px solid rgba(255,255,255,0.15)',
+            borderRadius: 6,
+            padding: '4px 0',
+            minWidth: 240,
+            boxShadow: '0 6px 18px rgba(0,0,0,0.5)',
+          }}
+        >
+          <div
+            onClick={() => { setOpen(false); confirmSoft() }}
+            style={{ padding: '6px 12px', fontSize: 11, cursor: 'pointer' }}
+            onMouseEnter={(e) => { (e.currentTarget as HTMLDivElement).style.background = '#3a3a3e' }}
+            onMouseLeave={(e) => { (e.currentTarget as HTMLDivElement).style.background = 'transparent' }}
+          >
+            {t('bm.delete.softdelete_label')}
+          </div>
+          {onCascadeDelete && (
+            <div
+              onClick={() => { setOpen(false); confirmCascade() }}
+              style={{
+                padding: '6px 12px', fontSize: 11, cursor: 'pointer',
+                color: '#ff6b6b',
+              }}
+              onMouseEnter={(e) => { (e.currentTarget as HTMLDivElement).style.background = '#3a3a3e' }}
+              onMouseLeave={(e) => { (e.currentTarget as HTMLDivElement).style.background = 'transparent' }}
+            >
+              {t('bm.delete.cascade_label').replace('{n}', String(bookmarkCount))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
 }
 
 export default BookmarkList;
