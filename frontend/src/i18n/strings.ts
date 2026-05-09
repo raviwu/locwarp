@@ -543,6 +543,14 @@ export const STRINGS = {
   'bm.picker.close': { zh: '關閉', en: 'Close' },
   // — GoldDitto picker filter —
   'bm.picker.include_ended': { zh: '包含已結束',                   en: 'Include ended' },
+  // — Public event catalog (bundled JSON refresh button) —
+  'bm.catalog.refresh':            { zh: '更新公開活動清單',           en: 'Refresh public events' },
+  'bm.catalog.refresh_count':      { zh: '更新公開活動清單 ({n} new)', en: 'Refresh public events ({n} new)' },
+  'bm.catalog.up_to_date':         { zh: '已是最新',                   en: 'Up to date' },
+  'bm.catalog.up_to_date_tooltip': { zh: '無新活動可加入',             en: 'No new events available' },
+  'bm.catalog.failed':             { zh: '更新失敗',                   en: 'Update failed' },
+  'bm.catalog.imported':           { zh: '已加入 {imported} 筆 (跳過 {skipped} 筆已存在)',
+                                     en: 'Added {imported} entries ({skipped} already present, skipped)' },
   'bm.picker.end_event': { zh: '結束此活動 🗑', en: 'End event 🗑' },
   'bm.picker.end_event_disabled_cycling': { zh: '請先等本次拉金盆完成', en: 'Wait for the cycle to finish' },
 
