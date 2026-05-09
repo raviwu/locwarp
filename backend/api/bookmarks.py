@@ -1,5 +1,8 @@
+import json
 import re
+import sys
 from datetime import date as _date
+from pathlib import Path
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException
@@ -31,6 +34,22 @@ def _validate_date_range(start: str, end: str) -> None:
             raise HTTPException(422, f"{label} is not a valid calendar date")
     if start and end and start > end:
         raise HTTPException(422, "start_date must be <= end_date")
+
+
+def _catalog_path() -> Path:
+    """Resolve catalog.json in both dev and PyInstaller-packaged layouts.
+
+    Mirrors the convention used by ``api.phone_control._phone_page_path``.
+    """
+    candidates: list[Path] = []
+    meipass = getattr(sys, "_MEIPASS", None)
+    if meipass:
+        candidates.append(Path(meipass) / "static" / "catalog.json")
+    candidates.append(Path(__file__).resolve().parent.parent / "static" / "catalog.json")
+    for c in candidates:
+        if c.exists():
+            return c
+    return candidates[-1]
 
 
 router = APIRouter(prefix="/api/bookmarks", tags=["bookmarks"])
@@ -244,3 +263,23 @@ async def set_bookmark_ui_state(req: BookmarkUiState):
     )
     app_state.save_settings()
     return {"status": "ok", "expanded_categories": app_state._bookmark_expanded_categories}
+
+
+# ── Catalog (bundled curated event seed) ──────────────────
+
+@router.get("/catalog")
+async def get_catalog():
+    """Return the curated event catalog bundled with the build.
+
+    404 when the file is missing (build did not include it; UI hides
+    the Refresh button). 500 when the file is unreadable or malformed.
+    """
+    path = _catalog_path()
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="Catalog not bundled")
+    try:
+        text = path.read_text(encoding="utf-8")
+        json.loads(text)  # validate
+    except (OSError, ValueError):
+        raise HTTPException(status_code=500, detail="Catalog unreadable or malformed")
+    return Response(content=text, media_type="application/json")
