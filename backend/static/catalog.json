@@ -5,7 +5,10 @@
     "source_notes": [
       "Sapporo Pikmin Bloom Tour — https://pikminbloom.com/zh/news/apr26-sapporotour (常設活動，每年可參加一次)",
       "Sanga Stadium by KYOCERA — https://pikminbloom.com/en/news/feb26-kyotosanga (2026/2/6 ~ 2026/6/7)",
-      "京都散步 — Kyoto walking spots curated from Pikmin Bloom community lists (沒有截止期限)"
+      "京都散步 — Kyoto walking spots curated from Pikmin Bloom community lists (沒有截止期限)",
+      "每月拿禮物 — community-collected gift spots (Taiwan 8 / Japan 2 / Hong Kong 2)",
+      "每月照片鈕扣 — community-collected photo-button spots (Japan 4 / USA 2 / Hong Kong 2 red variant)",
+      "宮島 SA 活動 — Miyajima Service Area Pikmin Terrace event, 2026-03-01 ~ 2026-05-10"
     ],
     "compiled_at": "2026-05-09",
     "format_version": 1
@@ -33,10 +36,37 @@
       "id": "seed-sanga-stadium",
       "name": "Sanga Stadium by KYOCERA",
       "color": "#ef4444",
-      "sort_order": 3,
+      "sort_order": 5,
       "created_at": "2026-05-09T00:00:00Z",
       "start_date": "2026-02-06",
       "end_date": "2026-06-07"
+    },
+    {
+      "id": "seed-monthly-gifts",
+      "name": "每月拿禮物",
+      "color": "#f97316",
+      "sort_order": 3,
+      "created_at": "2026-05-09T00:00:00Z",
+      "start_date": "",
+      "end_date": ""
+    },
+    {
+      "id": "seed-monthly-photo-buttons",
+      "name": "每月照片鈕扣",
+      "color": "#a855f7",
+      "sort_order": 4,
+      "created_at": "2026-05-09T00:00:00Z",
+      "start_date": "",
+      "end_date": ""
+    },
+    {
+      "id": "seed-miyajima-sa-event",
+      "name": "宮島 SA 活動",
+      "color": "#ec4899",
+      "sort_order": 6,
+      "created_at": "2026-05-09T00:00:00Z",
+      "start_date": "2026-03-01",
+      "end_date": "2026-05-10"
     }
   ],
   "bookmarks": [
@@ -432,6 +462,259 @@
       "lng": 135.584839,
       "address": "",
       "category_id": "seed-sanga-stadium",
+      "created_at": "2026-05-09T00:00:00Z",
+      "last_used_at": "2026-05-09T00:00:00Z",
+      "country_code": "jp"
+    },
+    {
+      "id": "seed-gifts-001",
+      "name": "台北車站",
+      "lat": 25.04852,
+      "lng": 121.51419,
+      "address": "",
+      "category_id": "seed-monthly-gifts",
+      "created_at": "2026-05-09T00:00:00Z",
+      "last_used_at": "2026-05-09T00:00:00Z",
+      "country_code": "tw"
+    },
+    {
+      "id": "seed-gifts-002",
+      "name": "台北三創",
+      "lat": 25.04559,
+      "lng": 121.53146,
+      "address": "",
+      "category_id": "seed-monthly-gifts",
+      "created_at": "2026-05-09T00:00:00Z",
+      "last_used_at": "2026-05-09T00:00:00Z",
+      "country_code": "tw"
+    },
+    {
+      "id": "seed-gifts-003",
+      "name": "台北信義 A11",
+      "lat": 25.03682,
+      "lng": 121.56738,
+      "address": "",
+      "category_id": "seed-monthly-gifts",
+      "created_at": "2026-05-09T00:00:00Z",
+      "last_used_at": "2026-05-09T00:00:00Z",
+      "country_code": "tw"
+    },
+    {
+      "id": "seed-gifts-004",
+      "name": "南港 Lalaport",
+      "lat": 25.05942,
+      "lng": 121.61773,
+      "address": "",
+      "category_id": "seed-monthly-gifts",
+      "created_at": "2026-05-09T00:00:00Z",
+      "last_used_at": "2026-05-09T00:00:00Z",
+      "country_code": "tw"
+    },
+    {
+      "id": "seed-gifts-005",
+      "name": "台中 Lalaport",
+      "lat": 24.13512,
+      "lng": 120.69213,
+      "address": "",
+      "category_id": "seed-monthly-gifts",
+      "created_at": "2026-05-09T00:00:00Z",
+      "last_used_at": "2026-05-09T00:00:00Z",
+      "country_code": "tw"
+    },
+    {
+      "id": "seed-gifts-006",
+      "name": "台南南紡",
+      "lat": 22.99079,
+      "lng": 120.23294,
+      "address": "",
+      "category_id": "seed-monthly-gifts",
+      "created_at": "2026-05-09T00:00:00Z",
+      "last_used_at": "2026-05-09T00:00:00Z",
+      "country_code": "tw"
+    },
+    {
+      "id": "seed-gifts-007",
+      "name": "高雄夢時代",
+      "lat": 22.59534,
+      "lng": 120.30765,
+      "address": "",
+      "category_id": "seed-monthly-gifts",
+      "created_at": "2026-05-09T00:00:00Z",
+      "last_used_at": "2026-05-09T00:00:00Z",
+      "country_code": "tw"
+    },
+    {
+      "id": "seed-gifts-008",
+      "name": "高雄遊戲達人漢神巨蛋",
+      "lat": 22.66993,
+      "lng": 120.30262,
+      "address": "",
+      "category_id": "seed-monthly-gifts",
+      "created_at": "2026-05-09T00:00:00Z",
+      "last_used_at": "2026-05-09T00:00:00Z",
+      "country_code": "tw"
+    },
+    {
+      "id": "seed-gifts-009",
+      "name": "任天堂博物館 (金禮物+花牌)",
+      "lat": 34.8929,
+      "lng": 135.78415,
+      "address": "",
+      "category_id": "seed-monthly-gifts",
+      "created_at": "2026-05-09T00:00:00Z",
+      "last_used_at": "2026-05-09T00:00:00Z",
+      "country_code": "jp"
+    },
+    {
+      "id": "seed-gifts-010",
+      "name": "Niantic Park (金色禮物)",
+      "lat": 35.675424,
+      "lng": 139.712909,
+      "address": "",
+      "category_id": "seed-monthly-gifts",
+      "created_at": "2026-05-09T00:00:00Z",
+      "last_used_at": "2026-05-09T00:00:00Z",
+      "country_code": "jp"
+    },
+    {
+      "id": "seed-gifts-011",
+      "name": "香港海港城 (舊版位置)",
+      "lat": 22.294943,
+      "lng": 114.166371,
+      "address": "",
+      "category_id": "seed-monthly-gifts",
+      "created_at": "2026-05-09T00:00:00Z",
+      "last_used_at": "2026-05-09T00:00:00Z",
+      "country_code": "hk"
+    },
+    {
+      "id": "seed-gifts-012",
+      "name": "香港海港城 (新版位置)",
+      "lat": 22.29482,
+      "lng": 114.16581,
+      "address": "",
+      "category_id": "seed-monthly-gifts",
+      "created_at": "2026-05-09T00:00:00Z",
+      "last_used_at": "2026-05-09T00:00:00Z",
+      "country_code": "hk"
+    },
+    {
+      "id": "seed-photo-001",
+      "name": "東京 (待 11/14 確認)",
+      "lat": 35.66235,
+      "lng": 139.69869,
+      "address": "",
+      "category_id": "seed-monthly-photo-buttons",
+      "created_at": "2026-05-09T00:00:00Z",
+      "last_used_at": "2026-05-09T00:00:00Z",
+      "country_code": "jp"
+    },
+    {
+      "id": "seed-photo-002",
+      "name": "大阪 (待 11/14 確認)",
+      "lat": 34.70181,
+      "lng": 135.49662,
+      "address": "",
+      "category_id": "seed-monthly-photo-buttons",
+      "created_at": "2026-05-09T00:00:00Z",
+      "last_used_at": "2026-05-09T00:00:00Z",
+      "country_code": "jp"
+    },
+    {
+      "id": "seed-photo-003",
+      "name": "京都 (待 11/14 確認)",
+      "lat": 35.00384,
+      "lng": 135.76804,
+      "address": "",
+      "category_id": "seed-monthly-photo-buttons",
+      "created_at": "2026-05-09T00:00:00Z",
+      "last_used_at": "2026-05-09T00:00:00Z",
+      "country_code": "jp"
+    },
+    {
+      "id": "seed-photo-004",
+      "name": "福岡 NINTENDO",
+      "lat": 33.589842,
+      "lng": 130.419858,
+      "address": "",
+      "category_id": "seed-monthly-photo-buttons",
+      "created_at": "2026-05-09T00:00:00Z",
+      "last_used_at": "2026-05-09T00:00:00Z",
+      "country_code": "jp"
+    },
+    {
+      "id": "seed-photo-005",
+      "name": "紐約任天堂",
+      "lat": 40.7581,
+      "lng": -73.97928,
+      "address": "",
+      "category_id": "seed-monthly-photo-buttons",
+      "created_at": "2026-05-09T00:00:00Z",
+      "last_used_at": "2026-05-09T00:00:00Z",
+      "country_code": "us"
+    },
+    {
+      "id": "seed-photo-006",
+      "name": "舊金山聯合廣場",
+      "lat": 37.78781,
+      "lng": -122.408767,
+      "address": "",
+      "category_id": "seed-monthly-photo-buttons",
+      "created_at": "2026-05-09T00:00:00Z",
+      "last_used_at": "2026-05-09T00:00:00Z",
+      "country_code": "us"
+    },
+    {
+      "id": "seed-photo-007",
+      "name": "香港 K11 Musea (紅色)",
+      "lat": 22.294558,
+      "lng": 114.174111,
+      "address": "",
+      "category_id": "seed-monthly-photo-buttons",
+      "created_at": "2026-05-09T00:00:00Z",
+      "last_used_at": "2026-05-09T00:00:00Z",
+      "country_code": "hk"
+    },
+    {
+      "id": "seed-photo-008",
+      "name": "香港 LBuy (紅色)",
+      "lat": 22.32393,
+      "lng": 114.172349,
+      "address": "",
+      "category_id": "seed-monthly-photo-buttons",
+      "created_at": "2026-05-09T00:00:00Z",
+      "last_used_at": "2026-05-09T00:00:00Z",
+      "country_code": "hk"
+    },
+    {
+      "id": "seed-miyajima-001",
+      "name": "宮島 SA — 兩個明信片（其中一張要金幣入才有）",
+      "lat": 34.365313,
+      "lng": 132.318103,
+      "address": "",
+      "category_id": "seed-miyajima-sa-event",
+      "created_at": "2026-05-09T00:00:00Z",
+      "last_used_at": "2026-05-09T00:00:00Z",
+      "country_code": "jp"
+    },
+    {
+      "id": "seed-miyajima-002",
+      "name": "宮島 SA — 兩個明信片",
+      "lat": 34.365298,
+      "lng": 132.318908,
+      "address": "",
+      "category_id": "seed-miyajima-sa-event",
+      "created_at": "2026-05-09T00:00:00Z",
+      "last_used_at": "2026-05-09T00:00:00Z",
+      "country_code": "jp"
+    },
+    {
+      "id": "seed-miyajima-003",
+      "name": "宮島 SA — 一張明信片（要金幣入才有）",
+      "lat": 34.364709,
+      "lng": 132.318684,
+      "address": "",
+      "category_id": "seed-miyajima-sa-event",
       "created_at": "2026-05-09T00:00:00Z",
       "last_used_at": "2026-05-09T00:00:00Z",
       "country_code": "jp"
