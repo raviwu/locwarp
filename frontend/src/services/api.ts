@@ -250,9 +250,27 @@ export const updateBookmark = (id: string, bm: any) => request<any>('PUT', `/api
 export const deleteBookmark = (id: string) => request<any>('DELETE', `/api/bookmarks/${id}`)
 export const moveBookmarks = (ids: string[], catId: string) =>
   request<any>('POST', '/api/bookmarks/move', { bookmark_ids: ids, target_category_id: catId })
-export const getCategories = () => request<any[]>('GET', '/api/bookmarks/categories')
-export const createCategory = (cat: any) => request<any>('POST', '/api/bookmarks/categories', cat)
-export const updateCategory = (id: string, cat: any) => request<any>('PUT', `/api/bookmarks/categories/${id}`, cat)
+export interface CategoryPayload {
+  name: string;
+  color: string;
+  start_date?: string;
+  end_date?: string;
+}
+
+export interface CategoryResponse extends CategoryPayload {
+  id: string;
+  sort_order: number;
+  created_at: string;
+  start_date: string;
+  end_date: string;
+}
+
+export const getCategories = () =>
+  request<CategoryResponse[]>('GET', '/api/bookmarks/categories')
+export const createCategory = (cat: CategoryPayload) =>
+  request<CategoryResponse>('POST', '/api/bookmarks/categories', cat)
+export const updateCategory = (id: string, cat: CategoryPayload) =>
+  request<CategoryResponse>('PUT', `/api/bookmarks/categories/${id}`, cat)
 export const deleteCategory = (id: string, cascade = false) =>
   request<{ status: string; deleted_bookmarks: number }>(
     'DELETE',
