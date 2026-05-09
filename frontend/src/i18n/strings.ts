@@ -486,6 +486,20 @@ export const STRINGS = {
   'bm.rename_category': { zh: '重新命名分類', en: 'Rename category' },
   'bm.recolor_tooltip': { zh: '點擊變更分類顏色', en: 'Click to change category color' },
   'bm.recolor_custom': { zh: '自訂顏色', en: 'Custom color' },
+
+  // — Edit-category dialog (replaces inline rename) —
+  'bm.cat.edit_title':       { zh: '編輯分類',                    en: 'Edit category' },
+  'bm.cat.starts':           { zh: '開始日期',                    en: 'Starts' },
+  'bm.cat.ends':             { zh: '結束日期',                    en: 'Ends' },
+  'bm.cat.dates_hint':       { zh: '留空 = 永久(不會自動隱藏)',    en: 'Leave empty for evergreen (never auto-hide)' },
+  'bm.cat.dates_clear':      { zh: '清空',                        en: 'Clear' },
+  'bm.cat.dates_invalid':    { zh: '結束日期須晚於或等於開始日期', en: 'End date must be on or after start date' },
+  'bm.cat.save':             { zh: '儲存',                        en: 'Save' },
+
+  // — Soft-archive status chips —
+  'bm.cat.status_ended':     { zh: '已結束',                      en: 'Ended' },
+  'bm.cat.status_upcoming':  { zh: '即將開始 {date}',              en: 'Starts {date}' },
+
   'bm.blank': { zh: '空白', en: 'Empty' },
   'bm.empty': { zh: '尚無收藏', en: 'No bookmarks' },
   'bm.search_placeholder': { zh: '搜尋收藏名稱 / 座標', en: 'Search bookmark name or coords' },
@@ -525,6 +539,8 @@ export const STRINGS = {
   'bm.picker.category_label': { zh: '分類', en: 'Category' },
   'bm.picker.empty': { zh: '此分類沒有書籤', en: 'No bookmarks in this category' },
   'bm.picker.close': { zh: '關閉', en: 'Close' },
+  // — GoldDitto picker filter —
+  'bm.picker.include_ended': { zh: '包含已結束',                   en: 'Include ended' },
   'bm.picker.end_event': { zh: '結束此活動 🗑', en: 'End event 🗑' },
   'bm.picker.end_event_disabled_cycling': { zh: '請先等本次拉金盆完成', en: 'Wait for the cycle to finish' },
 
