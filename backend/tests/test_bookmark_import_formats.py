@@ -30,7 +30,31 @@ def test_full_store_import(manager):
     result = detect_and_import(manager, payload)
     assert result["scope"] == "full_store"
     assert result["imported"] == 1
+    assert result["skipped"] == 0
     assert any(c.id == "cat-x" for c in manager.store.categories)
+
+
+def test_full_store_import_reports_skipped_duplicates(manager):
+    """Re-importing the same payload should report the duplicates as skipped,
+    not silently drop them with skipped=0."""
+    from services.bookmark_import import detect_and_import
+    payload = json.dumps({
+        "categories": [
+            {"id": "cat-x", "name": "evt", "color": "#ef4444",
+             "sort_order": 1, "created_at": ""},
+        ],
+        "bookmarks": [
+            {"id": "b1", "name": "p1", "lat": 1.0, "lng": 2.0,
+             "category_id": "cat-x", "created_at": "", "last_used_at": ""},
+            {"id": "b2", "name": "p2", "lat": 3.0, "lng": 4.0,
+             "category_id": "cat-x", "created_at": "", "last_used_at": ""},
+        ],
+    })
+    first = detect_and_import(manager, payload)
+    assert first == {"scope": "full_store", "imported": 2, "skipped": 0}
+    # Re-import the same payload — both bookmarks are duplicates by id.
+    second = detect_and_import(manager, payload)
+    assert second == {"scope": "full_store", "imported": 0, "skipped": 2}
 
 
 def test_single_category_import(manager):

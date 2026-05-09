@@ -42,9 +42,17 @@ export const BookmarkPickerPopover: React.FC<Props> = ({
   initialCategoryId, isCycling, onClose, onPickCoord, onCategoryChange, onEndEvent,
 }) => {
   const t = useT()
-  const [selectedCatId, setSelectedCatId] = useState<string | null>(initialCategoryId)
+  // Default to first category (or 'default') when no last-used category is
+  // saved — spec §9 requires the picker to open with something selected so
+  // the user immediately sees content rather than a disabled '—' placeholder.
+  const fallbackCatId = categories[0]?.id ?? 'default'
+  const [selectedCatId, setSelectedCatId] = useState<string | null>(
+    initialCategoryId ?? fallbackCatId,
+  )
 
-  useEffect(() => { setSelectedCatId(initialCategoryId) }, [initialCategoryId, open])
+  useEffect(() => {
+    setSelectedCatId(initialCategoryId ?? fallbackCatId)
+  }, [initialCategoryId, open, fallbackCatId])
 
   // Dismiss on outside click / ESC
   useEffect(() => {

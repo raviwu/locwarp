@@ -251,18 +251,20 @@ class BookmarkManager:
         """Serialise the entire store to a JSON string."""
         return self.store.model_dump_json(indent=2)
 
-    def import_json(self, data: str) -> int:
+    def import_json(self, data: str) -> dict:
         """Import bookmarks (and optionally categories) from a JSON string.
 
         Merges into the existing store -- duplicates by ID are skipped.
 
-        Returns the number of bookmarks imported.
+        Returns ``{"imported": N, "skipped": M}`` so callers can distinguish
+        new entries from collisions. Returns ``{"imported": 0, "skipped": 0}``
+        on parse failure.
         """
         try:
             incoming = BookmarkStore(**json.loads(data))
         except Exception as exc:
             logger.error("Invalid bookmark JSON: %s", exc)
-            return 0
+            return {"imported": 0, "skipped": 0}
 
         existing_cat_ids = {c.id for c in self.store.categories}
         for cat in incoming.categories:
@@ -272,6 +274,7 @@ class BookmarkManager:
 
         existing_bm_ids = {b.id for b in self.store.bookmarks}
         imported = 0
+        skipped = 0
         for bm in incoming.bookmarks:
             if bm.id not in existing_bm_ids:
                 # Ensure the bookmark's category exists
@@ -280,8 +283,10 @@ class BookmarkManager:
                 self.store.bookmarks.append(bm)
                 existing_bm_ids.add(bm.id)
                 imported += 1
+            else:
+                skipped += 1
 
         if imported:
             self._save()
-        logger.info("Imported %d bookmarks", imported)
-        return imported
+        logger.info("Imported %d bookmarks (%d skipped as duplicates)", imported, skipped)
+        return {"imported": imported, "skipped": skipped}

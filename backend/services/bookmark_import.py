@@ -43,8 +43,12 @@ def detect_and_import(manager, raw: str | bytes) -> dict:
 def _import_full_store(manager, payload: dict) -> dict:
     # Reuse the existing path that merges by id (skips duplicates).
     text = json.dumps(payload)
-    imported = manager.import_json(text)
-    return {"scope": "full_store", "imported": imported, "skipped": 0}
+    result = manager.import_json(text)
+    return {
+        "scope": "full_store",
+        "imported": result["imported"],
+        "skipped": result["skipped"],
+    }
 
 
 def _import_single_category(manager, payload: dict) -> dict:
