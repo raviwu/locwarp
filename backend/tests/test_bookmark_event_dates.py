@@ -53,3 +53,56 @@ def test_bookmark_store_round_trips_legacy_payload():
     })
     assert store.categories[0].start_date == ""
     assert store.categories[0].end_date == ""
+
+
+def test_validate_date_range_accepts_empty():
+    from api.bookmarks import _validate_date_range
+    _validate_date_range("", "")  # no exception
+
+
+def test_validate_date_range_accepts_only_start():
+    from api.bookmarks import _validate_date_range
+    _validate_date_range("2026-06-01", "")  # no exception
+
+
+def test_validate_date_range_accepts_only_end():
+    from api.bookmarks import _validate_date_range
+    _validate_date_range("", "2026-06-01")  # no exception
+
+
+def test_validate_date_range_accepts_valid_range():
+    from api.bookmarks import _validate_date_range
+    _validate_date_range("2026-02-06", "2026-06-07")  # no exception
+
+
+def test_validate_date_range_rejects_slash_format():
+    from fastapi import HTTPException
+    from api.bookmarks import _validate_date_range
+    with pytest.raises(HTTPException) as excinfo:
+        _validate_date_range("2026/06/01", "")
+    assert excinfo.value.status_code == 422
+
+
+def test_validate_date_range_rejects_garbage_string():
+    from fastapi import HTTPException
+    from api.bookmarks import _validate_date_range
+    with pytest.raises(HTTPException) as excinfo:
+        _validate_date_range("not-a-date", "")
+    assert excinfo.value.status_code == 422
+
+
+def test_validate_date_range_rejects_invalid_calendar_date():
+    from fastapi import HTTPException
+    from api.bookmarks import _validate_date_range
+    with pytest.raises(HTTPException) as excinfo:
+        _validate_date_range("2026-13-01", "")
+    assert excinfo.value.status_code == 422
+
+
+def test_validate_date_range_rejects_inverted_range():
+    from fastapi import HTTPException
+    from api.bookmarks import _validate_date_range
+    with pytest.raises(HTTPException) as excinfo:
+        _validate_date_range("2026-06-30", "2026-06-29")
+    assert excinfo.value.status_code == 422
+    assert "<= end_date" in excinfo.value.detail

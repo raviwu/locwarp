@@ -1,3 +1,5 @@
+import re
+from datetime import date as _date
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException
@@ -5,6 +7,31 @@ from fastapi.responses import Response
 from pydantic import BaseModel
 
 from models.schemas import Bookmark, BookmarkCategory, BookmarkMoveRequest
+
+_ISO_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+def _validate_date_range(start: str, end: str) -> None:
+    """Validate ISO date strings on BookmarkCategory.
+
+    Empty strings are allowed on either side. Non-empty values must match
+    YYYY-MM-DD and be valid calendar dates. When both are non-empty,
+    start must be <= end.
+
+    Raises HTTPException(422) on any violation.
+    """
+    for label, val in (("start_date", start), ("end_date", end)):
+        if val == "":
+            continue
+        if not _ISO_DATE_RE.match(val):
+            raise HTTPException(422, f"{label} must be YYYY-MM-DD or empty")
+        try:
+            _date.fromisoformat(val)
+        except ValueError:
+            raise HTTPException(422, f"{label} is not a valid calendar date")
+    if start and end and start > end:
+        raise HTTPException(422, "start_date must be <= end_date")
+
 
 router = APIRouter(prefix="/api/bookmarks", tags=["bookmarks"])
 
