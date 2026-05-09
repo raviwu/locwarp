@@ -14,8 +14,11 @@ export interface Bookmark {
 export interface BookmarkCategory {
   id: string
   name: string
-  color?: string
+  color: string
   sort_order?: number
+  // Soft-archive event window. Empty string = unbounded; both empty = evergreen.
+  start_date?: string
+  end_date?: string
 }
 
 export function useBookmarks() {
@@ -85,7 +88,7 @@ export function useBookmarks() {
   )
 
   const createCategory = useCallback(
-    async (cat: Omit<BookmarkCategory, 'id'>) => {
+    async (cat: api.CategoryPayload) => {
       const created = await api.createCategory(cat)
       await refresh()
       return created
@@ -102,7 +105,7 @@ export function useBookmarks() {
   )
 
   const updateCategory = useCallback(
-    async (id: string, data: Partial<BookmarkCategory>) => {
+    async (id: string, data: api.CategoryPayload) => {
       const updated = await api.updateCategory(id, data)
       await refresh()
       return updated
