@@ -156,8 +156,6 @@ export const STRINGS = {
   'goldditto.wait_label': { zh: '等待秒數', en: 'Wait seconds' },
   'goldditto.confirm': { zh: 'Confirm Location', en: 'Confirm Location' },
   'goldditto.first_try': { zh: '1st try', en: '1st try' },
-  'goldditto.random_b': { zh: '🎲 隨機台灣 B 點', en: '🎲 Random Taiwan B' },
-  'goldditto.use_map_center': { zh: '📍 用目前地圖中心', en: '📍 Use current map center' },
   'goldditto.toast.teleported': { zh: '拉金盆: 已瞬移到 {target}', en: 'Gold Ditto: teleported to {target}' },
   'goldditto.toast.waiting': { zh: '拉金盆: 等待 {remaining}s ⋯ 即將還原', en: 'Gold Ditto: waiting {remaining}s ⋯' },
   'goldditto.toast.restored': { zh: '拉金盆: 還原完成,可以開始拉花苞 ✨', en: 'Gold Ditto: restored, pull away ✨' },
@@ -169,7 +167,6 @@ export const STRINGS = {
   // GoldDitto panel — picker entry buttons
   'goldditto.pick_from_bookmarks': { zh: '📚', en: '📚' },
   'goldditto.pick_from_bookmarks_tooltip_a': { zh: '從書籤選 A 點', en: 'Pick A from bookmarks' },
-  'goldditto.pick_from_bookmarks_tooltip_b': { zh: '從書籤選 B 點', en: 'Pick B from bookmarks' },
 
   // ── Bookmark dropdown shared chrome (StartPositionPicker + GoldDitto B) ───
   'panel.start_picker_label': { zh: '起點', en: 'Start point' },
