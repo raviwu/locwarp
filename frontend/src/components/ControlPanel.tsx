@@ -31,11 +31,20 @@ const ApplySpeedButton: React.FC<{ onApply: () => Promise<void> | void; t: (k: a
 };
 import PauseControl from './PauseControl';
 import { SimMode, MoveMode } from '../hooks/useSimulation';
+
+const NEEDS_START_POS: ReadonlySet<SimMode> = new Set([
+  SimMode.RandomWalk,
+  SimMode.Joystick,
+  SimMode.Navigate,
+  SimMode.Loop,
+  SimMode.MultiStop,
+]);
 import AddressSearch from './AddressSearch';
 import BookmarkList from './BookmarkList';
 import GoldDittoPanel from './GoldDittoPanel';
 import ExportPopover from './ExportPopover';
 import RouteList, { RouteCategory, SavedRoute } from './RouteList';
+import StartPositionPicker from './StartPositionPicker';
 
 interface Position {
   lat: number;
@@ -170,6 +179,18 @@ interface ControlPanelProps {
   goldDittoBookmarks?: any[];
   goldDittoCategories?: any[];
   onCategoryDeleteCascade?: (categoryId: string) => Promise<void> | void;
+  // -- Start-position picker (RandomWalk / Joystick / Navigate / Loop / MultiStop) --
+  // Raw bookmark + category data forwarded to StartPositionPicker. Kept
+  // separate from the legacy `bookmarks` / `bookmarkCategories` props which
+  // serve BookmarkList (name-based shape, predates category_id propagation).
+  bookmarksRaw?: Array<{
+    id?: string
+    name: string
+    lat: number
+    lng: number
+    category_id?: string
+  }>;
+  bookmarkCategoriesFull?: Array<{ id: string; name: string }>;
 }
 
 interface SectionState {
@@ -339,6 +360,8 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
   goldDittoBookmarks = [],
   goldDittoCategories = [],
   onCategoryDeleteCascade,
+  bookmarksRaw,
+  bookmarkCategoriesFull,
 }) => {
   const [sections, setSections] = useState<SectionState>({
     mode: true,
@@ -581,6 +604,14 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
           </div>
         )}
       </div>
+
+      {NEEDS_START_POS.has(simMode) && !currentPosition && bookmarksRaw && bookmarkCategoriesFull && (
+        <StartPositionPicker
+          bookmarks={bookmarksRaw}
+          categories={bookmarkCategoriesFull}
+          onPick={(lat, lng, _name) => onTeleport(lat, lng)}
+        />
+      )}
 
       {modeExtraSection}
 

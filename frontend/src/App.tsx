@@ -1480,6 +1480,14 @@ const App: React.FC = () => {
             last_used_at: b.last_used_at || '',
           }))}
           bookmarkCategories={bm.categories.map(c => c.name)}
+          bookmarksRaw={bm.bookmarks.map((b: any) => ({
+            id: b.id,
+            name: b.name,
+            lat: b.lat,
+            lng: b.lng,
+            category_id: b.category_id,
+          }))}
+          bookmarkCategoriesFull={bm.categories.map(c => ({ id: c.id, name: c.name }))}
           bookmarkCategoryColors={Object.fromEntries(bm.categories.map(c => [c.name, c.color || '']))}
           onBookmarkClick={(b: any) => handleTeleport(b.lat, b.lng)}
           onBookmarkPreview={(b: any) => handleMapPanOnly(b.lat, b.lng)}
