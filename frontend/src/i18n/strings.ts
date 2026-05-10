@@ -152,7 +152,7 @@ export const STRINGS = {
 
   // ── Gold Ditto ───────────────────────────────
   'goldditto.a_label': { zh: 'A 點 (金盆位置 / 花點)', en: 'A (Gold Ditto / Flower spot)' },
-  'goldditto.b_label': { zh: 'B 點 (你的真實 GPS)', en: 'B (Your real GPS)' },
+  'goldditto.b_label': { zh: 'B 真實位置 (書籤)', en: 'B real location (bookmark)' },
   'goldditto.wait_label': { zh: '等待秒數', en: 'Wait seconds' },
   'goldditto.confirm': { zh: 'Confirm Location', en: 'Confirm Location' },
   'goldditto.first_try': { zh: '1st try', en: '1st try' },
@@ -170,6 +170,14 @@ export const STRINGS = {
   'goldditto.pick_from_bookmarks': { zh: '📚', en: '📚' },
   'goldditto.pick_from_bookmarks_tooltip_a': { zh: '從書籤選 A 點', en: 'Pick A from bookmarks' },
   'goldditto.pick_from_bookmarks_tooltip_b': { zh: '從書籤選 B 點', en: 'Pick B from bookmarks' },
+
+  // ── Bookmark dropdown shared chrome (StartPositionPicker + GoldDitto B) ───
+  'panel.start_picker_label': { zh: '起點', en: 'Start point' },
+  'panel.start_picker_placeholder': { zh: '從書籤挑一個當起點', en: 'Pick a bookmark to start from' },
+  'panel.start_picker_empty': { zh: '尚無書籤,請先在地圖右鍵加書籤', en: 'No bookmarks yet — right-click the map to add one' },
+  'panel.bookmark_dropdown_other': { zh: '其他', en: 'Other' },
+  'goldditto.b_picker_placeholder': { zh: '從書籤選 B 點', en: 'Pick B from bookmarks' },
+  'goldditto.b_picker_empty': { zh: '尚無書籤,B 點需先建立書籤', en: 'No bookmarks yet — add one before setting B' },
 
   // ── Move mode (speed presets) ────────────────
   'move.walking': { zh: '走路', en: 'Walking' },
