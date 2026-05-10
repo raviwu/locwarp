@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react'
+import React, { useState, useCallback, useEffect } from 'react'
 import { useT } from '../i18n'
 import BookmarkDropdown, {
   BookmarkDropdownItem,
@@ -8,12 +8,34 @@ import BookmarkDropdown, {
 interface Props {
   bookmarks: BookmarkDropdownItem[]
   categories: BookmarkDropdownCategory[]
+  /** Per-mode localStorage key for persisting the last-picked bookmark id. */
+  storageKey: string
   onPick: (lat: number, lng: number, name: string) => void
 }
 
-const StartPositionPicker: React.FC<Props> = ({ bookmarks, categories, onPick }) => {
+const StartPositionPicker: React.FC<Props> = ({
+  bookmarks,
+  categories,
+  storageKey,
+  onPick,
+}) => {
   const t = useT()
-  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [selectedId, setSelectedId] = useState<string | null>(() => {
+    try { return localStorage.getItem(storageKey) } catch { return null }
+  })
+
+  // Re-load saved selection when the storage key changes (mode switch).
+  useEffect(() => {
+    try { setSelectedId(localStorage.getItem(storageKey)) } catch { setSelectedId(null) }
+  }, [storageKey])
+
+  // Persist selection on change.
+  useEffect(() => {
+    try {
+      if (selectedId) localStorage.setItem(storageKey, selectedId)
+      else localStorage.removeItem(storageKey)
+    } catch { /* quota / privacy mode — ignore */ }
+  }, [selectedId, storageKey])
 
   const handleChange = useCallback(
     (bm: BookmarkDropdownItem | null) => {
@@ -21,15 +43,8 @@ const StartPositionPicker: React.FC<Props> = ({ bookmarks, categories, onPick })
         setSelectedId(null)
         return
       }
-      // Briefly mark as selected so the <select> shows the picked label
-      // while the teleport request is in-flight; in practice the parent
-      // unmounts us almost immediately because currentPosition becomes
-      // non-null. Reset to null so a same-pick replay still fires.
       setSelectedId(bm.id ?? null)
       onPick(bm.lat, bm.lng, bm.name)
-      // Reset on the next tick so a reuse of the same bookmark works if
-      // the parent doesn't unmount us (e.g. teleport failed).
-      setTimeout(() => setSelectedId(null), 0)
     },
     [onPick],
   )

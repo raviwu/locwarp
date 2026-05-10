@@ -605,10 +605,11 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
         )}
       </div>
 
-      {NEEDS_START_POS.has(simMode) && !currentPosition && bookmarksRaw && bookmarkCategoriesFull && (
+      {NEEDS_START_POS.has(simMode) && bookmarksRaw && bookmarkCategoriesFull && (
         <StartPositionPicker
           bookmarks={bookmarksRaw}
           categories={bookmarkCategoriesFull}
+          storageKey={`locwarp.start_picker.${simMode}`}
           onPick={(lat, lng, _name) => onTeleport(lat, lng)}
         />
       )}
