@@ -44,3 +44,7 @@ Thumbs.db
 S__*.png
 S__*.jpg
 _geoport/
+
+# ── macOS build artifacts ───────────────────────────
+*.dmg
+frontend/build/icon.iconset/
