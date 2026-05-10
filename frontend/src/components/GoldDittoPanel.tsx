@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback, useMemo } from 'react'
+import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import { useT } from '../i18n'
 import BookmarkPickerPopover from './BookmarkPickerPopover'
@@ -23,6 +23,10 @@ interface Category {
 interface Props {
   connectedUdids: string[]
   isCycling: boolean
+  // mapCenter was used by the old "Use map center" B-button. After the
+  // 2026-05-10 refactor B is bookmark-only; mapCenter is intentionally
+  // kept on the interface to avoid churning ControlPanel and App.tsx
+  // wiring (out of scope), but is no longer consumed in the body.
   mapCenter: { lat: number; lng: number } | null
   // External A-setter — pushed in by MapView right-click "設為拉金盆 A 點".
   // We wrap the coord in an object so every push creates a fresh reference;
@@ -81,7 +85,7 @@ export const GoldDittoPanel: React.FC<Props> = ({
 
   const [pickerSide, setPickerSide] = useState<'A' | 'B' | null>(null)
   const [pickerAnchor, setPickerAnchor] = useState<DOMRect | null>(null)
-  const aBtnRef = React.useRef<HTMLButtonElement | null>(null)
+  const aBtnRef = useRef<HTMLButtonElement | null>(null)
 
   const [pickerCatA, setPickerCatA] = useState<string | null>(
     () => localStorage.getItem('goldditto.picker.A.lastCategory'),
@@ -123,7 +127,7 @@ export const GoldDittoPanel: React.FC<Props> = ({
   // guard `bookmarks.length === 0 ? return` defers the decision until at
   // least one bookmark is visible. If the user genuinely has zero bookmarks,
   // the migration sits idle (cheap no-op) until they add one or pick B.
-  const migratedRef = React.useRef(false)
+  const migratedRef = useRef(false)
   useEffect(() => {
     if (migratedRef.current) return
     if (bBookmarkId) {
