@@ -306,6 +306,21 @@ class RouteOptimizeResponse(BaseModel):
     used_estimate: bool = False
 
 
+# ── Cloud sync ────────────────────────────────────────────
+class CloudSyncStatus(BaseModel):
+    enabled: bool
+    detected_icloud_path: str | None = None
+    current_path: str
+    sync_folder: str | None = None
+    bookmark_count: int = 0
+    category_count: int = 0
+    prompt_dismissed: bool = False
+
+
+class CloudSyncEnableRequest(BaseModel):
+    folder: str | None = None  # absolute path; None = use detected iCloud
+
+
 # ── Pull-Gold-Ditto ───────────────────────────────────────
 class GoldDittoCycleRequest(BaseModel):
     """Pull-Gold-Ditto cycle request.

@@ -115,6 +115,27 @@ class AppState:
     def update_last_position(self, lat: float, lng: float):
         self._last_position = {"lat": lat, "lng": lng}
 
+    def restart_bookmark_watcher(self) -> None:
+        """Stop and restart the bookmark file-watcher on the current manager.
+
+        Call this after swapping bookmark_manager to a new instance so the
+        watcher binds to the new path. The asyncio loop must already be
+        running (i.e. called from within a FastAPI async handler) — the
+        callback bridges onto it via run_coroutine_threadsafe.
+        """
+        import asyncio
+        from api.websocket import broadcast as _bc
+
+        self.bookmark_manager.stop_watcher()
+        loop = asyncio.get_running_loop()
+
+        def _on_change():
+            asyncio.run_coroutine_threadsafe(
+                _bc("bookmarks_changed", {"reason": "external_update"}), loop
+            )
+
+        self.bookmark_manager.start_watcher(_on_change)
+
     @property
     def simulation_engine(self):
         """Legacy accessor: the most-recently-created engine.
