@@ -43,6 +43,8 @@ class BookmarkManager:
             ],
             bookmarks=[],
         )
+        self._last_loaded_mtime: float = 0.0
+        self._last_loaded_snapshot: BookmarkStore = BookmarkStore(categories=[], bookmarks=[])
         self._load()
 
     # ------------------------------------------------------------------
@@ -69,6 +71,7 @@ class BookmarkManager:
                 len(self.store.bookmarks),
                 len(self.store.categories),
             )
+            self._update_snapshot()
         except Exception as exc:
             logger.warning("Bookmark payload failed schema validation: %s", exc)
 
@@ -76,6 +79,23 @@ class BookmarkManager:
         """Persist the current store to disk via atomic tmp + rename."""
         payload = json.loads(self.store.model_dump_json())
         safe_write_json(self._bookmarks_path(), payload)
+        self._update_snapshot()
+
+    def _update_snapshot(self) -> None:
+        """Capture current store as the baseline for future diffs.
+
+        Records the disk mtime at the moment we know self.store is in sync
+        with the file. A deep copy ensures later in-memory edits do not
+        mutate the snapshot.
+        """
+        path = self._bookmarks_path()
+        try:
+            self._last_loaded_mtime = path.stat().st_mtime
+        except FileNotFoundError:
+            self._last_loaded_mtime = 0.0
+        self._last_loaded_snapshot = BookmarkStore(
+            **json.loads(self.store.model_dump_json())
+        )
 
     def _bookmarks_path(self) -> Path:
         # Allow tests to override by patching the module-level BOOKMARKS_FILE.
