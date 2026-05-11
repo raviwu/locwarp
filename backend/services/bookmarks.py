@@ -8,11 +8,15 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-from config import BOOKMARKS_FILE
+from config import BOOKMARKS_FILE, get_bookmarks_path
 from models.schemas import Bookmark, BookmarkCategory, BookmarkStore
 from services.json_safe import safe_load_json, safe_write_json
 
 logger = logging.getLogger(__name__)
+
+# Keep a reference to the config default so _bookmarks_path() can detect
+# when tests (or other callers) have monkeypatched the module-level name.
+_CONFIG_DEFAULT_BOOKMARKS_FILE = BOOKMARKS_FILE
 
 
 def _now_iso() -> str:
@@ -54,7 +58,7 @@ class BookmarkManager:
         default empty store. Otherwise the next ``_save()`` would
         overwrite the original file with an empty bookmark list.
         """
-        data = safe_load_json(Path(BOOKMARKS_FILE))
+        data = safe_load_json(self._bookmarks_path())
         if data is None:
             logger.info("No bookmark file (or unreadable); using defaults")
             return
@@ -71,7 +75,15 @@ class BookmarkManager:
     def _save(self) -> None:
         """Persist the current store to disk via atomic tmp + rename."""
         payload = json.loads(self.store.model_dump_json())
-        safe_write_json(Path(BOOKMARKS_FILE), payload)
+        safe_write_json(self._bookmarks_path(), payload)
+
+    def _bookmarks_path(self) -> Path:
+        # Allow tests to override by patching the module-level BOOKMARKS_FILE.
+        # _CONFIG_DEFAULT_BOOKMARKS_FILE holds the value captured at import
+        # time; if tests have patched the module-level name, it will differ.
+        if BOOKMARKS_FILE is not _CONFIG_DEFAULT_BOOKMARKS_FILE:
+            return Path(BOOKMARKS_FILE)
+        return get_bookmarks_path()
 
     # ------------------------------------------------------------------
     # Categories

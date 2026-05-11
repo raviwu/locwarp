@@ -62,6 +62,8 @@ class AppState:
         # "auto-collapse when total bookmarks > 30" rule. Empty list means
         # explicitly all-collapsed.
         self._bookmark_expanded_categories: list[str] | None = None
+        self._bookmarks_path: str | None = None
+        self._cloud_sync_dismissed: bool = False
         self._load_settings()
 
     def _load_settings(self):
@@ -83,6 +85,12 @@ class AppState:
             bmExp = data.get("bookmark_expanded_categories")
             if isinstance(bmExp, list):
                 self._bookmark_expanded_categories = [str(x) for x in bmExp]
+            bp = data.get("bookmarks_path")
+            if isinstance(bp, str):
+                self._bookmarks_path = bp
+            cdsm = data.get("cloud_sync_dismissed")
+            if isinstance(cdsm, bool):
+                self._cloud_sync_dismissed = cdsm
         except (ValueError, KeyError):
             logger.warning("Settings payload field malformed; keeping defaults", exc_info=True)
 
@@ -93,6 +101,8 @@ class AppState:
             "coord_format": self.coord_formatter.format.value,
             "initial_map_position": self._initial_map_position,
             "bookmark_expanded_categories": self._bookmark_expanded_categories,
+            "bookmarks_path": self._bookmarks_path,
+            "cloud_sync_dismissed": self._cloud_sync_dismissed,
         }
         safe_write_json(SETTINGS_FILE, data)
 
