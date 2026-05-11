@@ -209,3 +209,30 @@ def test_watcher_handler_triggers_on_moved_to_target(tmp_path, monkeypatch):
     fake_event.dest_path = str(bookmarks)
     h.on_moved(fake_event)
     assert fired == [True]
+
+
+def test_two_managers_on_same_file_converge(tmp_path, monkeypatch):
+    """Simulate two devices both editing the same bookmarks.json.
+
+    After both have written, the final state should contain all
+    non-conflicting edits from both sides. Local-wins semantics apply
+    only on overlapping ids; disjoint edits all survive.
+    """
+    _patch_paths(tmp_path, monkeypatch)
+    bookmarks = tmp_path / "bookmarks.json"
+
+    mgr_a = BookmarkManager()
+    mgr_a.create_bookmark(name="from-A-1", lat=1.0, lng=1.0)
+
+    mgr_b = BookmarkManager()
+    # B has loaded what A wrote
+    assert any(b.name == "from-A-1" for b in mgr_b.list_bookmarks())
+
+    mgr_b.create_bookmark(name="from-B-1", lat=2.0, lng=2.0)
+
+    # A now writes a second bookmark; should merge B's bookmark in
+    mgr_a.create_bookmark(name="from-A-2", lat=3.0, lng=3.0)
+
+    final = _json.loads(bookmarks.read_text(encoding="utf-8"))
+    names = {b["name"] for b in final["bookmarks"]}
+    assert names == {"from-A-1", "from-A-2", "from-B-1"}
