@@ -1,7 +1,6 @@
 import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { useT } from './i18n'
-import { useI18n } from './i18n'
 import { useWebSocket } from './hooks/useWebSocket'
 import { useDevice } from './hooks/useDevice'
 import { useSimulation } from './hooks/useSimulation'
@@ -48,7 +47,7 @@ import { SimMode, MoveMode } from './hooks/useSimulation'
 // cloud sync is already enabled, the prompt was previously dismissed, or
 // iCloud Drive is not detected on this machine.
 function useCloudSyncDiscovery() {
-  const { t } = useI18n()
+  const t = useT()
   useEffect(() => {
     let cancelled = false
     ;(async () => {
@@ -182,6 +181,17 @@ const App: React.FC = () => {
       toastTimerRef.current = null
     }, ms)
   }, [])
+
+  // Auto-refresh bookmarks when the backend signals an external change
+  // (cloud-sync watchdog picked up a file written by another device).
+  useEffect(() => {
+    return ws.subscribe((msg) => {
+      if (msg.type === 'bookmarks_changed') {
+        bm.refresh()
+        showToast(t('cloud_sync.toast_synced'))
+      }
+    })
+  }, [ws.subscribe, bm.refresh, showToast, t])
 
   const handleRestore = useCallback(async () => {
     // The backend stop + DVT clear can take a few seconds, especially if
