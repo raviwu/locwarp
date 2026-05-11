@@ -48,3 +48,4 @@ _geoport/
 # ── macOS build artifacts ───────────────────────────
 *.dmg
 frontend/build/icon.iconset/
+scripts/testers.conf
