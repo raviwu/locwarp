@@ -111,5 +111,6 @@ def merge_local_wins(remote: BookmarkStore, local_diff: StoreDiff) -> BookmarkSt
             bm_index[bm.id] = len(out_bookmarks) - 1
     if local_diff.bookmarks_deleted:
         out_bookmarks = [b for b in out_bookmarks if b.id not in local_diff.bookmarks_deleted]
+        bm_index = {b.id: i for i, b in enumerate(out_bookmarks)}
 
     return BookmarkStore(categories=out_categories, bookmarks=out_bookmarks)
