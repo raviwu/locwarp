@@ -34,3 +34,25 @@ def test_detect_icloud_path_windows_returns_path_when_folder_exists(tmp_path, mo
 def test_detect_icloud_path_unsupported_platform_returns_none(monkeypatch):
     monkeypatch.setattr("services.cloud_sync.sys.platform", "linux")
     assert detect_icloud_path() is None
+
+
+from services.cloud_sync import setup_sync_folder
+
+
+def test_setup_sync_folder_creates_subfolder(tmp_path):
+    result = setup_sync_folder(tmp_path)
+    assert result == tmp_path / "LocWarp"
+    assert result.is_dir()
+
+
+def test_setup_sync_folder_is_idempotent(tmp_path):
+    first = setup_sync_folder(tmp_path)
+    second = setup_sync_folder(tmp_path)
+    assert first == second
+    assert second.is_dir()
+
+
+def test_setup_sync_folder_rejects_non_writable_parent(tmp_path, monkeypatch):
+    not_exists = tmp_path / "does-not-exist"
+    with pytest.raises(FileNotFoundError):
+        setup_sync_folder(not_exists)

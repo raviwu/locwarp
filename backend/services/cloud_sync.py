@@ -16,6 +16,8 @@ from pathlib import Path
 _MACOS_ICLOUD_REL = Path("Library/Mobile Documents/com~apple~CloudDocs")
 _WIN_ICLOUD_REL = Path("iCloudDrive")
 
+LOCWARP_SUBFOLDER = "LocWarp"
+
 
 def detect_icloud_path() -> Path | None:
     """Return the user's iCloud Drive root if it exists; else None.
@@ -32,3 +34,16 @@ def detect_icloud_path() -> Path | None:
     else:
         return None
     return candidate if candidate.exists() else None
+
+
+def setup_sync_folder(parent: Path) -> Path:
+    """Create (or reuse) the LocWarp subfolder under *parent*.
+
+    Raises FileNotFoundError if *parent* itself does not exist (we never
+    create the cloud drive root for the user).
+    """
+    if not parent.exists():
+        raise FileNotFoundError(f"Parent folder does not exist: {parent}")
+    sub = parent / LOCWARP_SUBFOLDER
+    sub.mkdir(exist_ok=True)
+    return sub
