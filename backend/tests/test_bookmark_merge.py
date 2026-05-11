@@ -85,3 +85,77 @@ def test_diff_detects_category_changes():
 def test_diff_is_empty_helper():
     a = _store()
     assert diff_store(current=a, baseline=a).is_empty()
+
+
+
+from services.bookmark_merge import merge_local_wins
+
+
+def test_merge_both_added_disjoint_keeps_both():
+    baseline = _store()
+    local = _store(bookmarks=[_bm("a")])
+    remote = _store(bookmarks=[_bm("b")])
+    local_diff = diff_store(current=local, baseline=baseline)
+    merged = merge_local_wins(remote=remote, local_diff=local_diff)
+    ids = {b.id for b in merged.bookmarks}
+    assert ids == {"a", "b"}
+
+
+def test_merge_modify_modify_local_wins():
+    baseline = _store(bookmarks=[_bm("z", name="orig")])
+    local = _store(bookmarks=[_bm("z", name="local-edit")])
+    remote = _store(bookmarks=[_bm("z", name="remote-edit")])
+    local_diff = diff_store(current=local, baseline=baseline)
+    merged = merge_local_wins(remote=remote, local_diff=local_diff)
+    z = next(b for b in merged.bookmarks if b.id == "z")
+    assert z.name == "local-edit"
+
+
+def test_merge_local_delete_wins_over_remote_modify():
+    baseline = _store(bookmarks=[_bm("q", name="orig")])
+    local = _store()  # local deleted q
+    remote = _store(bookmarks=[_bm("q", name="remote-edit")])
+    local_diff = diff_store(current=local, baseline=baseline)
+    merged = merge_local_wins(remote=remote, local_diff=local_diff)
+    assert all(b.id != "q" for b in merged.bookmarks)
+
+
+def test_merge_local_modify_restores_remote_delete():
+    baseline = _store(bookmarks=[_bm("q", name="orig")])
+    local = _store(bookmarks=[_bm("q", name="local-edit")])
+    remote = _store()  # remote deleted q
+    local_diff = diff_store(current=local, baseline=baseline)
+    merged = merge_local_wins(remote=remote, local_diff=local_diff)
+    q = next(b for b in merged.bookmarks if b.id == "q")
+    assert q.name == "local-edit"
+
+
+def test_merge_category_changes_same_semantics():
+    baseline = _store()
+    new_cat = BookmarkCategory(id="c1", name="Local", color="#fff", sort_order=1, created_at="2026-05-11T00:00:00+00:00")
+    local = _store(categories=[
+        BookmarkCategory(id="default", name="預設", color="#000", sort_order=0, created_at="2026-05-11T00:00:00+00:00"),
+        new_cat,
+    ])
+    remote = _store()  # only default
+    local_diff = diff_store(current=local, baseline=baseline)
+    merged = merge_local_wins(remote=remote, local_diff=local_diff)
+    cat_ids = {c.id for c in merged.categories}
+    assert "c1" in cat_ids
+
+
+def test_merge_no_local_changes_returns_remote_equivalent():
+    # Use fixed timestamps to ensure bookmark "a" is identical in baseline and local
+    fixed_ts = "2026-05-11T00:00:00+00:00"
+    bm_a = Bookmark(
+        id="a", name="X", lat=1.0, lng=2.0, address="", category_id="default",
+        created_at=fixed_ts, last_used_at=fixed_ts, country_code=""
+    )
+    baseline = _store(bookmarks=[bm_a])
+    local = _store(bookmarks=[bm_a])
+    remote = _store(bookmarks=[bm_a, _bm("b")])
+    local_diff = diff_store(current=local, baseline=baseline)
+    assert local_diff.is_empty()
+    merged = merge_local_wins(remote=remote, local_diff=local_diff)
+    ids = {b.id for b in merged.bookmarks}
+    assert ids == {"a", "b"}

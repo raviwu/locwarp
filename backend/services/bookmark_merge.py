@@ -68,3 +68,48 @@ def diff_store(current: BookmarkStore, baseline: BookmarkStore) -> StoreDiff:
             out.categories_deleted.add(cid)
 
     return out
+
+
+
+def merge_local_wins(remote: BookmarkStore, local_diff: StoreDiff) -> BookmarkStore:
+    """Apply *local_diff* on top of *remote*, with local intent winning.
+
+    Semantics:
+    - created: append if id not already in remote.
+    - modified: replace existing by id; if missing (remote deleted it),
+      append back so local edits are not lost.
+    - deleted: remove from remote; takes precedence over a remote modify.
+    """
+    out_categories = list(remote.categories)
+    out_bookmarks = list(remote.bookmarks)
+
+    cat_index = {c.id: i for i, c in enumerate(out_categories)}
+    for cat in local_diff.categories_created:
+        if cat.id not in cat_index:
+            out_categories.append(cat)
+            cat_index[cat.id] = len(out_categories) - 1
+    for cat in local_diff.categories_modified:
+        if cat.id in cat_index:
+            out_categories[cat_index[cat.id]] = cat
+        else:
+            out_categories.append(cat)
+            cat_index[cat.id] = len(out_categories) - 1
+    if local_diff.categories_deleted:
+        out_categories = [c for c in out_categories if c.id not in local_diff.categories_deleted]
+        cat_index = {c.id: i for i, c in enumerate(out_categories)}
+
+    bm_index = {b.id: i for i, b in enumerate(out_bookmarks)}
+    for bm in local_diff.bookmarks_created:
+        if bm.id not in bm_index:
+            out_bookmarks.append(bm)
+            bm_index[bm.id] = len(out_bookmarks) - 1
+    for bm in local_diff.bookmarks_modified:
+        if bm.id in bm_index:
+            out_bookmarks[bm_index[bm.id]] = bm
+        else:
+            out_bookmarks.append(bm)
+            bm_index[bm.id] = len(out_bookmarks) - 1
+    if local_diff.bookmarks_deleted:
+        out_bookmarks = [b for b in out_bookmarks if b.id not in local_diff.bookmarks_deleted]
+
+    return BookmarkStore(categories=out_categories, bookmarks=out_bookmarks)
