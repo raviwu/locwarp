@@ -10,6 +10,7 @@ from pathlib import Path
 
 from config import BOOKMARKS_FILE, get_bookmarks_path
 from models.schemas import Bookmark, BookmarkCategory, BookmarkStore
+from services.bookmark_merge import diff_store, merge_local_wins
 from services.json_safe import safe_load_json, safe_write_json
 
 logger = logging.getLogger(__name__)
@@ -76,10 +77,45 @@ class BookmarkManager:
             logger.warning("Bookmark payload failed schema validation: %s", exc)
 
     def _save(self) -> None:
-        """Persist the current store to disk via atomic tmp + rename."""
+        """Persist the current store to disk, merging any external changes.
+
+        If the disk mtime is newer than the snapshot we hold, another
+        process (or another device via cloud sync) wrote to the file
+        between our last load and this save. In that case we diff our
+        in-memory store against the snapshot, reload the fresh disk
+        state, reapply the diff on top, and only then write.
+        """
+        path = self._bookmarks_path()
+        try:
+            current_mtime = path.stat().st_mtime
+        except FileNotFoundError:
+            current_mtime = 0.0
+
+        if current_mtime > self._last_loaded_mtime:
+            self._reconcile_from_disk()
+
         payload = json.loads(self.store.model_dump_json())
-        safe_write_json(self._bookmarks_path(), payload)
+        safe_write_json(path, payload)
         self._update_snapshot()
+
+    def _reconcile_from_disk(self) -> None:
+        """Merge external on-disk changes into self.store using local-wins.
+
+        No-op (besides updating snapshot) when on-disk content is invalid
+        or unreadable — better to keep our in-memory copy than to wipe it
+        in response to a transient read error.
+        """
+        path = self._bookmarks_path()
+        raw = safe_load_json(path)
+        if not isinstance(raw, dict):
+            return
+        try:
+            fresh = BookmarkStore(**raw)
+        except Exception as exc:
+            logger.warning("Disk payload failed schema validation during reconcile: %s", exc)
+            return
+        local_diff = diff_store(current=self.store, baseline=self._last_loaded_snapshot)
+        self.store = merge_local_wins(remote=fresh, local_diff=local_diff)
 
     def _update_snapshot(self) -> None:
         """Capture current store as the baseline for future diffs.

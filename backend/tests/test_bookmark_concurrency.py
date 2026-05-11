@@ -28,3 +28,55 @@ def test_manager_records_mtime_after_save(tmp_path, monkeypatch):
     assert (tmp_path / "bookmarks.json").exists()
     assert mgr._last_loaded_mtime == (tmp_path / "bookmarks.json").stat().st_mtime
     assert any(b.id == bm.id for b in mgr._last_loaded_snapshot.bookmarks)
+
+
+import json as _json
+
+
+def test_save_merges_when_disk_changed_externally(tmp_path, monkeypatch):
+    _patch_paths(tmp_path, monkeypatch)
+    bookmarks = tmp_path / "bookmarks.json"
+
+    # Manager A creates a bookmark
+    mgr_a = BookmarkManager()
+    mgr_a.create_bookmark(name="A1", lat=1.0, lng=1.0)
+
+    # Simulate device B writing a different bookmark to disk
+    payload = _json.loads(bookmarks.read_text(encoding="utf-8"))
+    payload["bookmarks"].append({
+        "id": "external-id",
+        "name": "from-device-b",
+        "lat": 9.0,
+        "lng": 9.0,
+        "address": "",
+        "category_id": "default",
+        "created_at": "2026-01-01T00:00:00+00:00",
+        "last_used_at": "2026-01-01T00:00:00+00:00",
+        "country_code": "",
+    })
+    bookmarks.write_text(_json.dumps(payload), encoding="utf-8")
+    # Force a newer mtime than what mgr_a recorded
+    import os
+    os.utime(bookmarks, (mgr_a._last_loaded_mtime + 10, mgr_a._last_loaded_mtime + 10))
+
+    # Now A creates another bookmark — _save should merge in B's entry
+    mgr_a.create_bookmark(name="A2", lat=2.0, lng=2.0)
+
+    final = _json.loads(bookmarks.read_text(encoding="utf-8"))
+    ids = {b["id"] for b in final["bookmarks"]}
+    names = {b["name"] for b in final["bookmarks"]}
+    assert "external-id" in ids
+    assert {"A1", "A2", "from-device-b"} <= names
+
+
+def test_save_does_not_merge_when_disk_unchanged(tmp_path, monkeypatch):
+    _patch_paths(tmp_path, monkeypatch)
+    mgr = BookmarkManager()
+    mgr.create_bookmark(name="X", lat=1.0, lng=1.0)
+    first_payload = (tmp_path / "bookmarks.json").read_text(encoding="utf-8")
+    mgr.create_bookmark(name="Y", lat=2.0, lng=2.0)
+    second_payload = (tmp_path / "bookmarks.json").read_text(encoding="utf-8")
+    assert first_payload != second_payload
+    final = _json.loads(second_payload)
+    names = {b["name"] for b in final["bookmarks"]}
+    assert names == {"X", "Y"}
