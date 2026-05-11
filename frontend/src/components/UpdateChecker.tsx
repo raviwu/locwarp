@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import pkg from '../../package.json';
 
 const CURRENT = (pkg as { version: string }).version;
-const REPO = 'keezxc1223/locwarp';
+const REPO = 'raviwu/locwarp';
 const API_URL = `https://api.github.com/repos/${REPO}/releases/latest`;
 
 function parseVer(s: string): number[] {
