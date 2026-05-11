@@ -62,6 +62,8 @@ class AppState:
         # "auto-collapse when total bookmarks > 30" rule. Empty list means
         # explicitly all-collapsed.
         self._bookmark_expanded_categories: list[str] | None = None
+        self._bookmarks_path: str | None = None
+        self._cloud_sync_dismissed: bool = False
         self._load_settings()
 
     def _load_settings(self):
@@ -83,6 +85,12 @@ class AppState:
             bmExp = data.get("bookmark_expanded_categories")
             if isinstance(bmExp, list):
                 self._bookmark_expanded_categories = [str(x) for x in bmExp]
+            bp = data.get("bookmarks_path")
+            if isinstance(bp, str):
+                self._bookmarks_path = bp
+            cdsm = data.get("cloud_sync_dismissed")
+            if isinstance(cdsm, bool):
+                self._cloud_sync_dismissed = cdsm
         except (ValueError, KeyError):
             logger.warning("Settings payload field malformed; keeping defaults", exc_info=True)
 
@@ -93,6 +101,8 @@ class AppState:
             "coord_format": self.coord_formatter.format.value,
             "initial_map_position": self._initial_map_position,
             "bookmark_expanded_categories": self._bookmark_expanded_categories,
+            "bookmarks_path": self._bookmarks_path,
+            "cloud_sync_dismissed": self._cloud_sync_dismissed,
         }
         safe_write_json(SETTINGS_FILE, data)
 
@@ -104,6 +114,27 @@ class AppState:
 
     def update_last_position(self, lat: float, lng: float):
         self._last_position = {"lat": lat, "lng": lng}
+
+    def restart_bookmark_watcher(self) -> None:
+        """Stop and restart the bookmark file-watcher on the current manager.
+
+        Call this after swapping bookmark_manager to a new instance so the
+        watcher binds to the new path. The asyncio loop must already be
+        running (i.e. called from within a FastAPI async handler) — the
+        callback bridges onto it via run_coroutine_threadsafe.
+        """
+        import asyncio
+        from api.websocket import broadcast as _bc
+
+        self.bookmark_manager.stop_watcher()
+        loop = asyncio.get_running_loop()
+
+        def _on_change():
+            asyncio.run_coroutine_threadsafe(
+                _bc("bookmarks_changed", {"reason": "external_update"}), loop
+            )
+
+        self.bookmark_manager.start_watcher(_on_change)
 
     @property
     def simulation_engine(self):
@@ -597,9 +628,24 @@ async def lifespan(application: FastAPI):
 
     watchdog_task = asyncio.create_task(_usbmux_presence_watchdog())
 
+    # Start bookmark file watcher so external changes (iCloud sync from
+    # another device) are picked up and broadcast to all WebSocket clients.
+    loop = asyncio.get_running_loop()
+    from api.websocket import broadcast as _bc
+
+    def _on_bookmark_change():
+        asyncio.run_coroutine_threadsafe(
+            _bc("bookmarks_changed", {"reason": "external_update"}),
+            loop,
+        )
+
+    app_state.bookmark_manager.start_watcher(_on_bookmark_change)
+
     yield
 
     # ── Shutdown ──
+    app_state.bookmark_manager.stop_watcher()
+
     watchdog_task.cancel()
     try:
         await watchdog_task

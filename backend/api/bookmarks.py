@@ -1,15 +1,20 @@
 import json
+import logging
 import re
 import sys
 from datetime import date as _date
 from pathlib import Path
 from typing import Literal
 
+logger = logging.getLogger(__name__)
+
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import Response
 from pydantic import BaseModel
 
-from models.schemas import Bookmark, BookmarkCategory, BookmarkMoveRequest
+from models.schemas import Bookmark, BookmarkCategory, BookmarkMoveRequest, CloudSyncStatus, CloudSyncEnableRequest
+from services.cloud_sync import detect_icloud_path, setup_sync_folder, migrate_bookmarks
+import config as _config
 
 _ISO_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
@@ -283,3 +288,105 @@ async def get_catalog():
     except (OSError, ValueError):
         raise HTTPException(status_code=500, detail="Catalog unreadable or malformed")
     return Response(content=text, media_type="application/json")
+
+
+# ── Cloud sync ────────────────────────────────────────────
+
+@router.get("/cloud-sync/status", response_model=CloudSyncStatus)
+async def cloud_sync_status():
+    from main import app_state
+    bm = _bm()
+    current = bm._bookmarks_path()
+    # Use _config._DEFAULT_BOOKMARKS_FILE at call time so monkeypatched values
+    # in tests (pointing at tmp_path) compare correctly against the live default.
+    default_path = _config._DEFAULT_BOOKMARKS_FILE
+    is_enabled = current != default_path
+    sync_folder = str(current.parent) if is_enabled else None
+    icloud = detect_icloud_path()
+    return CloudSyncStatus(
+        enabled=is_enabled,
+        detected_icloud_path=str(icloud) if icloud else None,
+        current_path=str(current),
+        sync_folder=sync_folder,
+        bookmark_count=len(bm.list_bookmarks()),
+        category_count=len(bm.list_categories()),
+        prompt_dismissed=app_state._cloud_sync_dismissed,
+    )
+
+
+@router.post("/cloud-sync/enable", response_model=CloudSyncStatus)
+async def cloud_sync_enable(req: CloudSyncEnableRequest):
+    from main import app_state
+    parent: Path | None = None
+    if req.folder:
+        parent = Path(req.folder)
+    else:
+        parent = detect_icloud_path()
+    if parent is None:
+        raise HTTPException(400, "No iCloud Drive detected and no custom folder provided")
+
+    try:
+        target_folder = setup_sync_folder(parent)
+    except FileNotFoundError as exc:
+        raise HTTPException(400, str(exc))
+
+    new_path = target_folder / "bookmarks.json"
+    src = app_state.bookmark_manager._bookmarks_path()
+    try:
+        migrate_bookmarks(src=src, dst=new_path)
+    except FileExistsError:
+        # Folder already has a bookmarks.json (e.g. another device).
+        # Adopt it by pointing settings at new_path without overwriting.
+        logger.warning(
+            "Cloud sync %s: destination already has different bookmarks; "
+            "adopting remote copy, local file left at %s",
+            "enable",
+            src,
+        )
+
+    app_state._bookmarks_path = str(new_path)
+    app_state.save_settings()
+
+    # Re-init the manager so it reloads from the new path and rebinds watcher
+    from services.bookmarks import BookmarkManager
+    app_state.bookmark_manager = BookmarkManager()
+    app_state.restart_bookmark_watcher()
+
+    return await cloud_sync_status()
+
+
+@router.post("/cloud-sync/disable", response_model=CloudSyncStatus)
+async def cloud_sync_disable():
+    from main import app_state
+    bm = app_state.bookmark_manager
+    current = bm._bookmarks_path()
+    default_path = _config._DEFAULT_BOOKMARKS_FILE
+    if current == default_path:
+        return await cloud_sync_status()
+
+    try:
+        migrate_bookmarks(src=current, dst=default_path)
+    except FileExistsError:
+        logger.warning(
+            "Cloud sync %s: destination already has different bookmarks; "
+            "adopting remote copy, local file left at %s",
+            "disable",
+            current,
+        )
+
+    app_state._bookmarks_path = None
+    app_state.save_settings()
+
+    from services.bookmarks import BookmarkManager
+    app_state.bookmark_manager = BookmarkManager()
+    app_state.restart_bookmark_watcher()
+
+    return await cloud_sync_status()
+
+
+@router.post("/cloud-sync/dismiss-prompt", response_model=CloudSyncStatus)
+async def cloud_sync_dismiss_prompt():
+    from main import app_state
+    app_state._cloud_sync_dismissed = True
+    app_state.save_settings()
+    return await cloud_sync_status()

@@ -7,6 +7,7 @@ import {
   playCompletionAlert,
 } from '../services/alertSound';
 import type { RenderMode, RenderModeInfo } from '../types/electron';
+import { CloudSyncSection } from './CloudSyncSection';
 
 interface Props {
   open: boolean;
@@ -217,6 +218,8 @@ const SettingsModal: React.FC<Props> = ({ open, onClose }) => {
             )}
           </div>
         )}
+
+        <CloudSyncSection />
       </div>
     </div>
   ), document.body);

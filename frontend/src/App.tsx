@@ -43,6 +43,28 @@ export function toastForFanout<T>(
 
 import { SimMode, MoveMode } from './hooks/useSimulation'
 
+// One-time iCloud Drive discovery prompt. Fires on app start; skipped when
+// cloud sync is already enabled, the prompt was previously dismissed, or
+// iCloud Drive is not detected on this machine.
+function useCloudSyncDiscovery() {
+  const t = useT()
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      const s = await api.cloudSyncStatus()
+      if (cancelled) return
+      if (s.enabled || s.prompt_dismissed || !s.detected_icloud_path) return
+      const ok = window.confirm(t('cloud_sync.discovery_prompt'))
+      if (ok) {
+        await api.cloudSyncEnable()
+      } else {
+        await api.cloudSyncDismissPrompt()
+      }
+    })().catch(() => { /* swallow — non-fatal */ })
+    return () => { cancelled = true }
+  }, [t])
+}
+
 const SPEED_MAP: Record<MoveMode, number> = {
   walking: 10.8,
   running: 19.8,
@@ -51,6 +73,7 @@ const SPEED_MAP: Record<MoveMode, number> = {
 
 const App: React.FC = () => {
   const t = useT()
+  useCloudSyncDiscovery()
   const ws = useWebSocket()
   const device = useDevice(ws.subscribe)
   // Pass primary-device udid into useSimulation so its legacy single-device
@@ -158,6 +181,17 @@ const App: React.FC = () => {
       toastTimerRef.current = null
     }, ms)
   }, [])
+
+  // Auto-refresh bookmarks when the backend signals an external change
+  // (cloud-sync watchdog picked up a file written by another device).
+  useEffect(() => {
+    return ws.subscribe((msg) => {
+      if (msg.type === 'bookmarks_changed') {
+        bm.refresh()
+        showToast(t('cloud_sync.toast_synced'))
+      }
+    })
+  }, [ws.subscribe, bm.refresh, showToast, t])
 
   const handleRestore = useCallback(async () => {
     // The backend stop + DVT clear can take a few seconds, especially if

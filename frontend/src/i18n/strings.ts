@@ -720,6 +720,18 @@ export const STRINGS = {
   'pause.max': { zh: '最大', en: 'Max' },
   'pause.seconds': { zh: '秒', en: 's' },
 
+  // ── Cloud Sync ──────────────────────────────
+  'cloud_sync.section_title': { zh: '雲端同步', en: 'Cloud Sync' },
+  'cloud_sync.toggle_enabled': { zh: '透過雲端硬碟同步', en: 'Sync via cloud drive' },
+  'cloud_sync.toggle_enable_icloud': { zh: '啟用 iCloud Drive 同步', en: 'Enable sync via iCloud Drive' },
+  'cloud_sync.toggle_enable_custom': { zh: '啟用同步 (使用自訂資料夾)', en: 'Enable sync (use custom folder)' },
+  'cloud_sync.detail_path': { zh: '✓ 路徑: {path}', en: '✓ Path: {path}' },
+  'cloud_sync.detail_counts': { zh: '{bookmarks} 個書籤 · {categories} 個分類', en: '{bookmarks} bookmarks · {categories} categories' },
+  'cloud_sync.detected_path': { zh: '已偵測: {path}', en: 'Detected: {path}' },
+  'cloud_sync.no_icloud_hint': { zh: '未偵測到 iCloud Drive。可使用任何同步資料夾（Dropbox / Google Drive / OneDrive）—啟用後從 settings.json 手動設定路徑。', en: 'iCloud Drive not detected. You can use any synced folder (Dropbox / Google Drive / OneDrive) — enable, then pick the path manually from settings.json.' },
+  'cloud_sync.discovery_prompt': { zh: '偵測到 iCloud Drive。是否透過 iCloud Drive 在所有登入此 Apple ID 的裝置間同步 LocWarp 書籤?', en: 'iCloud Drive detected. Use it to sync your LocWarp bookmarks across all devices signed in to this Apple ID?' },
+  'cloud_sync.toast_synced': { zh: '書籤已從雲端同步', en: 'Bookmarks synced from cloud' },
+
   // ── DDI mount overlay ───────────────────────
   'ddi.mounting_title': { zh: '首次設定裝置中', en: 'Preparing device' },
   'ddi.mounting_hint': { zh: '正在準備 Developer Disk Image(約 20MB),請保持網路連線', en: 'Preparing the Developer Disk Image (~20MB). Please keep your internet connected.' },

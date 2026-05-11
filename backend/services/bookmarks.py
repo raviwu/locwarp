@@ -4,15 +4,25 @@ from __future__ import annotations
 
 import json
 import logging
+import threading
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Callable
 
-from config import BOOKMARKS_FILE
+from watchdog.events import FileSystemEventHandler
+from watchdog.observers import Observer
+
+from config import BOOKMARKS_FILE, get_bookmarks_path
 from models.schemas import Bookmark, BookmarkCategory, BookmarkStore
+from services.bookmark_merge import diff_store, merge_local_wins
 from services.json_safe import safe_load_json, safe_write_json
 
 logger = logging.getLogger(__name__)
+
+# Keep a reference to the config default so _bookmarks_path() can detect
+# when tests (or other callers) have monkeypatched the module-level name.
+_CONFIG_DEFAULT_BOOKMARKS_FILE = BOOKMARKS_FILE
 
 
 def _now_iso() -> str:
@@ -39,7 +49,12 @@ class BookmarkManager:
             ],
             bookmarks=[],
         )
+        self._last_loaded_mtime: float = 0.0
+        self._last_loaded_snapshot: BookmarkStore = BookmarkStore(categories=[], bookmarks=[])
         self._load()
+        self._watcher_observer: Observer | None = None
+        self._watcher_debounce_timer: threading.Timer | None = None
+        self._on_external_change: Callable[[], None] | None = None
 
     # ------------------------------------------------------------------
     # Persistence
@@ -54,7 +69,7 @@ class BookmarkManager:
         default empty store. Otherwise the next ``_save()`` would
         overwrite the original file with an empty bookmark list.
         """
-        data = safe_load_json(Path(BOOKMARKS_FILE))
+        data = safe_load_json(self._bookmarks_path())
         if data is None:
             logger.info("No bookmark file (or unreadable); using defaults")
             return
@@ -65,13 +80,172 @@ class BookmarkManager:
                 len(self.store.bookmarks),
                 len(self.store.categories),
             )
+            self._update_snapshot()
         except Exception as exc:
             logger.warning("Bookmark payload failed schema validation: %s", exc)
 
     def _save(self) -> None:
-        """Persist the current store to disk via atomic tmp + rename."""
+        """Persist the current store to disk, merging any external changes.
+
+        If the disk mtime is newer than the snapshot we hold, another
+        process (or another device via cloud sync) wrote to the file
+        between our last load and this save. In that case we diff our
+        in-memory store against the snapshot, reload the fresh disk
+        state, reapply the diff on top, and only then write.
+        """
+        path = self._bookmarks_path()
+        try:
+            current_mtime = path.stat().st_mtime
+        except FileNotFoundError:
+            current_mtime = 0.0
+
+        if current_mtime > self._last_loaded_mtime:
+            self._reconcile_from_disk()
+
         payload = json.loads(self.store.model_dump_json())
-        safe_write_json(Path(BOOKMARKS_FILE), payload)
+        safe_write_json(path, payload)
+        self._update_snapshot()
+
+    def _reconcile_from_disk(self) -> None:
+        """Merge external on-disk changes into self.store using local-wins.
+
+        No-op (besides updating snapshot) when on-disk content is invalid
+        or unreadable — better to keep our in-memory copy than to wipe it
+        in response to a transient read error.
+        """
+        path = self._bookmarks_path()
+        try:
+            if path.stat().st_size == 0:
+                return
+        except FileNotFoundError:
+            return
+        raw = safe_load_json(path)
+        if not isinstance(raw, dict):
+            return
+        try:
+            fresh = BookmarkStore(**raw)
+        except Exception as exc:
+            logger.warning("Disk payload failed schema validation during reconcile: %s", exc)
+            return
+        local_diff = diff_store(current=self.store, baseline=self._last_loaded_snapshot)
+        self.store = merge_local_wins(remote=fresh, local_diff=local_diff)
+
+    def _update_snapshot(self) -> None:
+        """Capture current store as the baseline for future diffs.
+
+        Records the disk mtime at the moment we know self.store is in sync
+        with the file. A deep copy ensures later in-memory edits do not
+        mutate the snapshot.
+        """
+        path = self._bookmarks_path()
+        try:
+            self._last_loaded_mtime = path.stat().st_mtime
+        except FileNotFoundError:
+            self._last_loaded_mtime = 0.0
+        self._last_loaded_snapshot = BookmarkStore(
+            **json.loads(self.store.model_dump_json())
+        )
+
+    def _bookmarks_path(self) -> Path:
+        # Allow tests to override by patching the module-level BOOKMARKS_FILE.
+        # _CONFIG_DEFAULT_BOOKMARKS_FILE holds the value captured at import
+        # time; if tests have patched the module-level name, it will differ.
+        if BOOKMARKS_FILE is not _CONFIG_DEFAULT_BOOKMARKS_FILE:
+            return Path(BOOKMARKS_FILE)
+        return get_bookmarks_path()
+
+    # ------------------------------------------------------------------
+    # File watcher
+    # ------------------------------------------------------------------
+
+    def start_watcher(self, on_change: Callable[[], None]) -> None:
+        """Begin watching the bookmarks file for external modifications.
+
+        *on_change* is invoked (no args) on the watcher thread AFTER
+        self.store has been reconciled with disk. Callers are responsible
+        for marshalling onto whatever loop/thread they need (e.g. asyncio
+        via run_coroutine_threadsafe).
+        """
+        self.stop_watcher()
+        path = self._bookmarks_path()
+        parent = path.parent
+        if not parent.exists():
+            logger.warning("Bookmark folder does not exist; watcher not started: %s", parent)
+            return
+        self._on_external_change = on_change
+
+        manager = self
+
+        class _Handler(FileSystemEventHandler):
+            def on_modified(self, event):
+                if event.is_directory:
+                    return
+                if Path(event.src_path) != manager._bookmarks_path():
+                    return
+                manager._schedule_reconcile()
+
+            on_created = on_modified
+
+            def on_moved(self, event):
+                if event.is_directory:
+                    return
+                bm = manager._bookmarks_path()
+                if Path(event.src_path) != bm and Path(getattr(event, "dest_path", "")) != bm:
+                    return
+                manager._schedule_reconcile()
+
+        self._watcher_observer = Observer()
+        self._watcher_observer.schedule(_Handler(), str(parent), recursive=False)
+        self._watcher_observer.start()
+        logger.info("Bookmark watcher started on %s", parent)
+
+    def stop_watcher(self) -> None:
+        if self._watcher_debounce_timer is not None:
+            self._watcher_debounce_timer.cancel()
+            self._watcher_debounce_timer = None
+        if self._watcher_observer is not None:
+            try:
+                self._watcher_observer.stop()
+                self._watcher_observer.join(timeout=2.0)
+            except Exception:
+                logger.exception("Failed to stop bookmark watcher cleanly")
+            self._watcher_observer = None
+
+    def _schedule_reconcile(self) -> None:
+        """Debounce rapid mtime events from a single sync burst."""
+        if self._watcher_debounce_timer is not None:
+            self._watcher_debounce_timer.cancel()
+        self._watcher_debounce_timer = threading.Timer(0.5, self._watcher_tick)
+        self._watcher_debounce_timer.daemon = True
+        self._watcher_debounce_timer.start()
+
+    def _watcher_tick(self) -> None:
+        try:
+            path = self._bookmarks_path()
+            try:
+                current_mtime = path.stat().st_mtime
+            except FileNotFoundError:
+                return  # transient absence (iCloud cloud-only eviction); retry on next event
+            if current_mtime <= self._last_loaded_mtime:
+                return  # self-echo or already reconciled
+            before_payload = self.store.model_dump_json()
+            self._reconcile_from_disk()
+            after_payload = self.store.model_dump_json()
+            if before_payload != after_payload:
+                # Persist the merged state so disk reflects local edits we
+                # may have reapplied on top of the remote update.
+                payload = json.loads(after_payload)
+                safe_write_json(path, payload)
+                self._update_snapshot()
+                if self._on_external_change is not None:
+                    try:
+                        self._on_external_change()
+                    except Exception:
+                        logger.exception("on_external_change callback raised")
+            else:
+                self._update_snapshot()  # still resync mtime
+        except Exception:
+            logger.exception("Bookmark watcher tick failed")
 
     # ------------------------------------------------------------------
     # Categories

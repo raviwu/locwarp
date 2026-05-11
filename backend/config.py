@@ -5,7 +5,36 @@ from typing import TypedDict
 DATA_DIR = Path.home() / ".locwarp"
 DATA_DIR.mkdir(exist_ok=True)
 SETTINGS_FILE = DATA_DIR / "settings.json"
-BOOKMARKS_FILE = DATA_DIR / "bookmarks.json"
+_DEFAULT_BOOKMARKS_FILE = DATA_DIR / "bookmarks.json"
+
+
+def get_bookmarks_path() -> Path:
+    """Return the configured bookmarks file path.
+
+    Reads the optional ``bookmarks_path`` key from settings.json; falls
+    back to ``DATA_DIR / "bookmarks.json"`` if the key is missing, the
+    settings file is malformed, or the override path's parent is unreachable.
+
+    The default is computed from the current value of DATA_DIR so that
+    tests can monkeypatch DATA_DIR / SETTINGS_FILE and observe the effect
+    without restarting the interpreter.
+    """
+    import config as _cfg
+    from services.json_safe import safe_load_json
+    data = safe_load_json(_cfg.SETTINGS_FILE)
+    if isinstance(data, dict):
+        override = data.get("bookmarks_path")
+        if isinstance(override, str) and override:
+            p = Path(override)
+            if p.parent.exists():
+                return p
+    return _cfg.DATA_DIR / "bookmarks.json"
+
+
+# Backwards-compat alias for code that imports the constant. Kept so
+# unrelated modules (e.g. tests that already patch BOOKMARKS_FILE) keep
+# working until they are migrated to get_bookmarks_path().
+BOOKMARKS_FILE = _DEFAULT_BOOKMARKS_FILE
 ROUTES_FILE = DATA_DIR / "routes.json"
 RECENT_PLACES_FILE = DATA_DIR / "recent_places.json"
 # Persisted UDID → DeviceName cache. Populated whenever USB / usbmuxd

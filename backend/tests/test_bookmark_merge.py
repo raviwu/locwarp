@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 
 from models.schemas import Bookmark, BookmarkCategory, BookmarkStore
-from services.bookmark_merge import diff_store, StoreDiff
+from services.bookmark_merge import diff_store, merge_local_wins, StoreDiff
 
 
 def _ts() -> str:
@@ -86,9 +86,6 @@ def test_diff_is_empty_helper():
     a = _store()
     assert diff_store(current=a, baseline=a).is_empty()
 
-
-
-from services.bookmark_merge import merge_local_wins
 
 
 def test_merge_both_added_disjoint_keeps_both():
