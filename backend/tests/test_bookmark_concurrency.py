@@ -80,3 +80,78 @@ def test_save_does_not_merge_when_disk_unchanged(tmp_path, monkeypatch):
     final = _json.loads(second_payload)
     names = {b["name"] for b in final["bookmarks"]}
     assert names == {"X", "Y"}
+
+
+def test_reconcile_loads_external_bookmark(tmp_path, monkeypatch):
+    """Directly exercise _reconcile_from_disk — bypasses watcher timing."""
+    _patch_paths(tmp_path, monkeypatch)
+    bookmarks = tmp_path / "bookmarks.json"
+
+    mgr = BookmarkManager()
+    mgr.create_bookmark(name="local", lat=1.0, lng=1.0)
+
+    payload = _json.loads(bookmarks.read_text(encoding="utf-8"))
+    payload["bookmarks"].append({
+        "id": "remote-id",
+        "name": "remote",
+        "lat": 5.0,
+        "lng": 5.0,
+        "address": "",
+        "category_id": "default",
+        "created_at": "2026-01-01T00:00:00+00:00",
+        "last_used_at": "2026-01-01T00:00:00+00:00",
+        "country_code": "",
+    })
+    bookmarks.write_text(_json.dumps(payload), encoding="utf-8")
+
+    mgr._reconcile_from_disk()
+
+    names = {b.name for b in mgr.store.bookmarks}
+    assert "local" in names
+    assert "remote" in names
+
+
+def test_reconcile_ignores_zero_byte_placeholder(tmp_path, monkeypatch):
+    _patch_paths(tmp_path, monkeypatch)
+    bookmarks = tmp_path / "bookmarks.json"
+    mgr = BookmarkManager()
+    mgr.create_bookmark(name="local", lat=1.0, lng=1.0)
+    bookmarks.write_text("", encoding="utf-8")  # iCloud placeholder
+    mgr._reconcile_from_disk()
+    assert any(b.name == "local" for b in mgr.store.bookmarks)
+
+
+def test_watcher_tick_reloads_and_fires_callback(tmp_path, monkeypatch):
+    _patch_paths(tmp_path, monkeypatch)
+    bookmarks = tmp_path / "bookmarks.json"
+    mgr = BookmarkManager()
+    mgr.create_bookmark(name="A", lat=1.0, lng=1.0)
+
+    payload = _json.loads(bookmarks.read_text(encoding="utf-8"))
+    payload["bookmarks"].append({
+        "id": "ext", "name": "B-side", "lat": 9.0, "lng": 9.0,
+        "address": "", "category_id": "default",
+        "created_at": "2026-01-01T00:00:00+00:00",
+        "last_used_at": "2026-01-01T00:00:00+00:00",
+        "country_code": "",
+    })
+    bookmarks.write_text(_json.dumps(payload), encoding="utf-8")
+    import os
+    os.utime(bookmarks, (mgr._last_loaded_mtime + 10, mgr._last_loaded_mtime + 10))
+
+    called = []
+    mgr._on_external_change = lambda: called.append(True)
+    mgr._watcher_tick()
+
+    assert called == [True]
+    assert any(b.name == "B-side" for b in mgr.store.bookmarks)
+
+
+def test_watcher_tick_ignores_self_echo(tmp_path, monkeypatch):
+    _patch_paths(tmp_path, monkeypatch)
+    mgr = BookmarkManager()
+    mgr.create_bookmark(name="A", lat=1.0, lng=1.0)
+    called = []
+    mgr._on_external_change = lambda: called.append(True)
+    mgr._watcher_tick()
+    assert called == []

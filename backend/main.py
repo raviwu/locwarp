@@ -607,9 +607,24 @@ async def lifespan(application: FastAPI):
 
     watchdog_task = asyncio.create_task(_usbmux_presence_watchdog())
 
+    # Start bookmark file watcher so external changes (iCloud sync from
+    # another device) are picked up and broadcast to all WebSocket clients.
+    loop = asyncio.get_running_loop()
+    from api.websocket import broadcast as _bc
+
+    def _on_bookmark_change():
+        asyncio.run_coroutine_threadsafe(
+            _bc("bookmarks_changed", {"reason": "external_update"}),
+            loop,
+        )
+
+    app_state.bookmark_manager.start_watcher(_on_bookmark_change)
+
     yield
 
     # ── Shutdown ──
+    app_state.bookmark_manager.stop_watcher()
+
     watchdog_task.cancel()
     try:
         await watchdog_task
