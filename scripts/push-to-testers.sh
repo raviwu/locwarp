@@ -73,7 +73,7 @@ for HOST in $TESTERS_LIST; do
   ssh "$HOST" 'sudo mv /tmp/LocWarp-admin.command /Applications/LocWarp-admin.command && sudo chmod +x /Applications/LocWarp-admin.command'
 
   echo "==> Stripping quarantine xattr on $HOST"
-  ssh "$HOST" 'sudo xattr -dr com.apple.quarantine /Applications/LocWarp.app /Applications/LocWarp-admin.command 2>/dev/null || true'
+  ssh "$HOST" 'sudo /usr/bin/xattr -dr com.apple.quarantine /Applications/LocWarp.app /Applications/LocWarp-admin.command 2>/dev/null || true'
 
   echo "==> Done with $HOST"
 done

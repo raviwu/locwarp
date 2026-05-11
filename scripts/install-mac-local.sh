@@ -47,8 +47,8 @@ sudo cp "$CMD_SRC" /Applications/LocWarp-admin.command
 sudo chmod +x /Applications/LocWarp-admin.command
 
 echo "==> Stripping quarantine xattr"
-sudo xattr -dr com.apple.quarantine /Applications/LocWarp.app
-sudo xattr -dr com.apple.quarantine /Applications/LocWarp-admin.command || true
+sudo /usr/bin/xattr -dr com.apple.quarantine /Applications/LocWarp.app
+sudo /usr/bin/xattr -dr com.apple.quarantine /Applications/LocWarp-admin.command || true
 
 echo
 echo "Done. Launch:"
