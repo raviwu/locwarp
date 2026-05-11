@@ -442,3 +442,26 @@ export function exportAllRoutesUrl(): string {
 
 export const importAllRoutes = (data: { routes: any[]; categories?: any[] }) =>
   request<{ imported: number }>('POST', '/api/route/saved/import', data)
+
+// Cloud Sync
+export interface CloudSyncStatus {
+  enabled: boolean
+  detected_icloud_path: string | null
+  current_path: string
+  sync_folder: string | null
+  bookmark_count: number
+  category_count: number
+  prompt_dismissed: boolean
+}
+
+export const cloudSyncStatus = () =>
+  request<CloudSyncStatus>('GET', '/api/bookmarks/cloud-sync/status')
+
+export const cloudSyncEnable = (folder?: string) =>
+  request<CloudSyncStatus>('POST', '/api/bookmarks/cloud-sync/enable', { folder: folder ?? null })
+
+export const cloudSyncDisable = () =>
+  request<CloudSyncStatus>('POST', '/api/bookmarks/cloud-sync/disable')
+
+export const cloudSyncDismissPrompt = () =>
+  request<CloudSyncStatus>('POST', '/api/bookmarks/cloud-sync/dismiss-prompt')
