@@ -43,8 +43,7 @@ export function CloudSyncSection() {
 
   if (!status) return null
 
-  const canEnable =
-    status.detected_icloud_path !== null || status.current_path.includes('LocWarp')
+  const canEnable = status.detected_icloud_path !== null
 
   const rowStyle: React.CSSProperties = {
     display: 'flex',

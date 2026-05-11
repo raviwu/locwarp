@@ -1,9 +1,12 @@
 import json
+import logging
 import re
 import sys
 from datetime import date as _date
 from pathlib import Path
 from typing import Literal
+
+logger = logging.getLogger(__name__)
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import Response
@@ -334,7 +337,12 @@ async def cloud_sync_enable(req: CloudSyncEnableRequest):
     except FileExistsError:
         # Folder already has a bookmarks.json (e.g. another device).
         # Adopt it by pointing settings at new_path without overwriting.
-        pass
+        logger.warning(
+            "Cloud sync %s: destination already has different bookmarks; "
+            "adopting remote copy, local file left at %s",
+            "enable",
+            src,
+        )
 
     app_state._bookmarks_path = str(new_path)
     app_state.save_settings()
@@ -359,7 +367,12 @@ async def cloud_sync_disable():
     try:
         migrate_bookmarks(src=current, dst=default_path)
     except FileExistsError:
-        pass
+        logger.warning(
+            "Cloud sync %s: destination already has different bookmarks; "
+            "adopting remote copy, local file left at %s",
+            "disable",
+            current,
+        )
 
     app_state._bookmarks_path = None
     app_state.save_settings()
