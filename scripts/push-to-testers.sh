@@ -5,6 +5,9 @@
 # download the DMG and drag-install. Skips Gatekeeper friction by stripping
 # the quarantine xattr on the target.
 #
+# Note: LocWarp.app self-elevates on launch (osascript prompts for the
+# admin password). No separate launcher script needs to be pushed alongside.
+#
 # Prereqs on each tester laptop:
 #   1. Enable SSH: System Settings → General → Sharing → Remote Login
 #   2. Authorize your dev Mac's public key:
@@ -33,7 +36,6 @@ if [[ "${1:-}" == "--build" ]]; then
 fi
 
 APP_SRC="$ROOT/frontend/release/mac-arm64/LocWarp.app"
-CMD_SRC="$ROOT/LocWarp-admin.command"
 
 if [[ ! -d "$APP_SRC" ]]; then
   echo "ERROR: $APP_SRC not found." >&2
@@ -68,17 +70,12 @@ for HOST in $TESTERS_LIST; do
     --rsync-path='sudo rsync' \
     "$APP_SRC/" "$HOST:/Applications/LocWarp.app/"
 
-  echo "==> Copying LocWarp-admin.command to $HOST"
-  scp "$CMD_SRC" "$HOST:/tmp/LocWarp-admin.command"
-  ssh "$HOST" 'sudo mv /tmp/LocWarp-admin.command /Applications/LocWarp-admin.command && sudo chmod +x /Applications/LocWarp-admin.command'
-
   echo "==> Stripping quarantine xattr on $HOST"
-  ssh "$HOST" 'sudo /usr/bin/xattr -dr com.apple.quarantine /Applications/LocWarp.app /Applications/LocWarp-admin.command 2>/dev/null || true'
+  ssh "$HOST" 'sudo /usr/bin/xattr -dr com.apple.quarantine /Applications/LocWarp.app 2>/dev/null || true'
 
   echo "==> Done with $HOST"
 done
 
 echo
-echo "All testers updated. They can re-launch LocWarp now:"
-echo "  - Normal: open -a LocWarp"
-echo "  - As root (iOS 17+ devices): open /Applications/LocWarp-admin.command"
+echo "All testers updated. They can re-launch LocWarp with: open -a LocWarp"
+echo "(LocWarp will prompt for the admin password on every launch.)"

@@ -2,13 +2,16 @@
 # Install the freshly-built LocWarp.app into /Applications on THIS machine.
 #
 # Use this after ./build-installer-mac.sh to avoid manually opening the DMG
-# and dragging the app + admin .command file every iteration.
+# and dragging the app every iteration.
 #
 # Flow:
 #   1. Quit any running LocWarp
 #   2. Remove /Applications/LocWarp.app
-#   3. Copy the freshly-built .app + admin .command to /Applications
+#   3. Copy the freshly-built .app to /Applications
 #   4. Strip the macOS quarantine xattr so Gatekeeper doesn't nag
+#
+# Note: LocWarp.app self-elevates on launch (osascript prompts for the
+# admin password). No separate launcher script is needed any more.
 #
 # Usage:
 #   ./scripts/install-mac-local.sh         # use existing build artifact
@@ -25,7 +28,6 @@ if [[ "${1:-}" == "--build" ]]; then
 fi
 
 APP_SRC="$ROOT/frontend/release/mac-arm64/LocWarp.app"
-CMD_SRC="$ROOT/LocWarp-admin.command"
 
 if [[ ! -d "$APP_SRC" ]]; then
   echo "ERROR: $APP_SRC not found." >&2
@@ -42,15 +44,9 @@ echo "==> Replacing /Applications/LocWarp.app"
 sudo rm -rf /Applications/LocWarp.app
 sudo cp -R "$APP_SRC" /Applications/LocWarp.app
 
-echo "==> Copying LocWarp-admin.command"
-sudo cp "$CMD_SRC" /Applications/LocWarp-admin.command
-sudo chmod +x /Applications/LocWarp-admin.command
-
 echo "==> Stripping quarantine xattr"
 sudo /usr/bin/xattr -dr com.apple.quarantine /Applications/LocWarp.app
-sudo /usr/bin/xattr -dr com.apple.quarantine /Applications/LocWarp-admin.command || true
 
 echo
-echo "Done. Launch:"
-echo "  - Normal:  open -a LocWarp"
-echo "  - As root: open /Applications/LocWarp-admin.command"
+echo "Done. Launch: open -a LocWarp"
+echo "(LocWarp will prompt for the admin password on every launch.)"

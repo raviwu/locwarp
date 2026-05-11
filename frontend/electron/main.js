@@ -5,6 +5,40 @@ const http = require('http')
 const os = require('os')
 const fs = require('fs')
 
+// macOS: every packaged launch needs root so pymobiledevice3 can create
+// the utun interface for iOS 17+ tunnel. If we're not root yet, spawn
+// an osascript helper that prompts for the admin password and re-launches
+// the same binary as root, then exit this non-root instance. The user
+// double-clicks LocWarp.app like any other app; we handle the elevation
+// ourselves rather than asking them to use a separate .command launcher.
+//
+// In dev (npm run electron) skip the elevation — keeps the debug loop
+// painless. The check is also skipped on non-Darwin platforms; on Windows
+// the nsis installer already declares requireAdministrator so UAC handles
+// it at process start.
+//
+// osascript's "with administrator privileges" preserves HOME (unlike sudo),
+// so the backend's `Path.home() / ".locwarp"` data dir is the same in
+// both elevated and non-elevated launches. Files end up owned by root
+// but the user (in the staff group) can still read them and atomic
+// writes go through the user-owned parent directory.
+if (
+  process.platform === 'darwin' &&
+  app.isPackaged &&
+  typeof process.getuid === 'function' &&
+  process.getuid() !== 0
+) {
+  const exe = process.execPath
+  const escaped = exe.replace(/'/g, "'\\''")
+  const script =
+    `do shell script "'${escaped}' --no-sandbox </dev/null ` +
+    `>/tmp/locwarp-stdout.log 2>/tmp/locwarp-stderr.log &" ` +
+    `with administrator privileges ` +
+    `with prompt "LocWarp needs administrator privileges to talk to iOS 17+ devices over USB."`
+  spawn('osascript', ['-e', script], { detached: true, stdio: 'ignore' }).unref()
+  app.exit(0)
+}
+
 // Render-mode preference (Issue #24). Win 10 stays on software rendering
 // by default — v0.2.121/125 hit a Chromium 124 GPU-sandbox crash on
 // 22H2 — but users whose hardware works fine can opt in via Settings
