@@ -185,7 +185,14 @@ class BookmarkManager:
                 manager._schedule_reconcile()
 
             on_created = on_modified
-            on_moved = on_modified
+
+            def on_moved(self, event):
+                if event.is_directory:
+                    return
+                bm = manager._bookmarks_path()
+                if Path(event.src_path) != bm and Path(getattr(event, "dest_path", "")) != bm:
+                    return
+                manager._schedule_reconcile()
 
         self._watcher_observer = Observer()
         self._watcher_observer.schedule(_Handler(), str(parent), recursive=False)
@@ -215,7 +222,10 @@ class BookmarkManager:
     def _watcher_tick(self) -> None:
         try:
             path = self._bookmarks_path()
-            current_mtime = path.stat().st_mtime
+            try:
+                current_mtime = path.stat().st_mtime
+            except FileNotFoundError:
+                return  # transient absence (iCloud cloud-only eviction); retry on next event
             if current_mtime <= self._last_loaded_mtime:
                 return  # self-echo or already reconciled
             before_payload = self.store.model_dump_json()
