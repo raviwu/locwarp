@@ -9,11 +9,11 @@ filesystem paths.
 from __future__ import annotations
 
 import logging
-import os
 import shutil
 import sys
 import tempfile
 from pathlib import Path
+from typing import Literal
 
 from services.sync_merge import merge_bookmark_stores, merge_route_stores
 
@@ -63,7 +63,7 @@ _PAIR_FILES: tuple[tuple[str, str], ...] = (
 )
 
 
-def _move_or_merge_file(src: Path, dst: Path, kind: str) -> None:
+def _move_or_merge_file(src: Path, dst: Path, kind: Literal["bookmarks", "routes"]) -> None:
     """Move *src* to *dst*, union-merging when both exist with different content.
 
     *kind* is "bookmarks" or "routes" — picks the right merger.
