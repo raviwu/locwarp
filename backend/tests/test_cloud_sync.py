@@ -8,6 +8,8 @@
 # Removed: simulated EPERM on iCloud reads in migrate_bookmarks — no longer
 # possible now that the backend runs as the file owner (not root), so the
 # silent-adopt branch was deleted from cloud_sync.py.
+from pathlib import Path
+
 import pytest
 
 from services.cloud_sync import detect_icloud_path
@@ -87,3 +89,30 @@ def test_migrate_bookmarks_noop_when_source_missing(tmp_path):
     dst = tmp_path / "dst.json"
     migrate_bookmarks(src=src, dst=dst)
     assert not dst.exists()
+
+
+def test_migrate_bookmarks_unlink_failure_propagates(tmp_path, monkeypatch):
+    """After copy succeeds, an unlink OSError must surface to the caller —
+    the data is safe in *dst* but the user needs to see the real OS error
+    rather than have it silently swallowed."""
+    src = tmp_path / "src" / "bookmarks.json"
+    src.parent.mkdir()
+    src.write_text('{"categories":[],"bookmarks":[]}', encoding="utf-8")
+    dst = tmp_path / "dst" / "bookmarks.json"
+    dst.parent.mkdir()
+
+    original_unlink = Path.unlink
+
+    def boom(self, *args, **kwargs):
+        if self == src:
+            raise PermissionError(f"simulated unlink failure on {self}")
+        return original_unlink(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "unlink", boom)
+
+    with pytest.raises(PermissionError, match="simulated unlink failure"):
+        migrate_bookmarks(src=src, dst=dst)
+
+    # Data is safe in dst, src remains (unlink failed).
+    assert dst.read_text(encoding="utf-8") == '{"categories":[],"bookmarks":[]}'
+    assert src.exists()

@@ -191,10 +191,16 @@ class UsbTunnelRunner:
             self.info = None
             if self._proxy is not None:
                 try:
-                    self._proxy.close()
+                    await self._proxy.close()
                 except Exception:
-                    pass
+                    logger.exception("error closing CoreDeviceTunnelProxy for %s", udid)
             self._proxy = None
+            if self._lockdown is not None:
+                try:
+                    await self._lockdown.close()
+                except Exception:
+                    logger.exception("error closing lockdown for %s", udid)
+            self._lockdown = None
 
     async def start(self, udid: str, timeout: float = 20.0) -> dict:
         self._stop = asyncio.Event()
