@@ -249,27 +249,31 @@ function startBackend() {
   const exe = resolveBackendExe()
   if (!exe) return
 
-  // On macOS packaged builds, elevate only the backend binary via osascript
-  // so Electron itself stays as the normal user. This preserves pasteboard
-  // (clipboard) and iCloud Drive access in the renderer.
-  if (process.platform === 'darwin' && app.isPackaged) {
-    const escaped = exe.replace(/'/g, "'\\''")
-    const cwd = path.dirname(exe).replace(/'/g, "'\\''")
-    const script =
-      `do shell script "cd '${cwd}' && '${escaped}' </dev/null ` +
-      `>/tmp/locwarp-stdout.log 2>/tmp/locwarp-stderr.log &" ` +
-      `with administrator privileges ` +
-      `with prompt "LocWarp needs administrator access to communicate with iOS 17+ devices over USB."`
-    console.log('[electron] elevating backend via osascript')
-    spawn('osascript', ['-e', script], { stdio: 'ignore' })
+  // Dev / non-Mac builds: single child, no elevation.
+  if (!(process.platform === 'darwin' && app.isPackaged)) {
+    console.log('[electron] spawning backend (no elevation):', exe)
+    backendProc = spawn(exe, [], {
+      cwd: path.dirname(exe),
+      stdio: ['ignore', 'pipe', 'pipe'],
+      windowsHide: true,
+    })
+    backendProc.stdout.on('data', (d) => process.stdout.write(`[backend] ${d}`))
+    backendProc.stderr.on('data', (d) => process.stderr.write(`[backend] ${d}`))
+    backendProc.on('exit', (code) => {
+      console.log('[electron] backend exited with code', code)
+      backendProc = null
+    })
     return
   }
 
-  console.log('[electron] spawning backend:', exe)
+  // Packaged macOS: spawn the user-context backend, then spawn the
+  // elevated helper via osascript. They run in parallel; the backend
+  // waits inside its own lifespan for the helper's READY status file
+  // before doing any disk I/O.
+  console.log('[electron] spawning backend (user) + helper (root via osascript)')
   backendProc = spawn(exe, [], {
     cwd: path.dirname(exe),
     stdio: ['ignore', 'pipe', 'pipe'],
-    windowsHide: true,
   })
   backendProc.stdout.on('data', (d) => process.stdout.write(`[backend] ${d}`))
   backendProc.stderr.on('data', (d) => process.stderr.write(`[backend] ${d}`))
@@ -277,17 +281,31 @@ function startBackend() {
     console.log('[electron] backend exited with code', code)
     backendProc = null
   })
+
+  const escaped = exe.replace(/'/g, "'\\''")
+  const cwd = path.dirname(exe).replace(/'/g, "'\\''")
+  const parentPid = backendProc.pid
+  const parentUid = typeof process.getuid === 'function' ? process.getuid() : 501
+  const script =
+    `do shell script "cd '${cwd}' && '${escaped}' --tunnel-helper ` +
+    `--parent-pid=${parentPid} --parent-uid=${parentUid} ` +
+    `</dev/null >/tmp/locwarp-helper-stdout.log 2>/tmp/locwarp-helper-stderr.log &" ` +
+    `with administrator privileges ` +
+    `with prompt "LocWarp needs administrator access to communicate with iOS 17+ devices over USB."`
+  spawn('osascript', ['-e', script], { stdio: 'ignore' })
 }
 
 function stopBackend() {
-  // For non-macOS packaged (direct child process):
+  // Backend is always a direct child now (user-context), so SIGTERM works.
   if (backendProc) {
-    try { backendProc.kill() } catch {}
+    try { backendProc.kill('SIGTERM') } catch {}
     backendProc = null
-    return
   }
-  // For macOS: backend is a root process we can't SIGKILL. Ask it to shut
-  // down gracefully via its HTTP endpoint instead.
+  // The helper (when present) sees the backend pid disappear via its
+  // watchdog and exits within ~5s. As a belt-and-braces signal, also
+  // POST to the backend's shutdown endpoint so the backend explicitly
+  // calls helper.shutdown() before exiting (cleaner teardown when the
+  // backend is still responsive).
   if (process.platform === 'darwin' && app.isPackaged) {
     try {
       http.request({ hostname: '127.0.0.1', port: 8777, path: '/api/system/shutdown', method: 'POST' }).end()
