@@ -307,14 +307,21 @@ class RouteOptimizeResponse(BaseModel):
 
 
 # ── Cloud sync ────────────────────────────────────────────
-class CloudSyncStatus(BaseModel):
-    enabled: bool
-    detected_icloud_path: str | None = None
-    current_path: str
-    sync_folder: str | None = None
-    bookmark_count: int = 0
+class CloudSyncResource(BaseModel):
+    """Per-file resource info within the unified cloud-sync status."""
+    path: str
+    count: int = 0
     category_count: int = 0
+
+
+class CloudSyncStatus(BaseModel):
+    """Unified shape returned by /api/cloud-sync/*."""
+    enabled: bool
+    sync_folder: str | None = None
+    detected_icloud_path: str | None = None
     prompt_dismissed: bool = False
+    bookmarks: CloudSyncResource
+    routes: CloudSyncResource
 
 
 class CloudSyncEnableRequest(BaseModel):

@@ -444,24 +444,29 @@ export const importAllRoutes = (data: { routes: any[]; categories?: any[] }) =>
   request<{ imported: number }>('POST', '/api/route/saved/import', data)
 
 // Cloud Sync
+export interface CloudSyncResource {
+  path: string
+  count: number
+  category_count: number
+}
+
 export interface CloudSyncStatus {
   enabled: boolean
-  detected_icloud_path: string | null
-  current_path: string
   sync_folder: string | null
-  bookmark_count: number
-  category_count: number
+  detected_icloud_path: string | null
   prompt_dismissed: boolean
+  bookmarks: CloudSyncResource
+  routes: CloudSyncResource
 }
 
 export const cloudSyncStatus = () =>
-  request<CloudSyncStatus>('GET', '/api/bookmarks/cloud-sync/status')
+  request<CloudSyncStatus>('GET', '/api/cloud-sync/status')
 
 export const cloudSyncEnable = (folder?: string) =>
-  request<CloudSyncStatus>('POST', '/api/bookmarks/cloud-sync/enable', { folder: folder ?? null })
+  request<CloudSyncStatus>('POST', '/api/cloud-sync/enable', { folder: folder ?? null })
 
 export const cloudSyncDisable = () =>
-  request<CloudSyncStatus>('POST', '/api/bookmarks/cloud-sync/disable')
+  request<CloudSyncStatus>('POST', '/api/cloud-sync/disable')
 
 export const cloudSyncDismissPrompt = () =>
-  request<CloudSyncStatus>('POST', '/api/bookmarks/cloud-sync/dismiss-prompt')
+  request<CloudSyncStatus>('POST', '/api/cloud-sync/dismiss-prompt')

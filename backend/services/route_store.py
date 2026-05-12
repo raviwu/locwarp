@@ -14,15 +14,24 @@ from __future__ import annotations
 
 import json
 import logging
+import threading
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Callable
 
-from config import ROUTES_FILE
+from watchdog.events import FileSystemEventHandler
+from watchdog.observers import Observer
+
+from config import ROUTES_FILE, get_routes_path
 from models.schemas import RouteCategory, RouteStore, SavedRoute
 from services.json_safe import safe_load_json, safe_write_json
 
 logger = logging.getLogger(__name__)
+
+# Capture the import-time default so tests that monkeypatch
+# config.ROUTES_FILE keep working.
+_CONFIG_DEFAULT_ROUTES_FILE = ROUTES_FILE
 
 
 def _now_iso() -> str:
@@ -48,13 +57,26 @@ class RouteManager:
     def __init__(self) -> None:
         self.store = RouteStore(categories=[_default_category()], routes=[])
         self._load()
+        self._last_loaded_mtime: float = self._stat_mtime()
+        self._watcher_observer: Observer | None = None
+        self._watcher_debounce_timer: threading.Timer | None = None
+        self._on_external_change: Callable[[], None] | None = None
+        # No _last_loaded_snapshot: routes don't support diff-merge on external
+        # change — _watcher_tick just reloads from disk.
 
     # ------------------------------------------------------------------
     # Persistence
     # ------------------------------------------------------------------
 
+    def _routes_path(self) -> Path:
+        # Tests may monkeypatch the module-level ROUTES_FILE; if it differs
+        # from the import-time default, honour the test override.
+        if ROUTES_FILE is not _CONFIG_DEFAULT_ROUTES_FILE:
+            return Path(ROUTES_FILE)
+        return get_routes_path()
+
     def _load(self) -> None:
-        data = safe_load_json(Path(ROUTES_FILE))
+        data = safe_load_json(self._routes_path())
         if data is None:
             logger.info("No routes file (or unreadable); using defaults")
             return
@@ -90,7 +112,94 @@ class RouteManager:
 
     def _save(self) -> None:
         payload = json.loads(self.store.model_dump_json())
-        safe_write_json(Path(ROUTES_FILE), payload)
+        safe_write_json(self._routes_path(), payload)
+        self._last_loaded_mtime = self._stat_mtime()
+
+    def _stat_mtime(self) -> float:
+        try:
+            return self._routes_path().stat().st_mtime
+        except FileNotFoundError:
+            return 0.0
+
+    def start_watcher(self, on_change: Callable[[], None]) -> None:
+        """Begin watching the routes file for external modifications.
+
+        *on_change* is invoked (no args) on the watcher thread AFTER
+        self.store has been reloaded from disk. Callers are responsible
+        for marshalling onto whatever loop/thread they need (e.g. asyncio
+        via run_coroutine_threadsafe).
+        """
+        self.stop_watcher()
+        path = self._routes_path()
+        parent = path.parent
+        if not parent.exists():
+            logger.warning("Routes folder does not exist; watcher not started: %s", parent)
+            return
+        self._on_external_change = on_change
+        manager = self
+
+        class _Handler(FileSystemEventHandler):
+            def on_modified(self, event):
+                if event.is_directory:
+                    return
+                if Path(event.src_path) != manager._routes_path():
+                    return
+                manager._schedule_reconcile()
+
+            on_created = on_modified
+
+            def on_moved(self, event):
+                if event.is_directory:
+                    return
+                rp = manager._routes_path()
+                if Path(event.src_path) != rp and Path(getattr(event, "dest_path", "")) != rp:
+                    return
+                manager._schedule_reconcile()
+
+        self._watcher_observer = Observer()
+        self._watcher_observer.schedule(_Handler(), str(parent), recursive=False)
+        self._watcher_observer.start()
+        logger.info("Route watcher started on %s", parent)
+
+    def stop_watcher(self) -> None:
+        if self._watcher_debounce_timer is not None:
+            self._watcher_debounce_timer.cancel()
+            self._watcher_debounce_timer = None
+        if self._watcher_observer is not None:
+            try:
+                self._watcher_observer.stop()
+                self._watcher_observer.join(timeout=2.0)
+            except Exception:
+                logger.exception("Failed to stop route watcher cleanly")
+            self._watcher_observer = None
+
+    def _schedule_reconcile(self) -> None:
+        if self._watcher_debounce_timer is not None:
+            self._watcher_debounce_timer.cancel()
+        self._watcher_debounce_timer = threading.Timer(0.5, self._watcher_tick)
+        self._watcher_debounce_timer.daemon = True
+        self._watcher_debounce_timer.start()
+
+    def _watcher_tick(self) -> None:
+        try:
+            path = self._routes_path()
+            try:
+                current_mtime = path.stat().st_mtime
+            except FileNotFoundError:
+                return
+            if current_mtime <= self._last_loaded_mtime:
+                return
+            before = self.store.model_dump_json()
+            self._load()
+            after = self.store.model_dump_json()
+            self._last_loaded_mtime = current_mtime
+            if before != after and self._on_external_change is not None:
+                try:
+                    self._on_external_change()
+                except Exception:
+                    logger.exception("Route on_external_change callback raised")
+        except Exception:
+            logger.exception("Route watcher tick failed")
 
     # ------------------------------------------------------------------
     # Categories

@@ -11,24 +11,53 @@ _DEFAULT_BOOKMARKS_FILE = DATA_DIR / "bookmarks.json"
 def get_bookmarks_path() -> Path:
     """Return the configured bookmarks file path.
 
-    Reads the optional ``bookmarks_path`` key from settings.json; falls
-    back to ``DATA_DIR / "bookmarks.json"`` if the key is missing, the
-    settings file is malformed, or the override path's parent is unreachable.
-
-    The default is computed from the current value of DATA_DIR so that
-    tests can monkeypatch DATA_DIR / SETTINGS_FILE and observe the effect
-    without restarting the interpreter.
+    Resolution order:
+      1. ``sync_folder`` from settings.json (new model) →
+         ``<sync_folder>/bookmarks.json``
+      2. ``bookmarks_path`` from settings.json (legacy, migration window)
+      3. ``DATA_DIR / "bookmarks.json"``
     """
     import config as _cfg
     from services.json_safe import safe_load_json
     data = safe_load_json(_cfg.SETTINGS_FILE)
     if isinstance(data, dict):
+        sync_folder = data.get("sync_folder")
+        if isinstance(sync_folder, str) and sync_folder:
+            p = Path(sync_folder)
+            if p.exists():
+                return p / "bookmarks.json"
         override = data.get("bookmarks_path")
         if isinstance(override, str) and override:
             p = Path(override)
             if p.parent.exists():
                 return p
     return _cfg.DATA_DIR / "bookmarks.json"
+
+
+def get_routes_path() -> Path:
+    """Return the configured routes file path.
+
+    Reads ``sync_folder`` from settings.json — falls back to legacy
+    ``bookmarks_path``'s parent during the migration window so routes
+    co-locate with bookmarks before AppState migrates the setting.
+    Falls back to ``DATA_DIR / "routes.json"`` when no sync folder is
+    configured or the configured folder is unreachable.
+    """
+    import config as _cfg
+    from services.json_safe import safe_load_json
+    data = safe_load_json(_cfg.SETTINGS_FILE)
+    if isinstance(data, dict):
+        sync_folder = data.get("sync_folder")
+        if isinstance(sync_folder, str) and sync_folder:
+            p = Path(sync_folder)
+            if p.exists():
+                return p / "routes.json"
+        legacy = data.get("bookmarks_path")
+        if isinstance(legacy, str) and legacy:
+            parent = Path(legacy).parent
+            if parent.exists():
+                return parent / "routes.json"
+    return _cfg.DATA_DIR / "routes.json"
 
 
 # Backwards-compat alias for code that imports the constant. Kept so
