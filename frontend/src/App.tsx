@@ -182,16 +182,20 @@ const App: React.FC = () => {
     }, ms)
   }, [])
 
-  // Auto-refresh bookmarks when the backend signals an external change
-  // (cloud-sync watchdog picked up a file written by another device).
+  // Auto-refresh bookmarks / routes when the backend signals an external
+  // change (cloud-sync watchdog picked up a file written by another device).
   useEffect(() => {
     return ws.subscribe((msg) => {
       if (msg.type === 'bookmarks_changed') {
         bm.refresh()
         showToast(t('cloud_sync.toast_synced'))
+      } else if (msg.type === 'routes_changed') {
+        api.getSavedRoutes().then(setSavedRoutes).catch(() => {})
+        refreshRouteCategories()
+        showToast(t('cloud_sync.toast_routes_synced'))
       }
     })
-  }, [ws.subscribe, bm.refresh, showToast, t])
+  }, [ws.subscribe, bm.refresh, refreshRouteCategories, showToast, t])
 
   const handleRestore = useCallback(async () => {
     // The backend stop + DVT clear can take a few seconds, especially if
