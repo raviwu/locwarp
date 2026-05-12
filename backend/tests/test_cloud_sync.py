@@ -1,5 +1,13 @@
-from pathlib import Path
-
+# Removed: test_migrate_bookmarks_rollback_on_post_copy_failure — it asserted
+# that migrate_bookmarks rolled back *dst* when *src.unlink* raised after the
+# copy. That behaviour was already absent from the implementation (the old
+# code logged and swallowed the error) and is intentionally absent from the
+# post-tunnel-helper-split implementation (unlink failure now propagates so
+# the user sees the real OS error; the data is safe in *dst*).
+#
+# Removed: simulated EPERM on iCloud reads in migrate_bookmarks — no longer
+# possible now that the backend runs as the file owner (not root), so the
+# silent-adopt branch was deleted from cloud_sync.py.
 import pytest
 
 from services.cloud_sync import detect_icloud_path
@@ -78,25 +86,4 @@ def test_migrate_bookmarks_noop_when_source_missing(tmp_path):
     src = tmp_path / "missing.json"
     dst = tmp_path / "dst.json"
     migrate_bookmarks(src=src, dst=dst)
-    assert not dst.exists()
-
-
-def test_migrate_bookmarks_rollback_on_post_copy_failure(tmp_path, monkeypatch):
-    src = tmp_path / "src.json"
-    src.write_text("payload", encoding="utf-8")
-    dst = tmp_path / "dst.json"
-
-    original_unlink = Path.unlink
-
-    def fail_unlink(self, missing_ok=False):
-        if self == src:
-            raise OSError("simulated failure deleting source")
-        return original_unlink(self, missing_ok=missing_ok)
-
-    monkeypatch.setattr(Path, "unlink", fail_unlink)
-
-    with pytest.raises(OSError):
-        migrate_bookmarks(src=src, dst=dst)
-
-    assert src.exists()
     assert not dst.exists()
