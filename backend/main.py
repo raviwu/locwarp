@@ -152,8 +152,7 @@ class AppState:
             and isinstance(legacy, str)
             and legacy
         ):
-            from pathlib import Path as _P
-            candidate = _P(legacy).parent
+            candidate = Path(legacy).parent
             if candidate.exists():
                 try:
                     from services.cloud_sync import migrate_pair
