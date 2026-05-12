@@ -13,6 +13,7 @@ if "--tunnel-helper" in sys.argv:
 import asyncio
 import json
 import logging
+import os
 from contextlib import asynccontextmanager
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
@@ -28,6 +29,7 @@ from services.bookmarks import BookmarkManager
 from services.route_store import RouteManager
 from services.coord_format import CoordinateFormatter
 from services.reconnect import ReconnectManager
+from services.tunnel_helper_client import TunnelHelperClient, HelperError
 
 # Configure logging — console + rotating file in ~/.locwarp/logs/
 _log_fmt = "%(asctime)s [%(name)s] %(levelname)s: %(message)s"
@@ -61,8 +63,14 @@ class AppState:
         self.simulation_engines: dict = {}
         self._primary_udid: str | None = None
         self.cooldown_timer = CooldownTimer()
-        self.bookmark_manager = BookmarkManager()
-        self.route_manager = RouteManager()
+        # bookmark_manager / route_manager are constructed lazily in
+        # load_state(), which runs INSIDE the FastAPI lifespan AFTER the
+        # elevated helper has chowned any root-owned ~/.locwarp/ files
+        # back to the user. Touching disk in __init__ raced the helper's
+        # migration on first launch and prevented iCloud bookmark sync
+        # from being adopted at startup.
+        self.bookmark_manager: BookmarkManager | None = None
+        self.route_manager: RouteManager | None = None
         self.coord_formatter = CoordinateFormatter()
         self.reconnect_manager = None
         self._last_position = None
@@ -76,7 +84,16 @@ class AppState:
         self._bookmark_expanded_categories: list[str] | None = None
         self._bookmarks_path: str | None = None
         self._cloud_sync_dismissed: bool = False
+        # Do NOT call _load_settings() or construct BookmarkManager /
+        # RouteManager here. See load_state().
+
+    async def load_state(self) -> None:
+        """Load on-disk state. Must run after the helper has migrated
+        any root-owned files back to the user. Idempotent — repeated
+        calls rebuild the managers and re-read settings from disk."""
         self._load_settings()
+        self.bookmark_manager = BookmarkManager()
+        self.route_manager = RouteManager()
 
     def _load_settings(self):
         from services.json_safe import safe_load_json
@@ -228,6 +245,11 @@ class AppState:
 
 
 app_state = AppState()
+
+# Shared elevated-helper client. Lifecycle is owned by the FastAPI
+# lifespan below: connect during startup AFTER the helper has chowned
+# our state files back to the user, shut down during teardown.
+helper_client = TunnelHelperClient()
 
 
 # ── Lifespan ─────────────────────────────────────────────
@@ -623,6 +645,56 @@ async def _usbmux_presence_watchdog():
 @asynccontextmanager
 async def lifespan(application: FastAPI):
     import asyncio
+    # ── Helper handshake + state migration ──
+    # The helper runs as root and owns ~/.locwarp/ files left over from
+    # any previous root-mode launch. Wait for it to publish READY, then
+    # ask it to chown those files back to the regular user. ONLY THEN do
+    # we construct BookmarkManager / RouteManager and load settings — the
+    # iCloud bookmark adoption path inside BookmarkManager() needs to be
+    # able to read and write the user's home directory.
+    #
+    # Per design §5.1, a failure here is fatal: if the user cancelled the
+    # admin prompt or the helper crashed, the backend cannot safely
+    # write to ~/.locwarp/ until ownership is reclaimed. We exit the
+    # ASGI process so Electron sees the backend disappear and can
+    # surface a clear "restart and grant admin" error rather than leave
+    # the user with read-only-looking bookmarks and silent EACCES on
+    # write.
+    try:
+        await helper_client.connect(timeout=30.0)
+    except (TimeoutError, OSError, ConnectionError) as exc:
+        logger.error("tunnel helper did not become ready: %s", exc)
+        raise SystemExit(1)
+
+    try:
+        result = await asyncio.wait_for(
+            helper_client.migrate_user_state(
+                home=str(Path.home()),
+                uid=os.getuid(),
+                gid=os.getgid(),
+            ),
+            timeout=30.0,
+        )
+        logger.info(
+            "helper migrate_user_state: chowned=%d skipped=%d failed=%d",
+            result.get("chowned", -1),
+            result.get("skipped", -1),
+            result.get("failed", -1),
+        )
+    except HelperError as exc:
+        # Helper rejected our identity (e.g. parent_uid mismatch). This
+        # is a launcher bug, not a missing-helper. Fail loudly.
+        logger.error(
+            "helper migrate_user_state rejected (code=%d): %s",
+            exc.code, exc.message,
+        )
+        raise SystemExit(2)
+    except (TimeoutError, asyncio.TimeoutError) as exc:
+        logger.error("helper migrate_user_state timed out: %s", exc)
+        raise SystemExit(1)
+
+    await app_state.load_state()
+
     # ── Startup ──
     logger.info("LocWarp starting — scanning for devices…")
     try:
@@ -656,7 +728,15 @@ async def lifespan(application: FastAPI):
     yield
 
     # ── Shutdown ──
-    app_state.bookmark_manager.stop_watcher()
+    # Mirror the start-side defensive checks: if load_state() failed mid-
+    # construction (e.g. crash in BookmarkManager init), bookmark_manager
+    # could be None and stop_watcher() would AttributeError. Guard each
+    # teardown step so one failure doesn't prevent the rest from running.
+    try:
+        if app_state.bookmark_manager is not None:
+            app_state.bookmark_manager.stop_watcher()
+    except Exception:
+        logger.exception("error stopping bookmark watcher")
 
     watchdog_task.cancel()
     try:
@@ -664,8 +744,22 @@ async def lifespan(application: FastAPI):
     except (asyncio.CancelledError, Exception):
         pass
 
-    app_state.save_settings()
-    await app_state.device_manager.disconnect_all()
+    try:
+        app_state.save_settings()
+    except Exception:
+        logger.exception("error saving settings on shutdown")
+    try:
+        await app_state.device_manager.disconnect_all()
+    except Exception:
+        logger.exception("error disconnecting devices")
+
+    # Ask the helper to exit cleanly so it doesn't outlive the backend.
+    try:
+        await helper_client.shutdown()
+    except Exception:
+        logger.exception("helper shutdown call failed")
+    await helper_client.close()
+
     logger.info("LocWarp shut down")
 
 
