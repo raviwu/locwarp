@@ -108,8 +108,10 @@ export function CloudSyncSection() {
           {t('cloud_sync.detail_path', { path: status.sync_folder })}
           <br />
           {t('cloud_sync.detail_counts', {
-            bookmarks: status.bookmark_count,
-            categories: status.category_count,
+            bookmarks: status.bookmarks.count,
+            bookmark_categories: status.bookmarks.category_count,
+            routes: status.routes.count,
+            route_categories: status.routes.category_count,
           })}
         </p>
       )}
