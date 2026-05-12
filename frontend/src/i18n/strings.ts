@@ -731,6 +731,7 @@ export const STRINGS = {
   'cloud_sync.no_icloud_hint': { zh: '未偵測到 iCloud Drive。可使用任何同步資料夾（Dropbox / Google Drive / OneDrive）—啟用後從 settings.json 手動設定路徑。', en: 'iCloud Drive not detected. You can use any synced folder (Dropbox / Google Drive / OneDrive) — enable, then pick the path manually from settings.json.' },
   'cloud_sync.discovery_prompt': { zh: '偵測到 iCloud Drive。是否透過 iCloud Drive 在所有登入此 Apple ID 的裝置間同步 LocWarp 書籤與路線?', en: 'iCloud Drive detected. Use it to sync your LocWarp bookmarks and routes across all devices signed in to this Apple ID?' },
   'cloud_sync.toast_synced': { zh: '書籤已從雲端同步', en: 'Bookmarks synced from cloud' },
+  'cloud_sync.toast_routes_synced': { zh: '路線已從雲端同步', en: 'Routes synced from cloud' },
 
   // ── DDI mount overlay ───────────────────────
   'ddi.mounting_title': { zh: '首次設定裝置中', en: 'Preparing device' },
