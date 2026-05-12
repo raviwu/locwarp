@@ -11,6 +11,7 @@ import shutil
 import webbrowser
 import urllib.request
 import socket
+from pathlib import Path
 
 # 路徑設定
 ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -20,7 +21,100 @@ FRONTEND = os.path.join(ROOT, "frontend")
 BACKEND_PORT = 8777
 FRONTEND_PORT = 5173
 
+# Elevated tunnel helper paths (must match
+# backend/tunnel_helper_main.py DEFAULT_SOCK_PATH / DEFAULT_STATUS_PATH).
+HELPER_SOCK = Path("/tmp/locwarp-helper.sock")
+HELPER_STATUS = Path("/tmp/locwarp-helper.status")
+
 procs = []
+
+
+def _is_existing_helper_alive() -> bool:
+    """Return True only when an existing helper socket responds to ping.
+
+    If the socket file is present but unreachable, the paths are unlinked
+    so a fresh helper can re-bind.
+    """
+    if not HELPER_SOCK.exists():
+        return False
+    s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    try:
+        s.settimeout(1.0)
+        s.connect(str(HELPER_SOCK))
+        s.sendall(b'{"jsonrpc":"2.0","id":1,"method":"ping"}\n')
+        data = s.recv(4096)
+        return b'"result"' in data
+    except OSError:
+        # Stale socket — try to unlink so the helper can re-bind.
+        for p in (HELPER_SOCK, HELPER_STATUS):
+            try:
+                p.unlink()
+            except OSError:
+                pass
+        return False
+    finally:
+        try:
+            s.close()
+        except OSError:
+            pass
+
+
+def spawn_tunnel_helper() -> bool:
+    """Spawn the privileged tunnel helper via sudo (macOS only).
+
+    Returns True if a helper is READY (either reused or newly spawned),
+    False if the helper failed to come up within the timeout. The caller
+    decides whether that is fatal — on dev hosts without an iOS 17+
+    device this is recoverable, but the backend's lifespan startup will
+    surface the error if the helper is genuinely required.
+    """
+    if sys.platform != "darwin":
+        return True
+
+    if _is_existing_helper_alive():
+        print("      重用既有 tunnel helper ✓")
+        return True
+
+    parent_pid = os.getpid()
+    parent_uid = os.getuid()
+    print(f"      啟動 tunnel helper (sudo, parent pid={parent_pid})...")
+    # Spawn detached so the helper survives independently of this
+    # foreground launcher process. We pass `sudo --` to terminate option
+    # parsing, then `sys.executable` (matches whatever venv start.py is
+    # running under) and main.py with the helper flag.
+    subprocess.Popen(
+        [
+            "sudo",
+            "--",
+            sys.executable,
+            os.path.join(BACKEND, "main.py"),
+            "--tunnel-helper",
+            f"--parent-pid={parent_pid}",
+            f"--parent-uid={parent_uid}",
+        ],
+        cwd=BACKEND,
+        # Keep stdin attached so sudo can prompt for the password.
+    )
+
+    # Wait up to 30s for /tmp/locwarp-helper.status to flip to READY.
+    # If the user cancels the sudo prompt or types the wrong password,
+    # this loop simply times out and the backend's own startup probe
+    # will surface a clearer error.
+    for _ in range(60):
+        if HELPER_STATUS.exists():
+            try:
+                if HELPER_STATUS.read_text().strip() == "READY":
+                    print("      tunnel helper READY ✓")
+                    return True
+            except OSError:
+                pass
+        time.sleep(0.5)
+
+    print(
+        "      [警告] tunnel helper 在 30 秒內未就緒；後端啟動時將回報錯誤",
+        file=sys.stderr,
+    )
+    return False
 
 
 def print_banner():
@@ -196,10 +290,9 @@ def main():
         print("      iOS 17+ 裝置需要管理員權限才能建立通道")
         print("      請右鍵 LocWarp.bat → 以系統管理員身份執行")
         print()
-    elif sys.platform == "darwin" and os.geteuid() != 0:
-        print("  [!] macOS 需要 root 權限建立 iOS 17+ 裝置通道 (utun)")
-        print("      請使用：sudo python3 start.py")
-        print("      或執行：./start.sh")
+    elif sys.platform == "darwin" and os.geteuid() == 0:
+        print("  [!] start.py 不應以 root 身分執行；只有 tunnel helper 需要 sudo")
+        print("      請直接執行：./start.sh  (sudo prompt 會在 helper 啟動時自動跳出)")
         print()
         sys.exit(1)
 
@@ -219,6 +312,13 @@ def main():
     print()
     install_frontend()
     print()
+
+    # macOS: 先啟動 elevated tunnel helper (only the helper runs as root —
+    # 後端、前端維持一般使用者身分執行)。
+    if sys.platform == "darwin":
+        print("  [3a/4] 啟動 elevated tunnel helper...")
+        spawn_tunnel_helper()
+        print()
 
     # 啟動服務
     if not start_backend():
