@@ -61,6 +61,8 @@ class RouteManager:
         self._watcher_observer: Observer | None = None
         self._watcher_debounce_timer: threading.Timer | None = None
         self._on_external_change: Callable[[], None] | None = None
+        # No _last_loaded_snapshot: routes don't support diff-merge on external
+        # change — _watcher_tick just reloads from disk.
 
     # ------------------------------------------------------------------
     # Persistence
@@ -120,6 +122,13 @@ class RouteManager:
             return 0.0
 
     def start_watcher(self, on_change: Callable[[], None]) -> None:
+        """Begin watching the routes file for external modifications.
+
+        *on_change* is invoked (no args) on the watcher thread AFTER
+        self.store has been reloaded from disk. Callers are responsible
+        for marshalling onto whatever loop/thread they need (e.g. asyncio
+        via run_coroutine_threadsafe).
+        """
         self.stop_watcher()
         path = self._routes_path()
         parent = path.parent
