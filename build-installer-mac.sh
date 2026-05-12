@@ -13,8 +13,17 @@ echo "============================================================"
 echo " [1/3] Build backend with PyInstaller"
 echo "============================================================"
 cd "$ROOT/backend"
-# shellcheck disable=SC1091
-source "$ROOT/backend/.venv/bin/activate"
+if [[ ! -f "$ROOT/backend/.venv/bin/activate" ]]; then
+    echo "==> Bootstrapping backend/.venv (first-time setup)"
+    python3 -m venv "$ROOT/backend/.venv"
+    # shellcheck disable=SC1091
+    source "$ROOT/backend/.venv/bin/activate"
+    python -m pip install --upgrade pip
+    pip install -r "$ROOT/backend/requirements.txt" -r "$ROOT/backend/requirements-build.txt"
+else
+    # shellcheck disable=SC1091
+    source "$ROOT/backend/.venv/bin/activate"
+fi
 python3 -m PyInstaller locwarp-backend.spec --noconfirm \
     --distpath "$ROOT/dist-py" \
     --workpath "$ROOT/build-py/backend"
