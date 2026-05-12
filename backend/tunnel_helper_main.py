@@ -34,6 +34,8 @@ import sys
 from pathlib import Path
 from typing import Any, Callable, Awaitable
 
+from core._tunnel_runner import TunnelRunner as _TunnelRunner
+
 logger = logging.getLogger("tunnel_helper")
 
 DEFAULT_SOCK_PATH = Path("/tmp/locwarp-helper.sock")
@@ -86,6 +88,13 @@ class HelperServer:
             "shutdown": self._handle_shutdown,
             "migrate_user_state": self._handle_migrate_user_state,
         }
+        self._tunnels: dict[str, _TunnelRunner] = {}
+        self._methods.update({
+            "open_wifi_tunnel": self._handle_open_wifi_tunnel,
+            "open_usb_tunnel": self._handle_open_usb_tunnel,
+            "close_tunnel": self._handle_close_tunnel,
+            "list_tunnels": self._handle_list_tunnels,
+        })
 
     # ── lifecycle ─────────────────────────────────────────────────
 
@@ -169,6 +178,14 @@ class HelperServer:
         os.replace(tmp, self.status_path)
 
     async def stop(self) -> None:
+        # Close any active tunnels first so TUN devices are released cleanly
+        # before we tear down the IPC machinery.
+        for udid, runner in list(self._tunnels.items()):
+            try:
+                await runner.stop()
+            except Exception:
+                logger.exception("error stopping tunnel for %s during shutdown", udid)
+        self._tunnels.clear()
         if self._server is not None:
             self._server.close()
             with contextlib.suppress(Exception):
@@ -308,6 +325,54 @@ class HelperServer:
                 f"home {home} does not match parent home {pw.pw_dir}",
             )
         return migrate_user_state(home=home, uid=uid, gid=gid)
+
+    async def _handle_open_wifi_tunnel(self, params: dict) -> dict:
+        udid = params.get("udid")
+        ip = params.get("ip")
+        port = params.get("port")
+        if not (isinstance(udid, str) and isinstance(ip, str) and isinstance(port, int)):
+            raise _HelperRpcError(-32602, "open_wifi_tunnel needs udid:str, ip:str, port:int")
+        if udid in self._tunnels:
+            raise _HelperRpcError(-32003, f"tunnel already exists for {udid}")
+        runner = _TunnelRunner()
+        try:
+            info = await runner.start(udid=udid, ip=ip, port=port)
+        except Exception as exc:
+            raise _HelperRpcError(-32002, f"RemotePairing handshake failed: {exc}")
+        self._tunnels[udid] = runner
+        return info
+
+    async def _handle_open_usb_tunnel(self, params: dict) -> dict:
+        # Task 7 fills this in; for now reject cleanly so the wire protocol
+        # is exercised end-to-end without a hidden NotImplementedError.
+        raise _HelperRpcError(-32099, "open_usb_tunnel not yet implemented (Task 7)")
+
+    async def _handle_close_tunnel(self, params: dict) -> dict:
+        udid = params.get("udid")
+        if not isinstance(udid, str):
+            raise _HelperRpcError(-32602, "close_tunnel needs udid:str")
+        runner = self._tunnels.pop(udid, None)
+        if runner is None:
+            raise _HelperRpcError(-32004, f"unknown tunnel: {udid}")
+        try:
+            await runner.stop()
+        except Exception as exc:
+            # The runner is already popped from the registry; log but do
+            # not re-raise so the caller sees a clean close response.
+            logger.exception("error stopping tunnel for %s: %s", udid, exc)
+        return {"closed": True}
+
+    async def _handle_list_tunnels(self, params: dict) -> list[dict]:
+        out = []
+        for udid, runner in self._tunnels.items():
+            info = runner.info or {}
+            out.append({
+                "udid": udid,
+                "rsd_address": info.get("rsd_address"),
+                "rsd_port": info.get("rsd_port"),
+                "interface": info.get("interface"),
+            })
+        return out
 
 
 def run() -> int:
