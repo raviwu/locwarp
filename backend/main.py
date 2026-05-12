@@ -1,3 +1,15 @@
+# Early branch: when run with --tunnel-helper, behave as the elevated
+# tunnel helper and skip every backend import (uvicorn, FastAPI, and
+# the pymobiledevice3 chain pulled in by core.device_manager) that the
+# helper does not use. Keeps the elevated-helper memory footprint and
+# attack surface small.
+import sys
+
+if "--tunnel-helper" in sys.argv:
+    from tunnel_helper_main import run as _tunnel_helper_run
+
+    raise SystemExit(_tunnel_helper_run())
+
 import asyncio
 import json
 import logging
