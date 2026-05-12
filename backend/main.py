@@ -82,10 +82,13 @@ class AppState:
         # "auto-collapse when total bookmarks > 30" rule. Empty list means
         # explicitly all-collapsed.
         self._bookmark_expanded_categories: list[str] | None = None
-        self._bookmarks_path: str | None = None
+        self._sync_folder: str | None = None
         self._cloud_sync_dismissed: bool = False
-        # Do NOT call _load_settings() or construct BookmarkManager /
-        # RouteManager here. See load_state().
+        # Load sync-related persisted state eagerly (no I/O risk; just reads
+        # settings.json). The heavy manager construction is deferred to
+        # load_state() which runs inside the FastAPI lifespan.
+        self._load_persisted_state()
+        # Do NOT construct BookmarkManager / RouteManager here. See load_state().
 
     async def load_state(self) -> None:
         """Load on-disk state. Must run after the helper has migrated
@@ -114,26 +117,82 @@ class AppState:
             bmExp = data.get("bookmark_expanded_categories")
             if isinstance(bmExp, list):
                 self._bookmark_expanded_categories = [str(x) for x in bmExp]
-            bp = data.get("bookmarks_path")
-            if isinstance(bp, str):
-                self._bookmarks_path = bp
-            cdsm = data.get("cloud_sync_dismissed")
-            if isinstance(cdsm, bool):
-                self._cloud_sync_dismissed = cdsm
         except (ValueError, KeyError):
             logger.warning("Settings payload field malformed; keeping defaults", exc_info=True)
 
-    def save_settings(self):
+    def _load_persisted_state(self) -> None:
+        """Load sync-folder and cloud_sync_dismissed from settings.json.
+
+        Also handles legacy migration: if the settings contain the old
+        ``bookmarks_path`` key (pointing at an iCloud folder), upgrade it
+        to ``sync_folder`` and pull the local routes.json into the same
+        folder via ``migrate_pair``.
+
+        Safe to call from ``__init__`` — only reads/writes settings.json and
+        may move routes.json; does not construct managers or start watchers.
+        """
+        from services.json_safe import safe_load_json
+        data = safe_load_json(SETTINGS_FILE)
+        if not isinstance(data, dict):
+            return
+
+        sync_folder = data.get("sync_folder")
+        if isinstance(sync_folder, str) and sync_folder:
+            self._sync_folder = sync_folder
+
+        cdsm = data.get("cloud_sync_dismissed")
+        if isinstance(cdsm, bool):
+            self._cloud_sync_dismissed = cdsm
+
+        # Legacy migration: upgrade bookmarks_path → sync_folder, and
+        # pull the local routes.json into the same folder.
+        legacy = data.get("bookmarks_path")
+        if (
+            self._sync_folder is None
+            and isinstance(legacy, str)
+            and legacy
+        ):
+            from pathlib import Path as _P
+            candidate = _P(legacy).parent
+            if candidate.exists():
+                try:
+                    from services.cloud_sync import migrate_pair
+                    import config as _cfg
+                    migrate_pair(_cfg.DATA_DIR, candidate)
+                    self._sync_folder = str(candidate)
+                    # Drop legacy key from on-disk settings.
+                    data.pop("bookmarks_path", None)
+                    data["sync_folder"] = str(candidate)
+                    from services.json_safe import safe_write_json
+                    safe_write_json(SETTINGS_FILE, data)
+                    logger.info(
+                        "AppState: migrated legacy bookmarks_path → "
+                        "sync_folder=%s", candidate,
+                    )
+                except Exception:
+                    logger.exception(
+                        "AppState: legacy bookmarks_path migration failed; "
+                        "keeping legacy setting"
+                    )
+            else:
+                logger.warning(
+                    "AppState: legacy bookmarks_path points at missing "
+                    "folder %s; deferring migration until cloud drive is "
+                    "available",
+                    candidate,
+                )
+
+    def save_settings(self) -> None:
         from services.json_safe import safe_write_json
-        data = {
+        payload = {
             "last_position": self._last_position,
             "coord_format": self.coord_formatter.format.value,
             "initial_map_position": self._initial_map_position,
             "bookmark_expanded_categories": self._bookmark_expanded_categories,
-            "bookmarks_path": self._bookmarks_path,
+            "sync_folder": self._sync_folder,
             "cloud_sync_dismissed": self._cloud_sync_dismissed,
         }
-        safe_write_json(SETTINGS_FILE, data)
+        safe_write_json(SETTINGS_FILE, payload)
 
     def get_initial_position(self) -> dict:
         if self._last_position:
@@ -164,6 +223,25 @@ class AppState:
             )
 
         self.bookmark_manager.start_watcher(_on_change)
+
+    def restart_route_watcher(self) -> None:
+        """Re-bind the route watcher to the current routes path.
+
+        Call this after `_sync_folder` changes so the watcher binds to
+        the new directory. Mirrors `restart_bookmark_watcher`.
+        """
+        import asyncio
+        from api.websocket import broadcast as _bc
+
+        self.route_manager.stop_watcher()
+        loop = asyncio.get_running_loop()
+
+        def _on_change():
+            asyncio.run_coroutine_threadsafe(
+                _bc("routes_changed", {"reason": "external_update"}), loop
+            )
+
+        self.route_manager.start_watcher(_on_change)
 
     @property
     def simulation_engine(self):
