@@ -18,11 +18,15 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-from config import ROUTES_FILE
+from config import ROUTES_FILE, get_routes_path
 from models.schemas import RouteCategory, RouteStore, SavedRoute
 from services.json_safe import safe_load_json, safe_write_json
 
 logger = logging.getLogger(__name__)
+
+# Capture the import-time default so tests that monkeypatch
+# config.ROUTES_FILE keep working.
+_CONFIG_DEFAULT_ROUTES_FILE = ROUTES_FILE
 
 
 def _now_iso() -> str:
@@ -53,8 +57,15 @@ class RouteManager:
     # Persistence
     # ------------------------------------------------------------------
 
+    def _routes_path(self) -> Path:
+        # Tests may monkeypatch the module-level ROUTES_FILE; if it differs
+        # from the import-time default, honour the test override.
+        if ROUTES_FILE is not _CONFIG_DEFAULT_ROUTES_FILE:
+            return Path(ROUTES_FILE)
+        return get_routes_path()
+
     def _load(self) -> None:
-        data = safe_load_json(Path(ROUTES_FILE))
+        data = safe_load_json(self._routes_path())
         if data is None:
             logger.info("No routes file (or unreadable); using defaults")
             return
@@ -90,7 +101,7 @@ class RouteManager:
 
     def _save(self) -> None:
         payload = json.loads(self.store.model_dump_json())
-        safe_write_json(Path(ROUTES_FILE), payload)
+        safe_write_json(self._routes_path(), payload)
 
     # ------------------------------------------------------------------
     # Categories
