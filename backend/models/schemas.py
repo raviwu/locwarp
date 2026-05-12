@@ -307,17 +307,6 @@ class RouteOptimizeResponse(BaseModel):
 
 
 # ── Cloud sync ────────────────────────────────────────────
-class CloudSyncStatus(BaseModel):
-    """Legacy shape — used by api/bookmarks.py until Task 9 strips it."""
-    enabled: bool
-    detected_icloud_path: str | None = None
-    current_path: str
-    sync_folder: str | None = None
-    bookmark_count: int = 0
-    category_count: int = 0
-    prompt_dismissed: bool = False
-
-
 class CloudSyncResource(BaseModel):
     """Per-file resource info within the unified cloud-sync status."""
     path: str
@@ -325,8 +314,8 @@ class CloudSyncResource(BaseModel):
     category_count: int = 0
 
 
-class CloudSyncStatusUnified(BaseModel):
-    """Unified shape returned by /api/cloud-sync/* (Task 8+)."""
+class CloudSyncStatus(BaseModel):
+    """Unified shape returned by /api/cloud-sync/*."""
     enabled: bool
     sync_folder: str | None = None
     detected_icloud_path: str | None = None

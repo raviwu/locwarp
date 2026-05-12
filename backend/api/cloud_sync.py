@@ -12,7 +12,7 @@ from fastapi import APIRouter, HTTPException
 
 import config as _config
 from models.schemas import (
-    CloudSyncEnableRequest, CloudSyncResource, CloudSyncStatusUnified,
+    CloudSyncEnableRequest, CloudSyncResource, CloudSyncStatus,
 )
 from services.cloud_sync import (
     detect_icloud_path, migrate_pair, setup_sync_folder,
@@ -29,14 +29,14 @@ def _resource(path: Path, count: int, category_count: int) -> CloudSyncResource:
     )
 
 
-def _build_status() -> CloudSyncStatusUnified:
+def _build_status() -> CloudSyncStatus:
     from main import app_state
     bm = app_state.bookmark_manager
     rm = app_state.route_manager
     bm_path = bm._bookmarks_path()
     rt_path = rm._routes_path()
     icloud = detect_icloud_path()
-    return CloudSyncStatusUnified(
+    return CloudSyncStatus(
         enabled=app_state._sync_folder is not None,
         sync_folder=app_state._sync_folder,
         detected_icloud_path=str(icloud) if icloud else None,
@@ -54,12 +54,12 @@ def _build_status() -> CloudSyncStatusUnified:
     )
 
 
-@router.get("/status", response_model=CloudSyncStatusUnified)
+@router.get("/status", response_model=CloudSyncStatus)
 async def cloud_sync_status():
     return _build_status()
 
 
-@router.post("/enable", response_model=CloudSyncStatusUnified)
+@router.post("/enable", response_model=CloudSyncStatus)
 async def cloud_sync_enable(req: CloudSyncEnableRequest):
     from main import app_state
     if req.folder:
@@ -105,7 +105,7 @@ async def cloud_sync_enable(req: CloudSyncEnableRequest):
     return _build_status()
 
 
-@router.post("/disable", response_model=CloudSyncStatusUnified)
+@router.post("/disable", response_model=CloudSyncStatus)
 async def cloud_sync_disable():
     from main import app_state
     if app_state._sync_folder is None:
@@ -137,7 +137,7 @@ async def cloud_sync_disable():
     return _build_status()
 
 
-@router.post("/dismiss-prompt", response_model=CloudSyncStatusUnified)
+@router.post("/dismiss-prompt", response_model=CloudSyncStatus)
 async def cloud_sync_dismiss_prompt():
     from main import app_state
     app_state._cloud_sync_dismissed = True
