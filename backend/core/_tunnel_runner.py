@@ -142,3 +142,98 @@ class TunnelRunner:
             pass
         self.task = None
         self.info = None
+
+
+class UsbTunnelRunner:
+    """USB iOS 17+ tunnel runner, helper-internal.
+
+    Symmetric to TunnelRunner but uses CoreDeviceTunnelProxy over a
+    usbmux-backed lockdown connection. The helper constructs the
+    lockdown itself — the backend does not share state with the helper.
+    """
+
+    def __init__(self) -> None:
+        self.info: dict | None = None
+        self._lockdown = None
+        self._proxy = None
+        self._task: asyncio.Task | None = None
+        self._stop = asyncio.Event()
+        self._ready = asyncio.Event()
+        self._error: BaseException | None = None
+
+    async def _run(self, udid: str) -> None:
+        from pymobiledevice3.lockdown import create_using_usbmux
+        from pymobiledevice3.remote.tunnel_service import CoreDeviceTunnelProxy
+        try:
+            # create_using_usbmux is async in pymobiledevice3 — mirror
+            # device_manager._connect_tunnel's prior usage which awaited
+            # create_using_usbmux(serial=udid).
+            self._lockdown = await create_using_usbmux(serial=udid)
+            self._proxy = await CoreDeviceTunnelProxy.create(self._lockdown)
+            async with self._proxy.start_tcp_tunnel() as tun:
+                self.info = {
+                    "rsd_address": tun.address,
+                    "rsd_port": tun.port,
+                    "interface": tun.interface,
+                    "protocol": str(tun.protocol),
+                }
+                logger.info(
+                    "USB tunnel established for %s: %s:%d iface=%s",
+                    udid, tun.address, tun.port, tun.interface,
+                )
+                self._ready.set()
+                await self._stop.wait()
+        except BaseException as exc:
+            self._error = exc
+            self._ready.set()
+            raise
+        finally:
+            self.info = None
+            if self._proxy is not None:
+                try:
+                    self._proxy.close()
+                except Exception:
+                    pass
+            self._proxy = None
+
+    async def start(self, udid: str, timeout: float = 20.0) -> dict:
+        self._stop = asyncio.Event()
+        self._ready = asyncio.Event()
+        self._error = None
+        self.info = None
+        self._task = asyncio.create_task(self._run(udid))
+        try:
+            await asyncio.wait_for(self._ready.wait(), timeout=timeout)
+        except asyncio.TimeoutError:
+            self._stop.set()
+            try:
+                await asyncio.wait_for(self._task, timeout=2.0)
+            except (asyncio.TimeoutError, asyncio.CancelledError, Exception):
+                pass
+            self._task = None
+            raise
+        if self._error is not None:
+            exc = self._error
+            self._task = None
+            raise exc
+        return dict(self.info or {})
+
+    async def stop(self) -> None:
+        if self._task is None or self._task.done():
+            self._task = None
+            self.info = None
+            return
+        self._stop.set()
+        try:
+            await asyncio.wait_for(self._task, timeout=5.0)
+        except asyncio.TimeoutError:
+            logger.warning("USB tunnel task did not exit in 5s; cancelling")
+            self._task.cancel()
+            try:
+                await self._task
+            except (asyncio.CancelledError, Exception):
+                pass
+        except (asyncio.CancelledError, Exception):
+            pass
+        self._task = None
+        self.info = None

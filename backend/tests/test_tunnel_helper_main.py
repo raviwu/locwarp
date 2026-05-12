@@ -148,3 +148,49 @@ async def test_open_and_close_wifi_tunnel_via_fake_runner(tmp_path, monkeypatch)
         await writer.wait_closed()
     finally:
         await server.stop()
+
+
+@pytest.mark.asyncio
+async def test_open_usb_tunnel_uses_usb_runner(tmp_path, monkeypatch):
+    fake_started: list[str] = []
+
+    class FakeUsbRunner:
+        def __init__(self):
+            self.info = None
+
+        async def start(self, udid, timeout=20.0):
+            fake_started.append(udid)
+            self.info = {
+                "rsd_address": "fd7d::2",
+                "rsd_port": 22222,
+                "interface": "utun4",
+                "protocol": "quic",
+            }
+            return dict(self.info)
+
+        async def stop(self):
+            self.info = None
+
+    monkeypatch.setattr("tunnel_helper_main._UsbTunnelRunner", FakeUsbRunner)
+
+    sock = tmp_path / "h.sock"
+    status = tmp_path / "h.status"
+    server = HelperServer(
+        sock_path=sock,
+        status_path=status,
+        parent_pid=os.getpid(),
+        parent_uid=os.getuid(),
+    )
+    await server.start()
+    try:
+        reader, writer = await asyncio.open_unix_connection(path=str(sock))
+        req = {"jsonrpc": "2.0", "id": 1, "method": "open_usb_tunnel", "params": {"udid": "abc"}}
+        writer.write((json.dumps(req) + "\n").encode())
+        await writer.drain()
+        resp = json.loads((await reader.readline()).decode())
+        assert resp["result"]["rsd_address"] == "fd7d::2"
+        assert fake_started == ["abc"]
+        writer.close()
+        await writer.wait_closed()
+    finally:
+        await server.stop()

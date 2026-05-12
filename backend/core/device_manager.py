@@ -9,9 +9,10 @@ Supports both USB and WiFi connections.  ``list_devices()`` from usbmuxd
 returns devices with ``connection_type`` of ``"USB"`` or ``"Network"``.
 WiFi requires the device to be paired and on the same local network.
 
-For iOS 17+, a TCP tunnel via CoreDeviceTunnelProxy is established first,
-then a RemoteServiceDiscoveryService (RSD) is created over the tunnel to
-access DVT services.  This requires administrator privileges on Windows.
+For iOS 17+, a TCP tunnel is established via the elevated tunnel helper
+(which holds /dev/utunN), then a RemoteServiceDiscoveryService (RSD) is
+created over the kernel-routed tunnel address to access DVT services.
+The helper IPC keeps this process unprivileged.
 """
 
 from __future__ import annotations
@@ -238,7 +239,7 @@ class DeviceManager:
 
         Supports both USB and WiFi (Network) connections via usbmuxd.
 
-        * **iOS 17+** -- TCP tunnel via CoreDeviceTunnelProxy + RSD.
+        * **iOS 17+** -- TCP tunnel via the elevated helper + RSD.
         * **iOS 16.x** -- plain lockdown over usbmux + legacy location service.
         """
         async with self._lock:
@@ -292,24 +293,35 @@ class DeviceManager:
 
         logger.info("Connected to %s (iOS %s) via %s", udid, ios_version_str, connection_type)
 
-    # -- iOS 17+ via CoreDeviceTunnelProxy ---------------------------------
+    # -- iOS 17+ via helper-owned tunnel ----------------------------------
 
     async def _connect_tunnel(
         self, udid: str, lockdown, ios_version: str
     ) -> _ActiveConnection:
-        """TCP tunnel for iOS 17+ using CoreDeviceTunnelProxy + RSD."""
-        logger.debug("Establishing TCP tunnel for %s (iOS %s)", udid, ios_version)
+        """TCP tunnel for iOS 17+ over USB, served by the elevated helper.
+
+        The helper holds /dev/utunN and the pymobiledevice3 tunnel
+        context; we just connect to the RSD address it returns. The
+        kernel routes that IPv6 address via the helper-owned TUN, so
+        plain TCP works from this unprivileged process.
+        """
+        from core.wifi_tunnel import _helper_client
+
+        logger.debug("Requesting USB tunnel from helper for %s (iOS %s)", udid, ios_version)
+        if _helper_client is None:
+            raise RuntimeError(
+                f"無法建立裝置通道 (iOS {ios_version})。"
+                f"tunnel helper client is not configured."
+            )
 
         try:
-            proxy = await CoreDeviceTunnelProxy.create(lockdown)
-            tunnel_ctx = proxy.start_tcp_tunnel()
-            tunnel_result = await tunnel_ctx.__aenter__()
+            info = await _helper_client.open_usb_tunnel(udid=udid)
+            logger.info(
+                "Tunnel established for %s: %s:%s (helper-owned)",
+                udid, info.get("rsd_address"), info.get("rsd_port"),
+            )
 
-            logger.info("Tunnel established for %s: %s:%s",
-                        udid, tunnel_result.address, tunnel_result.port)
-
-            # Create RSD over the tunnel
-            rsd = RemoteServiceDiscoveryService((tunnel_result.address, tunnel_result.port))
+            rsd = RemoteServiceDiscoveryService((info["rsd_address"], info["rsd_port"]))
             await rsd.connect()
             logger.info("RSD connected for %s", udid)
 
@@ -317,15 +329,17 @@ class DeviceManager:
                 udid=udid,
                 lockdown=rsd,
                 ios_version=ios_version,
-                tunnel_proxy=proxy,
-                tunnel_context=tunnel_ctx,
+                # tunnel_proxy / tunnel_context live in the helper now;
+                # disconnect() releases them via helper.close_tunnel().
+                tunnel_proxy=None,
+                tunnel_context=None,
                 rsd=rsd,
                 usbmux_lockdown=lockdown,
             )
         except Exception:
             logger.exception(
                 "TCP tunnel failed for %s (iOS %s). "
-                "Ensure you are running as administrator.",
+                "Ensure the tunnel helper is running with elevated privileges.",
                 udid, ios_version,
             )
             raise RuntimeError(
@@ -381,19 +395,20 @@ class DeviceManager:
             except Exception:
                 logger.exception("Error closing RSD for %s", udid)
 
-        # Close tunnel context.
-        if conn.tunnel_context is not None:
+        # Close helper-owned USB tunnel for iOS 17+. WiFi tunnels are
+        # closed by the wifi_tunnel.TunnelRunner facade's stop() (which
+        # the API endpoint invokes when the user disconnects WiFi), so
+        # we skip them here to avoid a double-close racing the facade.
+        if (
+            conn.connection_type == "USB"
+            and _parse_ios_version(conn.ios_version) >= (17, 0)
+        ):
             try:
-                await conn.tunnel_context.__aexit__(None, None, None)
+                from core.wifi_tunnel import _helper_client
+                if _helper_client is not None:
+                    await _helper_client.close_tunnel(udid=udid)
             except Exception:
-                logger.exception("Error closing tunnel for %s", udid)
-
-        # Close tunnel proxy.
-        if conn.tunnel_proxy is not None:
-            try:
-                conn.tunnel_proxy.close()
-            except Exception:
-                logger.exception("Error closing tunnel proxy for %s", udid)
+                logger.exception("Error closing helper-owned USB tunnel for %s", udid)
 
         logger.info("Disconnected device %s", udid)
 

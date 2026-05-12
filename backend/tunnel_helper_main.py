@@ -34,7 +34,10 @@ import sys
 from pathlib import Path
 from typing import Any, Callable, Awaitable
 
-from core._tunnel_runner import TunnelRunner as _TunnelRunner
+from core._tunnel_runner import (
+    TunnelRunner as _TunnelRunner,
+    UsbTunnelRunner as _UsbTunnelRunner,
+)
 
 logger = logging.getLogger("tunnel_helper")
 
@@ -88,7 +91,8 @@ class HelperServer:
             "shutdown": self._handle_shutdown,
             "migrate_user_state": self._handle_migrate_user_state,
         }
-        self._tunnels: dict[str, _TunnelRunner] = {}
+        # Either kind of runner can live here — both expose info/stop().
+        self._tunnels: dict[str, "_TunnelRunner | _UsbTunnelRunner"] = {}
         self._methods.update({
             "open_wifi_tunnel": self._handle_open_wifi_tunnel,
             "open_usb_tunnel": self._handle_open_usb_tunnel,
@@ -343,9 +347,18 @@ class HelperServer:
         return info
 
     async def _handle_open_usb_tunnel(self, params: dict) -> dict:
-        # Task 7 fills this in; for now reject cleanly so the wire protocol
-        # is exercised end-to-end without a hidden NotImplementedError.
-        raise _HelperRpcError(-32099, "open_usb_tunnel not yet implemented (Task 7)")
+        udid = params.get("udid")
+        if not isinstance(udid, str):
+            raise _HelperRpcError(-32602, "open_usb_tunnel needs udid:str")
+        if udid in self._tunnels:
+            raise _HelperRpcError(-32003, f"tunnel already exists for {udid}")
+        runner = _UsbTunnelRunner()
+        try:
+            info = await runner.start(udid=udid)
+        except Exception as exc:
+            raise _HelperRpcError(-32002, f"USB tunnel failed: {exc}")
+        self._tunnels[udid] = runner
+        return info
 
     async def _handle_close_tunnel(self, params: dict) -> dict:
         udid = params.get("udid")
