@@ -21,6 +21,10 @@ async def test_lifespan_loads_state_after_helper_handshake(monkeypatch):
     """Happy path: connect + migrate succeed → load_state runs and
     bookmark_manager is non-None inside the yield window."""
 
+    # The helper handshake is darwin-only; force darwin so this test
+    # exercises the gated path even on Linux CI / Windows dev.
+    monkeypatch.setattr("sys.platform", "darwin")
+
     async def fake_connect(timeout=30.0):
         return None
 
@@ -68,6 +72,8 @@ async def test_lifespan_exits_when_helper_connect_fails(monkeypatch):
     """If helper connect raises TimeoutError, lifespan must raise SystemExit
     so ASGI shuts down."""
 
+    monkeypatch.setattr("sys.platform", "darwin")
+
     async def fake_connect(timeout=30.0):
         raise TimeoutError("helper not ready")
 
@@ -82,6 +88,8 @@ async def test_lifespan_exits_when_helper_connect_fails(monkeypatch):
 async def test_lifespan_exits_on_helper_error_from_migrate(monkeypatch):
     """If helper rejects our identity (HelperError), lifespan must raise
     SystemExit(2) — this is a launcher bug, not a missing helper."""
+
+    monkeypatch.setattr("sys.platform", "darwin")
 
     async def fake_connect(timeout=30.0):
         return None

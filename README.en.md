@@ -306,7 +306,7 @@ Operate LocWarp from your phone without walking back to the computer. The "**Pho
 
 - **WebSocket position push**: backend emits `position_update` per tick (`update_interval` is speed-profile-derived); frontend updates map cursor + ETA bar live
 - **Speed resolution**: `config.resolve_speed_profile(mode, speed_kmh, speed_min_kmh, speed_max_kmh)` unifies "mode default / fixed custom / random range" inputs; priority `range > fixed > default`
-- **In-process Wi-Fi tunnel**: since v0.2.3 the backend runs `start_tcp_tunnel()` on its own event loop instead of spawning a helper exe
+- **Tunnel helper split** (macOS packaged build): the main backend runs as the regular user; a small `--tunnel-helper` subprocess is elevated once via osascript and owns the utun/RSD tunnel plus `~/.locwarp/` ownership repair. Windows and dev mode still run as a single process.
 - **Runtime state directory**: everything goes to `~/.locwarp/` (bookmarks / settings / tunnel info) to avoid PyInstaller's `_MEIPASS` temp-dir issues
 - **Tile referer / OSM swap**: OSM blocks distributable apps on their public tiles, so CartoDB (OSM data hosted on CARTO's CDN, no referer needed) is the default
 - **Multi-device group mode** (v0.2.0+, up to 3 devices): synchronized teleport / movement, primary is never hijacked by a late-plugged device, late joiners sync to the primary's position and auto-resume whatever sim it's running (fanout)
@@ -434,14 +434,14 @@ cd frontend && npm install
 #### Run (dev mode)
 
 ```bash
-./start.sh   # prompts for sudo password — required for iOS 17+ utun tunnel
+./start.sh   # prompts once for sudo — only the tunnel helper subprocess is elevated
 ```
 
-This launches the FastAPI backend (`:8777`) and the Vite dev server (`:5173`), then opens the browser automatically.
+`start.sh` launches the FastAPI backend as the regular user, the Vite dev server (`:5173`), and a separate `--tunnel-helper` subprocess elevated via `sudo`. The backend (`:8777`) and renderer stay in user context.
 
-#### Why sudo?
+#### Why is sudo still needed?
 
-iOS 17+ uses the RSD (Remote Service Discovery) protocol, which requires creating a `utun` virtual network interface. On macOS this requires root privileges, the same reason the Windows version requires Administrator.
+iOS 17+ uses the RSD (Remote Service Discovery) protocol, which requires creating a `utun` virtual network interface — that part still requires root. The helper split keeps elevation scoped to the tiny helper subprocess so the rest of the app (clipboard, iCloud Drive, Spotlight) runs as you.
 
 ---
 
@@ -473,7 +473,7 @@ The installer is self-contained, end users need no Python or Node installed.
 
 | Symptom | Likely cause / fix |
 | --- | --- |
-| Backend unreachable after tunnel started | Make sure LocWarp was launched as Administrator |
+| Backend unreachable after tunnel started | On Windows, make sure LocWarp was launched as Administrator. On macOS, make sure you approved the admin prompt at launch — if you cancelled it, quit the app and relaunch to grant access. |
 | `No such service: com.apple.instruments.dtservicehub` (iOS 17+/26) / LocWarp shows "DDI not mounted" | Since v0.2.58 LocWarp no longer auto-mounts the DDI. Mount it once via Xcode / 愛思助手 / 3uTools / pymobiledevice3 CLI, then reconnect. If mount still fails, toggle Settings → Privacy & Security → **Developer Mode** off, reboot, re-enable, and try mounting again. |
 | **Developer Mode option missing** (iOS 16+) | Since v0.2.61, LocWarp shows a "**Reveal Developer Mode option**" button in the status bar once a device is connected. Clicking it makes the Developer Mode toggle appear in iPhone Settings (no sideloading needed). If the button fails or you prefer manual, see [Appendix: Enabling Developer Mode on iPhone (Windows)](#appendix-enabling-developer-mode-on-iphone-windows) below as a fallback. |
 
@@ -567,21 +567,13 @@ xattr -d com.apple.quarantine /Applications/LocWarp.app
 
 Apple Silicon (M1/M2/M3...) only. No official Intel Mac build.
 
-### iOS 17+ devices require launching as administrator
+### iOS 17+ devices and the admin prompt
 
-To connect to an iOS 17+ iPhone (including iOS 18 / 26+), the LocWarp backend creates a utun interface for the RSD tunnel, which **requires admin privileges**. Launching by double-click will fail with "Failed to create device tunnel" and the device chip row stays empty.
+To connect to an iOS 17+ iPhone (including iOS 18 / 26+) LocWarp needs to create a utun interface for the RSD tunnel. Starting with the tunnel-helper-split release, **only a small helper subprocess runs as root**; the main backend and the Electron UI stay in your user context so clipboard, iCloud Drive, and Spotlight all keep working.
 
-**Option 1 — use the launcher script (recommended)**
+Just double-click `LocWarp.app`. Electron uses osascript to show one standard macOS administrator authorization dialog at launch — enter your password and the helper starts. **`LocWarp-admin.command` and `sudo /Applications/LocWarp.app/...` are no longer required and have been removed.**
 
-Download `LocWarp-admin.command` (shipped alongside the DMG), double-click it, and enter your macOS password. macOS shows a standard admin authorization dialog.
-
-**Option 2 — terminal sudo**
-
-```bash
-sudo /Applications/LocWarp.app/Contents/MacOS/LocWarp
-```
-
-> The Windows installer triggers UAC automatically; macOS has no equivalent, so admin elevation is a manual step. Code-signing with the `networkextension` entitlement could fix this long-term but requires the $99/year Apple Developer Program plus Apple's approval.
+If you cancel the admin prompt, the backend cannot talk to the helper. Electron shows a "LocWarp could not start" error and quits. Relaunch the app to authorize again.
 
 ## Release Process (For Maintainers)
 

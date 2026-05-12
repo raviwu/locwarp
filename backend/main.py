@@ -646,55 +646,66 @@ async def _usbmux_presence_watchdog():
 async def lifespan(application: FastAPI):
     import asyncio
     # ── Helper handshake + state migration ──
-    # The helper runs as root and owns ~/.locwarp/ files left over from
-    # any previous root-mode launch. Wait for it to publish READY, then
+    # The helper split applies ONLY to macOS packaged builds. The helper
+    # runs as root and owns ~/.locwarp/ files left over from any previous
+    # root-mode launch; on darwin we wait for it to publish READY, then
     # ask it to chown those files back to the regular user. ONLY THEN do
     # we construct BookmarkManager / RouteManager and load settings — the
     # iCloud bookmark adoption path inside BookmarkManager() needs to be
     # able to read and write the user's home directory.
     #
-    # Per design §5.1, a failure here is fatal: if the user cancelled the
-    # admin prompt or the helper crashed, the backend cannot safely
-    # write to ~/.locwarp/ until ownership is reclaimed. We exit the
-    # ASGI process so Electron sees the backend disappear and can
-    # surface a clear "restart and grant admin" error rather than leave
-    # the user with read-only-looking bookmarks and silent EACCES on
-    # write.
-    try:
-        await helper_client.connect(timeout=30.0)
-    except (TimeoutError, OSError, ConnectionError) as exc:
-        logger.error("tunnel helper did not become ready: %s", exc)
-        raise SystemExit(1)
+    # On non-darwin (Windows / Linux dev), no helper is spawned, so we
+    # skip the handshake entirely. Otherwise the backend would block on
+    # a status file that never appears and exit ~30s after launch.
+    #
+    # Per design §5.1, on darwin a failure here is fatal: if the user
+    # cancelled the admin prompt or the helper crashed, the backend
+    # cannot safely write to ~/.locwarp/ until ownership is reclaimed.
+    # We exit the ASGI process so Electron sees the backend disappear
+    # and can surface a clear "restart and grant admin" error rather
+    # than leave the user with read-only-looking bookmarks and silent
+    # EACCES on write.
+    if sys.platform == "darwin":
+        try:
+            await helper_client.connect(timeout=30.0)
+        except (TimeoutError, OSError, ConnectionError) as exc:
+            logger.error("tunnel helper did not become ready: %s", exc)
+            raise SystemExit(1)
 
-    from core.wifi_tunnel import set_helper_client
-    set_helper_client(helper_client)
+        from core.wifi_tunnel import set_helper_client
+        set_helper_client(helper_client)
 
-    try:
-        result = await asyncio.wait_for(
-            helper_client.migrate_user_state(
-                home=str(Path.home()),
-                uid=os.getuid(),
-                gid=os.getgid(),
-            ),
-            timeout=30.0,
-        )
+        try:
+            result = await asyncio.wait_for(
+                helper_client.migrate_user_state(
+                    home=str(Path.home()),
+                    uid=os.getuid(),
+                    gid=os.getgid(),
+                ),
+                timeout=30.0,
+            )
+            logger.info(
+                "helper migrate_user_state: chowned=%d skipped=%d failed=%d",
+                result.get("chowned", -1),
+                result.get("skipped", -1),
+                result.get("failed", -1),
+            )
+        except HelperError as exc:
+            # Helper rejected our identity (e.g. parent_uid mismatch). This
+            # is a launcher bug, not a missing-helper. Fail loudly.
+            logger.error(
+                "helper migrate_user_state rejected (code=%d): %s",
+                exc.code, exc.message,
+            )
+            raise SystemExit(2)
+        except (TimeoutError, asyncio.TimeoutError) as exc:
+            logger.error("helper migrate_user_state timed out: %s", exc)
+            raise SystemExit(1)
+    else:
         logger.info(
-            "helper migrate_user_state: chowned=%d skipped=%d failed=%d",
-            result.get("chowned", -1),
-            result.get("skipped", -1),
-            result.get("failed", -1),
+            "non-darwin platform (%s) — running without tunnel helper",
+            sys.platform,
         )
-    except HelperError as exc:
-        # Helper rejected our identity (e.g. parent_uid mismatch). This
-        # is a launcher bug, not a missing-helper. Fail loudly.
-        logger.error(
-            "helper migrate_user_state rejected (code=%d): %s",
-            exc.code, exc.message,
-        )
-        raise SystemExit(2)
-    except (TimeoutError, asyncio.TimeoutError) as exc:
-        logger.error("helper migrate_user_state timed out: %s", exc)
-        raise SystemExit(1)
 
     await app_state.load_state()
 
@@ -757,11 +768,14 @@ async def lifespan(application: FastAPI):
         logger.exception("error disconnecting devices")
 
     # Ask the helper to exit cleanly so it doesn't outlive the backend.
-    try:
-        await helper_client.shutdown()
-    except Exception:
-        logger.exception("helper shutdown call failed")
-    await helper_client.close()
+    # Only relevant on darwin packaged builds — elsewhere no helper was
+    # spawned, so the client was never connected.
+    if sys.platform == "darwin":
+        try:
+            await helper_client.shutdown()
+        except Exception:
+            logger.exception("helper shutdown call failed")
+        await helper_client.close()
 
     logger.info("LocWarp shut down")
 

@@ -307,7 +307,7 @@ TB1i7pEcifAeh8oDLLZFqiRVrpUaZmmDAn
 
 - **WebSocket 位置推播**:backend 每 tick(`update_interval` 由速度 profile 決定)發 `position_update` 事件,前端即時更新地圖游標 + ETA bar
 - **速度解析**:`config.resolve_speed_profile(mode, speed_kmh, speed_min_kmh, speed_max_kmh)` 統一處理「模式預設 / 固定自訂 / 隨機範圍」三種輸入,優先序 `range > 固定 > 預設`
-- **In-process WiFi tunnel**:backend 自 v0.2.3 起直接在主 event loop 內執行 `start_tcp_tunnel()`,不再 spawn 獨立 helper exe
+- **Tunnel helper split**(macOS packaged build):backend 以一般使用者身分執行;只有一個小型 `--tunnel-helper` 子行程用 osascript 提權,負責 utun/RSD tunnel 與 ~/.locwarp 檔案 ownership 修補。Windows / 開發模式仍維持單一行程。
 - **Runtime 狀態目錄**:一律寫入 `~/.locwarp/`(bookmarks / settings / tunnel info),避免 PyInstaller 的 `_MEIPASS` 臨時目錄問題
 - **Tile referer / OSM 替換**:OSM 的 tile 服務封鎖散佈型應用,已改用 CartoDB(OSM 資料源、CARTO 代管 CDN、免 referer)
 - **多裝置群組模式**(v0.2.0+, 三裝置上限):同步瞬移 / 同步移動,primary 不被後插裝置搶走,後插的裝置自動同步到 primary 的位置並接續 primary 正在執行的任務(fanout)
@@ -579,21 +579,13 @@ xattr -d com.apple.quarantine /Applications/LocWarp.app
 
 僅支援 Apple Silicon (M1/M2/M3...)。Intel Mac 目前不提供官方 build。
 
-### iOS 17+ 裝置連線需以 administrator 啟動
+### iOS 17+ 裝置連線的管理員授權
 
-連 iOS 17 以上的 iPhone (含 iOS 18 / 26+) 時,LocWarp 後端要建立 utun 網路介面跑 RSD tunnel,**這需要管理員權限**。如果直接雙擊啟動,會看到「無法建立裝置通道」錯誤,且裝置欄位空白。
+連 iOS 17 以上的 iPhone (含 iOS 18 / 26+) 時,LocWarp 需要建立 utun 網路介面跑 RSD tunnel。自 tunnel-helper-split 版本起,**只有一個小型 helper 子行程需要 root**,主後端與 Electron 介面仍以一般使用者執行(剪貼簿、iCloud Drive、Spotlight 都正常運作)。
 
-**方法 1:用 launcher script (推薦)**
+雙擊 `LocWarp.app` 啟動時,Electron 會自動透過 osascript 跳出一次 macOS 管理員授權對話框,輸入密碼後 helper 啟動,**之後不再需要 sudo 或 launcher script**。原本的 `LocWarp-admin.command` 與 `sudo /Applications/LocWarp.app/...` 用法已不再需要。
 
-下載 `LocWarp-admin.command` (跟 DMG 一起),雙擊它,輸入 macOS 密碼即可。系統會跳出標準的 admin 認證對話框。
-
-**方法 2:terminal 直接 sudo**
-
-```bash
-sudo /Applications/LocWarp.app/Contents/MacOS/LocWarp
-```
-
-> Windows 版本透過 NSIS 自動觸發 UAC,Mac 沒有對應機制,所以這個是必須的步驟。長期會評估 Apple Developer ID 簽名 + `networkextension` entitlement,但代價較高 ($99/年 + Apple 審核)。
+若取消授權對話框,backend 無法和 helper 通訊,Electron 會跳出「LocWarp could not start」訊息並結束;重新啟動 app 即可再次授權。
 
 ## 發布流程 (For Maintainers)
 

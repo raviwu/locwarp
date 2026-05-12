@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu, shell, ipcMain } = require('electron')
+const { app, BrowserWindow, Menu, shell, ipcMain, dialog } = require('electron')
 const path = require('path')
 const { spawn } = require('child_process')
 const http = require('http')
@@ -261,7 +261,18 @@ function startBackend() {
     backendProc.stderr.on('data', (d) => process.stderr.write(`[backend] ${d}`))
     backendProc.on('exit', (code) => {
       console.log('[electron] backend exited with code', code)
+      const wasRunning = backendProc !== null
       backendProc = null
+      // Dev / non-Mac path: never show the helper dialog (no helper exists).
+      if (code !== 0 && wasRunning && app.isPackaged && process.platform === 'darwin') {
+        dialog.showErrorBox(
+          'LocWarp could not start',
+          'The tunnel helper did not become available.\n\n' +
+          'This usually means you cancelled the administrator prompt at launch. ' +
+          'Quit the app and relaunch to grant access.'
+        )
+        app.quit()
+      }
     })
     return
   }
@@ -279,7 +290,17 @@ function startBackend() {
   backendProc.stderr.on('data', (d) => process.stderr.write(`[backend] ${d}`))
   backendProc.on('exit', (code) => {
     console.log('[electron] backend exited with code', code)
+    const wasRunning = backendProc !== null
     backendProc = null
+    if (code !== 0 && wasRunning && app.isPackaged && process.platform === 'darwin') {
+      dialog.showErrorBox(
+        'LocWarp could not start',
+        'The tunnel helper did not become available.\n\n' +
+        'This usually means you cancelled the administrator prompt at launch. ' +
+        'Quit the app and relaunch to grant access.'
+      )
+      app.quit()
+    }
   })
 
   const escaped = exe.replace(/'/g, "'\\''")
