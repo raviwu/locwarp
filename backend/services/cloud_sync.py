@@ -41,11 +41,25 @@ def setup_sync_folder(parent: Path) -> Path:
 
     Raises FileNotFoundError if *parent* itself does not exist (we never
     create the cloud drive root for the user).
+
+    On macOS the app runs as root (self-elevation for iOS tunnelling), but
+    iCloud Drive files created by the normal user carry restrictive
+    permissions that block root's read access (EPERM, not EACCES).  We
+    therefore chmod the subfolder and any existing bookmarks.json to
+    group-readable/writable so that both the elevated process and the
+    file-owning user can access them.
     """
     if not parent.exists():
         raise FileNotFoundError(f"Parent folder does not exist: {parent}")
     sub = parent / LOCWARP_SUBFOLDER
     sub.mkdir(exist_ok=True)
+    try:
+        sub.chmod(0o755)
+        bm = sub / "bookmarks.json"
+        if bm.exists():
+            bm.chmod(0o644)
+    except OSError:
+        pass  # best-effort; failure here is non-fatal
     return sub
 
 
@@ -57,17 +71,28 @@ def migrate_bookmarks(src: Path, dst: Path) -> None:
     """
     if not src.exists():
         return
-    if dst.exists() and dst.read_bytes() != src.read_bytes():
-        raise FileExistsError(f"Destination already has different content: {dst}")
+    if dst.exists():
+        try:
+            same = dst.read_bytes() == src.read_bytes()
+        except OSError:
+            # Root cannot read the iCloud file (EPERM on macOS) — treat as
+            # "remote copy exists but unreadable": adopt without overwriting.
+            same = False
+        if not same:
+            raise FileExistsError(f"Destination already has different content: {dst}")
 
     dst.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(src, dst)
     try:
         src.unlink()
-    except OSError:
-        # Rollback: remove dst so we don't leave duplicate
-        try:
-            dst.unlink(missing_ok=True)
-        except OSError:
-            pass
-        raise
+    except OSError as exc:
+        # The copy succeeded, so the data is safe in dst.
+        # Failing to remove src (e.g. permission error when the directory
+        # is owned by root from a previous elevated run) is non-fatal:
+        # log it and continue. The stale local copy becomes harmless once
+        # app_state points at the new path.
+        import logging
+        logging.getLogger(__name__).warning(
+            "migrate_bookmarks: copied %s → %s but could not delete source: %s",
+            src, dst, exc,
+        )

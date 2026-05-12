@@ -57,6 +57,46 @@ def _catalog_path() -> Path:
     return candidates[-1]
 
 
+def _merge_local_into_remote(local: Path, remote: Path) -> None:
+    """Merge local bookmarks into the remote file using local-wins union.
+
+    Called when enabling cloud sync and both files already exist with
+    different content (e.g. re-enabling after settings were reset).
+
+    Strategy: union of local + remote; for the same ID, local wins.
+    Remote-only items (added by another device) are preserved.
+    """
+    import json
+    from models.schemas import BookmarkStore
+    from services.json_safe import safe_load_json, safe_write_json
+
+    try:
+        local_data = safe_load_json(local)
+        remote_data = safe_load_json(remote)
+        if not isinstance(local_data, dict) or not isinstance(remote_data, dict):
+            return
+        local_store = BookmarkStore(**local_data)
+        remote_store = BookmarkStore(**remote_data)
+    except Exception as exc:
+        logger.warning("cloud sync merge: could not parse stores, skipping merge: %s", exc)
+        return
+
+    # Union merge: start with remote, overwrite with local on same ID.
+    # Remote-only items (from other devices) are preserved.
+    cats = {c.id: c for c in remote_store.categories}
+    cats.update({c.id: c for c in local_store.categories})
+    bms = {b.id: b for b in remote_store.bookmarks}
+    bms.update({b.id: b for b in local_store.bookmarks})
+
+    merged = BookmarkStore(categories=list(cats.values()), bookmarks=list(bms.values()))
+    payload = json.loads(merged.model_dump_json())
+    safe_write_json(remote, payload)
+    logger.info(
+        "cloud sync enable: merged local (%d bm) + remote (%d bm) → %d bm",
+        len(local_store.bookmarks), len(remote_store.bookmarks), len(merged.bookmarks),
+    )
+
+
 router = APIRouter(prefix="/api/bookmarks", tags=["bookmarks"])
 
 
@@ -327,7 +367,7 @@ async def cloud_sync_enable(req: CloudSyncEnableRequest):
 
     try:
         target_folder = setup_sync_folder(parent)
-    except FileNotFoundError as exc:
+    except (FileNotFoundError, OSError) as exc:
         raise HTTPException(400, str(exc))
 
     new_path = target_folder / "bookmarks.json"
@@ -335,14 +375,10 @@ async def cloud_sync_enable(req: CloudSyncEnableRequest):
     try:
         migrate_bookmarks(src=src, dst=new_path)
     except FileExistsError:
-        # Folder already has a bookmarks.json (e.g. another device).
-        # Adopt it by pointing settings at new_path without overwriting.
-        logger.warning(
-            "Cloud sync %s: destination already has different bookmarks; "
-            "adopting remote copy, local file left at %s",
-            "enable",
-            src,
-        )
+        # Both local and remote exist with different content.
+        # Merge: apply local bookmarks on top of remote (local-wins) so the
+        # user doesn't lose work done on this device since the last sync.
+        _merge_local_into_remote(src, new_path)
 
     app_state._bookmarks_path = str(new_path)
     app_state.save_settings()

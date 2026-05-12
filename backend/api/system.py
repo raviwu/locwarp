@@ -74,3 +74,16 @@ async def open_log_folder():
         raise HTTPException(status_code=500, detail={"code": "open_log_failed",
                                                      "message": f"無法開啟資料夾:{exc}"})
     return {"status": "opened", "path": str(log_dir)}
+
+
+@router.post("/shutdown")
+async def shutdown():
+    """Gracefully stop the backend process.
+
+    Called by the Electron frontend on app quit so the user-level Electron
+    process can terminate the root-elevated backend without needing sudo.
+    """
+    import signal
+    logger.info("Shutdown requested via /api/system/shutdown")
+    os.kill(os.getpid(), signal.SIGTERM)
+    return {"status": "shutting_down"}

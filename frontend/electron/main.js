@@ -5,39 +5,11 @@ const http = require('http')
 const os = require('os')
 const fs = require('fs')
 
-// macOS: every packaged launch needs root so pymobiledevice3 can create
-// the utun interface for iOS 17+ tunnel. If we're not root yet, spawn
-// an osascript helper that prompts for the admin password and re-launches
-// the same binary as root, then exit this non-root instance. The user
-// double-clicks LocWarp.app like any other app; we handle the elevation
-// ourselves rather than asking them to use a separate .command launcher.
-//
-// In dev (npm run electron) skip the elevation — keeps the debug loop
-// painless. The check is also skipped on non-Darwin platforms; on Windows
-// the nsis installer already declares requireAdministrator so UAC handles
-// it at process start.
-//
-// osascript's "with administrator privileges" preserves HOME (unlike sudo),
-// so the backend's `Path.home() / ".locwarp"` data dir is the same in
-// both elevated and non-elevated launches. Files end up owned by root
-// but the user (in the staff group) can still read them and atomic
-// writes go through the user-owned parent directory.
-if (
-  process.platform === 'darwin' &&
-  app.isPackaged &&
-  typeof process.getuid === 'function' &&
-  process.getuid() !== 0
-) {
-  const exe = process.execPath
-  const escaped = exe.replace(/'/g, "'\\''")
-  const script =
-    `do shell script "'${escaped}' --no-sandbox </dev/null ` +
-    `>/tmp/locwarp-stdout.log 2>/tmp/locwarp-stderr.log &" ` +
-    `with administrator privileges ` +
-    `with prompt "LocWarp needs administrator privileges to talk to iOS 17+ devices over USB."`
-  spawn('osascript', ['-e', script], { detached: true, stdio: 'ignore' }).unref()
-  app.exit(0)
-}
+// macOS: pymobiledevice3 needs root to create the utun interface for iOS
+// 17+ USB tunnelling. We keep Electron (and the renderer) running as the
+// normal user so that macOS pasteboard access, iCloud Drive, and Spotlight
+// integration all work correctly. Only the backend binary is elevated via
+// osascript when the packaged app starts.
 
 // Render-mode preference (Issue #24). Win 10 stays on software rendering
 // by default — v0.2.121/125 hit a Chromium 124 GPU-sandbox crash on
@@ -236,9 +208,27 @@ ipcMain.handle('locate-pc', async () => {
   }
 })
 
-// Strip the default "File Edit View Window Help" menubar — LocWarp has its
-// own in-window controls and the native menu only adds noise on Windows.
-Menu.setApplicationMenu(null)
+// Keep a minimal menu with just the Edit entry so that macOS routes
+// Cmd+C/V/X/A to the focused input field.  Without it Menu.setApplicationMenu(null)
+// drops the Edit menu and clipboard shortcuts stop working in text fields.
+Menu.setApplicationMenu(Menu.buildFromTemplate([
+  {
+    label: app.name,
+    submenu: [{ role: 'hide' }, { role: 'hideOthers' }, { type: 'separator' }, { role: 'quit' }],
+  },
+  {
+    label: 'Edit',
+    submenu: [
+      { role: 'undo' },
+      { role: 'redo' },
+      { type: 'separator' },
+      { role: 'cut' },
+      { role: 'copy' },
+      { role: 'paste' },
+      { role: 'selectAll' },
+    ],
+  },
+]))
 
 let mainWindow
 let backendProc = null
@@ -258,6 +248,23 @@ function resolveBackendExe() {
 function startBackend() {
   const exe = resolveBackendExe()
   if (!exe) return
+
+  // On macOS packaged builds, elevate only the backend binary via osascript
+  // so Electron itself stays as the normal user. This preserves pasteboard
+  // (clipboard) and iCloud Drive access in the renderer.
+  if (process.platform === 'darwin' && app.isPackaged) {
+    const escaped = exe.replace(/'/g, "'\\''")
+    const cwd = path.dirname(exe).replace(/'/g, "'\\''")
+    const script =
+      `do shell script "cd '${cwd}' && '${escaped}' </dev/null ` +
+      `>/tmp/locwarp-stdout.log 2>/tmp/locwarp-stderr.log &" ` +
+      `with administrator privileges ` +
+      `with prompt "LocWarp needs administrator access to communicate with iOS 17+ devices over USB."`
+    console.log('[electron] elevating backend via osascript')
+    spawn('osascript', ['-e', script], { stdio: 'ignore' })
+    return
+  }
+
   console.log('[electron] spawning backend:', exe)
   backendProc = spawn(exe, [], {
     cwd: path.dirname(exe),
@@ -273,9 +280,19 @@ function startBackend() {
 }
 
 function stopBackend() {
-  if (!backendProc) return
-  try { backendProc.kill() } catch {}
-  backendProc = null
+  // For non-macOS packaged (direct child process):
+  if (backendProc) {
+    try { backendProc.kill() } catch {}
+    backendProc = null
+    return
+  }
+  // For macOS: backend is a root process we can't SIGKILL. Ask it to shut
+  // down gracefully via its HTTP endpoint instead.
+  if (process.platform === 'darwin' && app.isPackaged) {
+    try {
+      http.request({ hostname: '127.0.0.1', port: 8777, path: '/api/system/shutdown', method: 'POST' }).end()
+    } catch {}
+  }
 }
 
 function waitForBackend(timeoutMs = 30000) {
