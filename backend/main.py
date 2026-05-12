@@ -816,6 +816,14 @@ async def lifespan(application: FastAPI):
 
     app_state.bookmark_manager.start_watcher(_on_bookmark_change)
 
+    def _on_route_change():
+        asyncio.run_coroutine_threadsafe(
+            _bc("routes_changed", {"reason": "external_update"}),
+            loop,
+        )
+
+    app_state.route_manager.start_watcher(_on_route_change)
+
     yield
 
     # ── Shutdown ──
@@ -828,6 +836,12 @@ async def lifespan(application: FastAPI):
             app_state.bookmark_manager.stop_watcher()
     except Exception:
         logger.exception("error stopping bookmark watcher")
+
+    try:
+        if app_state.route_manager is not None:
+            app_state.route_manager.stop_watcher()
+    except Exception:
+        logger.exception("error stopping route watcher")
 
     watchdog_task.cancel()
     try:
