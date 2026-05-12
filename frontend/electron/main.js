@@ -317,20 +317,13 @@ function startBackend() {
 }
 
 function stopBackend() {
-  // Backend is always a direct child now (user-context), so SIGTERM works.
+  // Backend is now always a user-context child process; SIGTERM fires its
+  // FastAPI lifespan teardown (which calls helper_client.shutdown() and
+  // closes the connection). The helper, on losing its parent, exits via
+  // its 5-second PID watchdog.
   if (backendProc) {
     try { backendProc.kill('SIGTERM') } catch {}
     backendProc = null
-  }
-  // The helper (when present) sees the backend pid disappear via its
-  // watchdog and exits within ~5s. As a belt-and-braces signal, also
-  // POST to the backend's shutdown endpoint so the backend explicitly
-  // calls helper.shutdown() before exiting (cleaner teardown when the
-  // backend is still responsive).
-  if (process.platform === 'darwin' && app.isPackaged) {
-    try {
-      http.request({ hostname: '127.0.0.1', port: 8777, path: '/api/system/shutdown', method: 'POST' }).end()
-    } catch {}
   }
 }
 
