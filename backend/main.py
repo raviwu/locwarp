@@ -666,6 +666,9 @@ async def lifespan(application: FastAPI):
         logger.error("tunnel helper did not become ready: %s", exc)
         raise SystemExit(1)
 
+    from core.wifi_tunnel import set_helper_client
+    set_helper_client(helper_client)
+
     try:
         result = await asyncio.wait_for(
             helper_client.migrate_user_state(

@@ -103,8 +103,11 @@ MAX_DEVICES = 3
 # Per-device tunnel registry. Each connected iOS 17+ device that uses
 # WiFi (instead of USB) gets its own TunnelRunner. v0.2.83 lifted the
 # previous singleton design so multiple iPhones can run on WiFi at once.
-# Registry mutations go through _tunnels_lock; individual TunnelRunners
-# also keep their own .lock for their own lifecycle (start/stop/wait).
+# Registry mutations go through _tunnels_lock. Each device has its own
+# TunnelRunner facade; the actual TUN lives in the helper process. The
+# facade's `.task` resolves when either stop() is called locally or the
+# helper drops the tunnel (detected via list_tunnels poll), which is
+# what _per_tunnel_watchdog awaits to trigger auto-restart.
 _tunnels: dict[str, TunnelRunner] = {}
 _tunnel_watchdogs: dict[str, asyncio.Task] = {}
 _tunnels_lock = asyncio.Lock()
