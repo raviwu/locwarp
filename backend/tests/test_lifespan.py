@@ -25,7 +25,7 @@ async def test_lifespan_loads_state_after_helper_handshake(monkeypatch):
     # exercises the gated path even on Linux CI / Windows dev.
     monkeypatch.setattr("sys.platform", "darwin")
 
-    async def fake_connect(timeout=30.0):
+    async def fake_connect(timeout=90.0):
         return None
 
     migration_calls = []
@@ -74,7 +74,7 @@ async def test_lifespan_exits_when_helper_connect_fails(monkeypatch):
 
     monkeypatch.setattr("sys.platform", "darwin")
 
-    async def fake_connect(timeout=30.0):
+    async def fake_connect(timeout=90.0):
         raise TimeoutError("helper not ready")
 
     monkeypatch.setattr(helper_client, "connect", fake_connect)
@@ -91,7 +91,7 @@ async def test_lifespan_exits_on_helper_error_from_migrate(monkeypatch):
 
     monkeypatch.setattr("sys.platform", "darwin")
 
-    async def fake_connect(timeout=30.0):
+    async def fake_connect(timeout=90.0):
         return None
 
     async def fake_migrate(home, uid, gid):

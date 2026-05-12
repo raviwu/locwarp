@@ -667,7 +667,7 @@ async def lifespan(application: FastAPI):
     # EACCES on write.
     if sys.platform == "darwin":
         try:
-            await helper_client.connect(timeout=30.0)
+            await helper_client.connect(timeout=90.0)
         except (TimeoutError, OSError, ConnectionError) as exc:
             logger.error("tunnel helper did not become ready: %s", exc)
             raise SystemExit(1)
@@ -682,7 +682,7 @@ async def lifespan(application: FastAPI):
                     uid=os.getuid(),
                     gid=os.getgid(),
                 ),
-                timeout=30.0,
+                timeout=60.0,
             )
             logger.info(
                 "helper migrate_user_state: chowned=%d skipped=%d failed=%d",

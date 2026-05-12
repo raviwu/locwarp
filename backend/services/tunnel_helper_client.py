@@ -54,12 +54,18 @@ class TunnelHelperClient:
         self._next_id = 0
         self._lock = asyncio.Lock()
 
-    async def connect(self, timeout: float = 30.0) -> None:
+    async def connect(self, timeout: float = 90.0) -> None:
         """Wait for the helper to publish its READY status, then connect.
 
         The helper writes ``READY\n`` to ``status_path`` only AFTER it
         has bound the socket and chmod'd it for the user. So once the
         status file is visible we can connect without further polling.
+
+        The default timeout is generous (90s) because on macOS the
+        privileged helper launch can include a noticeable
+        ``osascript`` admin prompt + ``sudo`` bootstrap delay before
+        the helper starts writing its status file. Callers that need
+        a tighter bound (e.g. tests) should override explicitly.
         """
         loop = asyncio.get_running_loop()
         deadline = loop.time() + timeout
