@@ -25,12 +25,25 @@ def _client(tmp_path, monkeypatch):
     monkeypatch.setattr("services.route_store._CONFIG_DEFAULT_ROUTES_FILE",
                         _default_rt)
 
-    import importlib, main
-    importlib.reload(main)
-    # After reload, app_state.bookmark_manager / route_manager are None
-    # (load_state() only runs inside the FastAPI lifespan; TestClient without
-    # `with` does not trigger lifespan).  Initialize them directly so the
-    # router's _build_status() has non-None managers to call.
+    import main
+    # Reset persisted-state fields on the existing app_state and re-run
+    # the loader, instead of reloading the module or replacing the
+    # instance. test_lifespan.py imports `app_state` / `helper_client` at
+    # module collection time; rebinding either makes its monkeypatches
+    # target a stale instance and the real 90s helper handshake runs.
+    main.app_state._sync_folder = None
+    main.app_state._cloud_sync_dismissed = False
+    main.app_state._load_persisted_state()
+    # Stop any watcher left from a previous test before swapping managers,
+    # otherwise watchdog raises "Cannot add watch ... already scheduled".
+    if main.app_state.bookmark_manager is not None:
+        main.app_state.bookmark_manager.stop_watcher()
+    if main.app_state.route_manager is not None:
+        main.app_state.route_manager.stop_watcher()
+    # app_state.bookmark_manager / route_manager are None until load_state
+    # runs (only inside the FastAPI lifespan; TestClient without `with` does
+    # not trigger it). Initialize them directly so the router's
+    # _build_status() has non-None managers to call.
     from services.bookmarks import BookmarkManager
     from services.route_store import RouteManager
     main.app_state.bookmark_manager = BookmarkManager()
