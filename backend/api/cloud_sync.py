@@ -11,6 +11,7 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException
 
 import config as _config
+from api.websocket import broadcast as _ws_broadcast
 from models.schemas import (
     CloudSyncEnableRequest, CloudSyncResource, CloudSyncStatus,
 )
@@ -109,6 +110,11 @@ async def cloud_sync_enable(req: CloudSyncEnableRequest):
     except RuntimeError:
         logger.debug("cloud-sync enable: no running loop; skipping route watcher rebind")
 
+    # Tell every WS-connected client to re-fetch — managers were rebuilt and
+    # the in-memory store may differ from what the user last saw.
+    await _ws_broadcast("bookmarks_changed", {"reason": "cloud_sync_enabled"})
+    await _ws_broadcast("routes_changed", {"reason": "cloud_sync_enabled"})
+
     return _build_status()
 
 
@@ -140,6 +146,9 @@ async def cloud_sync_disable():
         app_state.restart_route_watcher()
     except RuntimeError:
         logger.debug("cloud-sync disable: no running loop; skipping route watcher rebind")
+
+    await _ws_broadcast("bookmarks_changed", {"reason": "cloud_sync_disabled"})
+    await _ws_broadcast("routes_changed", {"reason": "cloud_sync_disabled"})
 
     return _build_status()
 

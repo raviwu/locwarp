@@ -732,6 +732,8 @@ export const STRINGS = {
   'cloud_sync.discovery_prompt': { zh: '偵測到 iCloud Drive。是否透過 iCloud Drive 在所有登入此 Apple ID 的裝置間同步 LocWarp 書籤與路線?', en: 'iCloud Drive detected. Use it to sync your LocWarp bookmarks and routes across all devices signed in to this Apple ID?' },
   'cloud_sync.toast_synced': { zh: '書籤已從雲端同步', en: 'Bookmarks synced from cloud' },
   'cloud_sync.toast_routes_synced': { zh: '路線已從雲端同步', en: 'Routes synced from cloud' },
+  'cloud_sync.busy_title': { zh: '正在與 iCloud 同步…', en: 'Syncing with iCloud…' },
+  'cloud_sync.busy_hint': { zh: '正在合併本機與 iCloud 的書籤與路線，過程中請勿關閉應用程式。', en: 'Merging your local and iCloud bookmarks and routes. Please do not close the app.' },
 
   // ── DDI mount overlay ───────────────────────
   'ddi.mounting_title': { zh: '首次設定裝置中', en: 'Preparing device' },
