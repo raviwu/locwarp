@@ -52,6 +52,11 @@ class BookmarkManager:
         )
         self._last_loaded_mtime: float = 0.0
         self._last_loaded_snapshot: BookmarkStore = BookmarkStore(categories=[], bookmarks=[])
+        # Eagerly materialise iCloud placeholder (if any) so the first _load
+        # below returns the real content instead of falling back to defaults
+        # and relying on the watcher to catch up several seconds later.
+        from services.cloud_sync import materialize_if_placeholder
+        materialize_if_placeholder(self._bookmarks_path())
         self._load()
         # Handle to the watch on the shared file_watcher Observer; set
         # by start_watcher, cleared by stop_watcher.

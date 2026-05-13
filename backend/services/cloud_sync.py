@@ -9,7 +9,9 @@ filesystem paths.
 from __future__ import annotations
 
 import logging
+import os
 import shutil
+import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -19,6 +21,74 @@ from services.sync_merge import merge_bookmark_stores, merge_route_stores
 
 
 logger = logging.getLogger(__name__)
+
+
+_ICLOUD_DOWNLOAD_TIMEOUT_DEFAULT = 10.0
+_ICLOUD_DOWNLOAD_TIMEOUT_MAX = 30.0
+
+
+def _icloud_download_timeout() -> float:
+    raw = os.environ.get("LOCWARP_ICLOUD_DOWNLOAD_TIMEOUT_S")
+    if not raw:
+        return _ICLOUD_DOWNLOAD_TIMEOUT_DEFAULT
+    try:
+        return min(max(float(raw), 0.0), _ICLOUD_DOWNLOAD_TIMEOUT_MAX)
+    except ValueError:
+        logger.warning(
+            "LOCWARP_ICLOUD_DOWNLOAD_TIMEOUT_S=%r invalid; using default %ss",
+            raw, _ICLOUD_DOWNLOAD_TIMEOUT_DEFAULT,
+        )
+        return _ICLOUD_DOWNLOAD_TIMEOUT_DEFAULT
+
+
+def materialize_if_placeholder(path: Path) -> None:
+    """If *path* is an iCloud Drive placeholder, request a synchronous download.
+
+    Modern macOS iCloud Drive evicts cold files; the canonical path then no
+    longer exists locally, but a hidden sibling ``.<name>.icloud`` placeholder
+    marks where the file should live. Calling ``brctl download`` against the
+    canonical path blocks until fileproviderd materialises it.
+
+    No-op when:
+    - the sibling placeholder is absent (file is already local, or path is
+      not under iCloud Drive at all);
+    - ``brctl`` is not available (non-macOS, or unusual macOS install);
+    - the download command exits non-zero or times out — in those cases we
+      log a warning and return so the caller falls through to its normal
+      "file missing → defaults" path. The watcher-driven reconcile will
+      still catch the eventual background download.
+    """
+    parent = path.parent
+    placeholder = parent / f".{path.name}.icloud"
+    if not placeholder.exists():
+        return
+
+    timeout_s = _icloud_download_timeout()
+    try:
+        result = subprocess.run(
+            ["brctl", "download", str(path)],
+            capture_output=True,
+            timeout=timeout_s,
+            check=False,
+        )
+    except FileNotFoundError:
+        logger.debug("brctl not available; skipping iCloud materialise of %s", path)
+        return
+    except subprocess.TimeoutExpired:
+        logger.warning(
+            "iCloud download of %s timed out after %ss; falling through",
+            path, timeout_s,
+        )
+        return
+
+    if result.returncode != 0:
+        logger.warning(
+            "brctl download %s exited %s: %s",
+            path, result.returncode, result.stderr.decode("utf-8", "replace").strip(),
+        )
+        return
+
+    logger.info("Materialised iCloud placeholder for %s", path)
 
 
 _MACOS_ICLOUD_REL = Path("Library/Mobile Documents/com~apple~CloudDocs")

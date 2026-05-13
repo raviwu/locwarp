@@ -57,6 +57,11 @@ class RouteManager:
 
     def __init__(self) -> None:
         self.store = RouteStore(categories=[_default_category()], routes=[])
+        # Eagerly materialise iCloud placeholder (if any) so the first _load
+        # below returns the real content instead of falling back to defaults
+        # and relying on the watcher to catch up several seconds later.
+        from services.cloud_sync import materialize_if_placeholder
+        materialize_if_placeholder(self._routes_path())
         self._load()
         self._last_loaded_mtime: float = self._stat_mtime()
         # Handle to the watch on the shared file_watcher Observer; set
