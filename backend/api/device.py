@@ -113,6 +113,27 @@ _tunnel_watchdogs: dict[str, asyncio.Task] = {}
 _tunnels_lock = asyncio.Lock()
 
 
+def _classify_repair_error(msg: str) -> str:
+    """Map a RemotePairing handshake failure string to a friendly hint.
+
+    Order matters: the utun branch must precede the generic fallback
+    because the underlying exception text bundles "Errno 0 Failed to
+    create any utun interface" — that case calls for a privilege fix,
+    not a Trust-prompt or USB-reseat hint.
+    """
+    lower = msg.lower()
+    if "utun" in lower:
+        return (
+            "RemotePairing 握手失敗：無法建立 utun 介面。"
+            "請以系統管理員身分重啟 LocWarp（或確認 tunnel helper 已啟用）。"
+        )
+    if "PairingDialogResponsePending" in msg or "consent" in lower:
+        return "請在 iPhone 解鎖螢幕上按「信任」後重試(timeout 只有幾秒)。"
+    if "not paired" in lower or "pairingerror" in lower:
+        return "USB 配對失效,請拔 USB 重插一次並按信任。"
+    return f"RemotePairing 握手失敗:{msg}"
+
+
 @router.post("/wifi/repair")
 async def wifi_repair():
     """Regenerate the RemotePairing pair record (~/.pymobiledevice3/) using a
@@ -130,11 +151,8 @@ async def wifi_repair():
     """
     from pymobiledevice3.lockdown import create_using_usbmux
     from pymobiledevice3.usbmux import list_devices as mux_list_devices
-    from pymobiledevice3.remote.tunnel_service import (
-        CoreDeviceTunnelProxy,
-        create_core_device_tunnel_service_using_rsd,
-    )
-    from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
+    from main import helper_client
+    from services.tunnel_helper_client import HelperError
 
     try:
         raw_devices = await mux_list_devices()
@@ -200,80 +218,47 @@ async def wifi_repair():
         except Exception:
             _tunnel_logger.debug("Re-pair: could not check/remove stale pair record", exc_info=True)
 
-        proxy = None
-        tunnel_ctx = None
-        rsd = None
-        tunnel_svc = None
-        try:
-            # 1. Open a CoreDeviceTunnelProxy tunnel over USB.
-            proxy = await CoreDeviceTunnelProxy.create(lockdown)
-            tunnel_ctx = proxy.start_tcp_tunnel()
-            tunnel_result = await tunnel_ctx.__aenter__()
-
-            # 2. Construct an RSD on the tunnel.
-            rsd = RemoteServiceDiscoveryService((tunnel_result.address, tunnel_result.port))
-            await rsd.connect()
-
-            # 3. This is the step that actually triggers the Trust dialog
-            #    (when no cached record) and persists the RemotePairing file
-            #    to ~/.pymobiledevice3/. RemotePairingProtocol.connect()
-            #    calls _pair() which runs _request_pair_consent() — Trust
-            #    prompt — then save_pair_record().
-            _tunnel_logger.info(
-                "Re-pair: opening CoreDeviceTunnelService over RSD %s:%s — "
-                "Trust prompt should appear on iPhone...",
-                tunnel_result.address, tunnel_result.port,
+        # The RemotePairing handshake opens a CoreDeviceTunnelProxy, which
+        # constructs a utun interface on macOS — that operation requires
+        # root. Run it inside the elevated helper instead of in-process.
+        if not helper_client.is_connected:
+            _tunnel_logger.warning(
+                "Re-pair: helper not connected; cannot perform RemotePairing handshake"
             )
-            tunnel_svc = await create_core_device_tunnel_service_using_rsd(rsd, autopair=True)
-            _tunnel_logger.info(
-                "Re-pair: CoreDeviceTunnelService connected for %s — RemotePairing record written",
-                udid,
-            )
-            remote_record_regenerated = True
-        except Exception as e:
-            _tunnel_logger.exception("Re-pair: RemotePairing handshake failed")
-            msg = str(e)
-            if "utun" in msg.lower():
-                # Creating a utun interface on macOS needs root. The helper
-                # process normally owns this, but USB repair goes in-process
-                # through CoreDeviceTunnelProxy and falls over without admin.
-                friendly = (
-                    "RemotePairing 握手失敗：無法建立 utun 介面。"
-                    "請以系統管理員身分重啟 LocWarp（或確認 tunnel helper 已啟用）。"
-                )
-            elif "PairingDialogResponsePending" in msg or "consent" in msg.lower():
-                friendly = "請在 iPhone 解鎖螢幕上按「信任」後重試(timeout 只有幾秒)。"
-            elif "not paired" in msg.lower() or "pairingerror" in msg.lower():
-                friendly = "USB 配對失效,請拔 USB 重插一次並按信任。"
-            else:
-                friendly = f"RemotePairing 握手失敗:{msg}"
             raise HTTPException(
-                status_code=500,
+                status_code=503,
                 detail={
                     "code": "remote_pair_failed",
-                    "message": friendly,
+                    "message": (
+                        "Tunnel helper 尚未啟用。請重啟 LocWarp 並於"
+                        "跳出的授權對話框輸入密碼後再試。"
+                    ),
                     "udid": udid,
                     "ios_version": ios_version,
                 },
             )
-        finally:
-            # Close everything in reverse order; ignore errors.
-            for closer in (
-                lambda: tunnel_svc and tunnel_svc.close(),
-                lambda: rsd and rsd.close(),
-                lambda: tunnel_ctx and tunnel_ctx.__aexit__(None, None, None),
-            ):
-                try:
-                    r = closer()
-                    if hasattr(r, "__await__"):
-                        await r
-                except Exception:
-                    pass
-            try:
-                if proxy is not None:
-                    proxy.close()
-            except Exception:
-                pass
+
+        try:
+            _tunnel_logger.info(
+                "Re-pair: delegating RemotePairing handshake to helper for %s",
+                udid,
+            )
+            await helper_client.repair_remote_record(udid)
+            _tunnel_logger.info(
+                "Re-pair: helper completed RemotePairing record write for %s", udid
+            )
+            remote_record_regenerated = True
+        except HelperError as e:
+            _tunnel_logger.exception("Re-pair: helper RemotePairing handshake failed")
+            raise HTTPException(
+                status_code=500,
+                detail={
+                    "code": "remote_pair_failed",
+                    "message": _classify_repair_error(str(e)),
+                    "udid": udid,
+                    "ios_version": ios_version,
+                },
+            )
 
     return {
         "status": "paired",

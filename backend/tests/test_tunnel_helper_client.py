@@ -72,6 +72,66 @@ async def test_error_response_raises_helper_error(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_repair_remote_record_round_trip(tmp_path):
+    sock = tmp_path / "helper.sock"
+    status = tmp_path / "helper.status"
+
+    captured: list = []
+
+    async def handler(req):
+        captured.append(req)
+        return {
+            "jsonrpc": "2.0", "id": req["id"],
+            "result": {"status": "ok", "udid": req["params"]["udid"], "record_path": "/x"},
+        }
+
+    server = await _fake_server(sock, handler)
+    try:
+        status.write_text("READY\n")
+        client = TunnelHelperClient(sock_path=sock, status_path=status)
+        await client.connect(timeout=2.0)
+        result = await client.repair_remote_record("ABC-123")
+        assert result["status"] == "ok"
+        assert result["udid"] == "ABC-123"
+        assert captured[0]["method"] == "repair_remote_record"
+        assert captured[0]["params"] == {"udid": "ABC-123"}
+    finally:
+        await client.close()
+        server.close()
+        await server.wait_closed()
+
+
+def test_is_connected_false_when_unbound(tmp_path):
+    client = TunnelHelperClient(
+        sock_path=tmp_path / "nope.sock",
+        status_path=tmp_path / "nope.status",
+    )
+    assert client.is_connected is False
+
+
+@pytest.mark.asyncio
+async def test_is_connected_true_after_connect(tmp_path):
+    sock = tmp_path / "helper.sock"
+    status = tmp_path / "helper.status"
+
+    async def handler(req):
+        return {"jsonrpc": "2.0", "id": req["id"], "result": {}}
+
+    server = await _fake_server(sock, handler)
+    try:
+        status.write_text("READY\n")
+        client = TunnelHelperClient(sock_path=sock, status_path=status)
+        assert client.is_connected is False
+        await client.connect(timeout=2.0)
+        assert client.is_connected is True
+        await client.close()
+        assert client.is_connected is False
+    finally:
+        server.close()
+        await server.wait_closed()
+
+
+@pytest.mark.asyncio
 async def test_connect_timeout_when_status_missing(tmp_path):
     client = TunnelHelperClient(
         sock_path=tmp_path / "nope.sock",

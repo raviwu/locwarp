@@ -8,6 +8,7 @@ core/wifi_tunnel.py.
 
 import asyncio
 import logging
+import os
 
 logger = logging.getLogger("wifi_tunnel")
 
@@ -142,6 +143,67 @@ class TunnelRunner:
             pass
         self.task = None
         self.info = None
+
+
+async def run_repair_handshake(udid: str, parent_uid: int) -> dict:
+    """One-shot RemotePairing handshake — write/refresh the pair record and stop.
+
+    Symmetric to ``UsbTunnelRunner.start`` but tears the tunnel down as soon
+    as ``start_tcp_tunnel()`` has entered. We only want the side effect:
+    pymobiledevice3's ``save_pair_record`` persists a fresh RemotePairing
+    record under the user's home so the next normal connect path can read it.
+    Runs inside the elevated helper so utun creation succeeds.
+
+    After the tunnel closes, chown the resulting record file to *parent_uid*
+    — the helper runs as root so without this the user-context backend
+    cannot read its own pair record on the next launch.
+    """
+    from pymobiledevice3.lockdown import create_using_usbmux
+    from pymobiledevice3.remote.tunnel_service import CoreDeviceTunnelProxy
+
+    lockdown = await create_using_usbmux(serial=udid)
+    proxy = await CoreDeviceTunnelProxy.create(lockdown)
+    record_path: str | None = None
+    try:
+        async with proxy.start_tcp_tunnel() as tun:
+            # ``start_tcp_tunnel().__aenter__`` is the point at which
+            # pymobiledevice3 has called ``save_pair_record`` — exit
+            # immediately, we don't need the tunnel itself.
+            logger.info(
+                "Repair handshake: tunnel up for %s (iface=%s) — closing",
+                udid, tun.interface,
+            )
+        # Locate the record file we just (re-)wrote and chown it.
+        try:
+            from pymobiledevice3.pair_records import (
+                get_home_folder, get_remote_pairing_record_filename,
+                PAIRING_RECORD_EXT,
+            )
+            candidate = (
+                get_home_folder()
+                / f"{get_remote_pairing_record_filename(udid)}.{PAIRING_RECORD_EXT}"
+            )
+            if candidate.exists():
+                record_path = str(candidate)
+                try:
+                    os.chown(candidate, parent_uid, -1)
+                except OSError as exc:
+                    logger.warning(
+                        "Repair handshake: chown %s → uid %s failed: %s",
+                        candidate, parent_uid, exc,
+                    )
+        except Exception:
+            logger.exception("Repair handshake: locating record file failed")
+    finally:
+        try:
+            await proxy.close()
+        except Exception:
+            logger.exception("Repair handshake: proxy.close failed for %s", udid)
+        try:
+            await lockdown.close()
+        except Exception:
+            logger.exception("Repair handshake: lockdown.close failed for %s", udid)
+    return {"status": "ok", "udid": udid, "record_path": record_path}
 
 
 class UsbTunnelRunner:
