@@ -31,22 +31,45 @@ from services.coord_format import CoordinateFormatter
 from services.reconnect import ReconnectManager
 from services.tunnel_helper_client import TunnelHelperClient, HelperError
 
-# Configure logging — console + rotating file in ~/.locwarp/logs/
+# Configure logging — console + rotating file.
+#
+# Log directory resolution:
+#   1. ``LOCWARP_LOG_DIR`` env var when set (explicit override for CI,
+#      multi-instance dev, packaging tests).
+#   2. Default ``~/.locwarp/logs/``.
+#
+# When running under pytest (``PYTEST_CURRENT_TEST`` set) and no override
+# is configured, skip the file handler entirely so tests don't pollute
+# the user's real backend log. Tests that explicitly want file logging
+# can still opt in via ``LOCWARP_LOG_DIR``.
 _log_fmt = "%(asctime)s [%(name)s] %(levelname)s: %(message)s"
-_log_dir = Path.home() / ".locwarp" / "logs"
-try:
-    _log_dir.mkdir(parents=True, exist_ok=True)
-    _file_handler = RotatingFileHandler(
-        _log_dir / "backend.log",
-        maxBytes=2 * 1024 * 1024,  # 2 MB
-        backupCount=3,
-        encoding="utf-8",
-    )
-    _file_handler.setFormatter(logging.Formatter(_log_fmt))
-    _file_handler.setLevel(logging.INFO)
-    _handlers = [logging.StreamHandler(), _file_handler]
-except Exception:
-    _handlers = [logging.StreamHandler()]
+_log_override = os.environ.get("LOCWARP_LOG_DIR")
+_under_pytest = "PYTEST_CURRENT_TEST" in os.environ or "PYTEST_VERSION" in os.environ
+if _log_override:
+    _log_dir = Path(_log_override)
+    _want_file_handler = True
+elif _under_pytest:
+    _log_dir = None
+    _want_file_handler = False
+else:
+    _log_dir = Path.home() / ".locwarp" / "logs"
+    _want_file_handler = True
+
+_handlers: list[logging.Handler] = [logging.StreamHandler()]
+if _want_file_handler and _log_dir is not None:
+    try:
+        _log_dir.mkdir(parents=True, exist_ok=True)
+        _file_handler = RotatingFileHandler(
+            _log_dir / "backend.log",
+            maxBytes=2 * 1024 * 1024,  # 2 MB
+            backupCount=3,
+            encoding="utf-8",
+        )
+        _file_handler.setFormatter(logging.Formatter(_log_fmt))
+        _file_handler.setLevel(logging.INFO)
+        _handlers.append(_file_handler)
+    except Exception:
+        pass
 logging.basicConfig(level=logging.INFO, format=_log_fmt, handlers=_handlers, force=True)
 logger = logging.getLogger("locwarp")
 

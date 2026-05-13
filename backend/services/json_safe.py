@@ -57,13 +57,27 @@ def _backup_corrupt(path: Path, reason: str) -> None:
 
 def safe_load_json(path: Path) -> Any:
     """Load a JSON file. Returns ``None`` if the file doesn't exist
-    (first-run / fresh install). Raises nothing on parse failure;
-    instead copies the corrupt file aside and returns ``None`` so the
-    caller can fall back to its own default in-memory state.
+    (first-run / fresh install) or is empty (interrupted write,
+    truncated by an external process, etc.). Raises nothing on parse
+    failure; instead copies the corrupt file aside and returns ``None``
+    so the caller can fall back to its own default in-memory state.
+
+    Empty file is treated as "no data yet" — logged at debug level, the
+    empty file is removed so the next write starts clean, no .bak file
+    is created. Distinguishes the benign zero-byte case from real
+    corruption (bytes present but malformed JSON), which still gets the
+    .bak-<timestamp> backup and ERROR log.
     """
     if not path.exists():
         return None
     try:
+        if path.stat().st_size == 0:
+            logger.debug("%s is empty; treating as absent", path.name)
+            try:
+                path.unlink()
+            except OSError:
+                pass
+            return None
         return json.loads(path.read_text(encoding="utf-8"))
     except Exception as exc:
         _backup_corrupt(path, str(exc))
