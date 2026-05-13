@@ -843,6 +843,14 @@ async def lifespan(application: FastAPI):
     except Exception:
         logger.exception("error stopping route watcher")
 
+    # Stop the process-wide file_watcher Observer that backs bookmark +
+    # route watchers, so its thread exits with the ASGI process.
+    try:
+        from services.file_watcher import shutdown as _watcher_shutdown
+        _watcher_shutdown()
+    except Exception:
+        logger.exception("error stopping shared file watcher observer")
+
     watchdog_task.cancel()
     try:
         await watchdog_task

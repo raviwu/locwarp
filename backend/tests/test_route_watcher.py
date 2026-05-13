@@ -13,7 +13,21 @@ def isolated_data_dir(tmp_path, monkeypatch):
     monkeypatch.setattr("config.DATA_DIR", tmp_path)
     monkeypatch.setattr("config.SETTINGS_FILE", tmp_path / "settings.json")
     monkeypatch.setattr("config.ROUTES_FILE", tmp_path / "routes.json")
+    monkeypatch.setattr(
+        "config._DEFAULT_BOOKMARKS_FILE", tmp_path / "bookmarks.json"
+    )
+    monkeypatch.setattr(
+        "services.bookmarks.BOOKMARKS_FILE", tmp_path / "bookmarks.json"
+    )
+    monkeypatch.setattr(
+        "services.bookmarks._CONFIG_DEFAULT_BOOKMARKS_FILE",
+        tmp_path / "bookmarks.json",
+    )
     yield
+    # Tear down the process-wide observer between tests so the next test
+    # starts from a clean state.
+    from services.file_watcher import shutdown as _shutdown
+    _shutdown()
 
 
 def _write_routes(p: Path, route_id: str) -> None:
@@ -86,3 +100,36 @@ def test_stop_watcher_idempotent(tmp_path):
     rm.start_watcher(lambda: None)
     rm.stop_watcher()
     rm.stop_watcher()  # second call must not raise
+
+
+def test_route_watcher_fires_when_bookmark_watcher_shares_dir(tmp_path):
+    """Regression: when BookmarkManager and RouteManager are both
+    watching the same parent dir (the default case — ~/.locwarp/), the
+    route watcher must still fire on external route file changes. The
+    previous implementation gave each manager its own watchdog Observer,
+    which on macOS fsevents triggered ``RuntimeError: Cannot add watch
+    ... already scheduled`` for the second emitter, so the route
+    watcher silently never fired in production."""
+    routes_file = tmp_path / "routes.json"
+    _write_routes(routes_file, "initial")
+
+    from services.bookmarks import BookmarkManager
+    from services.route_store import RouteManager
+
+    bm = BookmarkManager()
+    rm = RouteManager()
+
+    bm_fired: list[None] = []
+    rm_fired: list[None] = []
+    bm.start_watcher(lambda: bm_fired.append(None))
+    rm.start_watcher(lambda: rm_fired.append(None))
+    try:
+        _write_routes(routes_file, "external")
+        new_mtime = time.time() + 1.0
+        os.utime(routes_file, (new_mtime, new_mtime))
+
+        assert _wait_for(lambda: bool(rm_fired)), "route callback never fired"
+        assert not bm_fired, "bookmark callback fired on a route file change"
+    finally:
+        bm.stop_watcher()
+        rm.stop_watcher()

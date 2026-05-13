@@ -85,6 +85,13 @@ async def cloud_sync_enable(req: CloudSyncEnableRequest):
     app_state.save_settings()
 
     # Re-init managers so they pick up the new path; rebind watchers.
+    # Stop the OUTGOING managers' watches first — otherwise their handles
+    # on the shared file_watcher Observer outlive the manager objects and
+    # we leak one watch per toggle.
+    if app_state.bookmark_manager is not None:
+        app_state.bookmark_manager.stop_watcher()
+    if app_state.route_manager is not None:
+        app_state.route_manager.stop_watcher()
     from services.bookmarks import BookmarkManager
     from services.route_store import RouteManager
     app_state.bookmark_manager = BookmarkManager()

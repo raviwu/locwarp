@@ -21,10 +21,11 @@ from pathlib import Path
 from typing import Callable
 
 from watchdog.events import FileSystemEventHandler
-from watchdog.observers import Observer
+from watchdog.observers.api import ObservedWatch
 
 from config import ROUTES_FILE, get_routes_path
 from models.schemas import RouteCategory, RouteStore, SavedRoute
+from services.file_watcher import schedule as _watcher_schedule, unschedule as _watcher_unschedule
 from services.json_safe import safe_load_json, safe_write_json
 
 logger = logging.getLogger(__name__)
@@ -58,7 +59,9 @@ class RouteManager:
         self.store = RouteStore(categories=[_default_category()], routes=[])
         self._load()
         self._last_loaded_mtime: float = self._stat_mtime()
-        self._watcher_observer: Observer | None = None
+        # Handle to the watch on the shared file_watcher Observer; set
+        # by start_watcher, cleared by stop_watcher.
+        self._watch: ObservedWatch | None = None
         self._watcher_debounce_timer: threading.Timer | None = None
         self._on_external_change: Callable[[], None] | None = None
         # No _last_loaded_snapshot: routes don't support diff-merge on external
@@ -156,22 +159,16 @@ class RouteManager:
                     return
                 manager._schedule_reconcile()
 
-        self._watcher_observer = Observer()
-        self._watcher_observer.schedule(_Handler(), str(parent), recursive=False)
-        self._watcher_observer.start()
-        logger.info("Route watcher started on %s", parent)
+        self._watch = _watcher_schedule(_Handler(), parent)
+        logger.info("Route watcher scheduled on %s", parent)
 
     def stop_watcher(self) -> None:
         if self._watcher_debounce_timer is not None:
             self._watcher_debounce_timer.cancel()
             self._watcher_debounce_timer = None
-        if self._watcher_observer is not None:
-            try:
-                self._watcher_observer.stop()
-                self._watcher_observer.join(timeout=2.0)
-            except Exception:
-                logger.exception("Failed to stop route watcher cleanly")
-            self._watcher_observer = None
+        if self._watch is not None:
+            _watcher_unschedule(self._watch)
+            self._watch = None
 
     def _schedule_reconcile(self) -> None:
         if self._watcher_debounce_timer is not None:
