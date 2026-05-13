@@ -98,8 +98,25 @@ export function useBookmarks() {
 
   const deleteCategory = useCallback(
     async (id: string, cascade = false) => {
-      await api.deleteCategory(id, cascade)
-      await refresh()
+      // Optimistic: drop the category and either delete or re-home its
+      // bookmarks locally so the panel updates instantly. The authoritative
+      // refresh below reconciles; on backend failure, refresh() restores
+      // the unchanged server state and we re-raise.
+      setCategories((prev) => prev.filter((c) => c.id !== id))
+      setBookmarks((prev) =>
+        cascade
+          ? prev.filter((b) => b.category_id !== id)
+          : prev.map((b) =>
+              b.category_id === id ? { ...b, category_id: 'default' } : b,
+            ),
+      )
+      try {
+        await api.deleteCategory(id, cascade)
+        await refresh()
+      } catch (e) {
+        await refresh()
+        throw e
+      }
     },
     [refresh],
   )
