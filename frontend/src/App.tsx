@@ -20,6 +20,10 @@ import PauseControl from './components/PauseControl'
 import StatusBar from './components/StatusBar'
 import { DeviceChipRow } from './components/DeviceChipRow'
 import type { FanoutOutcome } from './hooks/useSimulation'
+import {
+  CloudSyncBusyProvider, useCloudSyncBusy, useCloudSyncAfter,
+} from './contexts/CloudSyncBusyContext'
+import { CloudSyncBusyOverlay } from './components/CloudSyncBusyOverlay'
 
 // Summarise a group fan-out result into a single toast string.
 // Call from action handlers: showToast(toastForFanout(t, 'teleport', outcome, connectedDevices))
@@ -48,6 +52,7 @@ import { SimMode, MoveMode } from './hooks/useSimulation'
 // iCloud Drive is not detected on this machine.
 function useCloudSyncDiscovery() {
   const t = useT()
+  const { run } = useCloudSyncBusy()
   useEffect(() => {
     let cancelled = false
     ;(async () => {
@@ -56,13 +61,13 @@ function useCloudSyncDiscovery() {
       if (s.enabled || s.prompt_dismissed || !s.detected_icloud_path) return
       const ok = window.confirm(t('cloud_sync.discovery_prompt'))
       if (ok) {
-        await api.cloudSyncEnable()
+        await run(() => api.cloudSyncEnable())
       } else {
         await api.cloudSyncDismissPrompt()
       }
     })().catch(() => { /* swallow — non-fatal */ })
     return () => { cancelled = true }
-  }, [t])
+  }, [t, run])
 }
 
 const SPEED_MAP: Record<MoveMode, number> = {
@@ -101,6 +106,20 @@ const App: React.FC = () => {
       setRouteCategories(Array.isArray(cats) ? cats : [])
     } catch { /* leave empty so RouteList still falls back to default */ }
   }, [])
+
+  // Keep the cloud-sync busy overlay visible until bookmark + route data
+  // has been re-fetched after a toggle, so panels never flash pre-merge
+  // content.
+  const refreshRoutesAndCategories = useCallback(async () => {
+    try {
+      const rs = await api.getSavedRoutes()
+      setSavedRoutes(rs)
+    } catch { /* swallow */ }
+    await refreshRouteCategories()
+  }, [refreshRouteCategories])
+  useCloudSyncAfter(useCallback(async () => {
+    await Promise.all([bm.refresh(), refreshRoutesAndCategories()])
+  }, [bm.refresh, refreshRoutesAndCategories]))
   // Bumped every time an external trigger (currently the map topleft
   // library button) wants ControlPanel to open its library panel.
   // ControlPanel reacts on change via useEffect, so we don't have to
@@ -2649,4 +2668,11 @@ const App: React.FC = () => {
   )
 }
 
-export default App
+const AppRoot: React.FC = () => (
+  <CloudSyncBusyProvider>
+    <App />
+    <CloudSyncBusyOverlay />
+  </CloudSyncBusyProvider>
+)
+
+export default AppRoot

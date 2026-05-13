@@ -6,12 +6,13 @@ import {
   cloudSyncDisable,
   type CloudSyncStatus,
 } from '../services/api'
+import { useCloudSyncBusy } from '../contexts/CloudSyncBusyContext'
 
 export function CloudSyncSection() {
   const t = useT()
   const [status, setStatus] = useState<CloudSyncStatus | null>(null)
-  const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const { busy, run } = useCloudSyncBusy()
 
   const refresh = async () => {
     try {
@@ -27,17 +28,14 @@ export function CloudSyncSection() {
 
   const onToggle = async () => {
     if (!status) return
-    setBusy(true)
     setError(null)
     try {
-      const next = status.enabled
-        ? await cloudSyncDisable()
-        : await cloudSyncEnable()
+      const next = await run(() =>
+        status.enabled ? cloudSyncDisable() : cloudSyncEnable(),
+      )
       setStatus(next)
     } catch (e) {
       setError(String(e))
-    } finally {
-      setBusy(false)
     }
   }
 
