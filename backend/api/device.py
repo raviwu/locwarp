@@ -233,7 +233,15 @@ async def wifi_repair():
         except Exception as e:
             _tunnel_logger.exception("Re-pair: RemotePairing handshake failed")
             msg = str(e)
-            if "PairingDialogResponsePending" in msg or "consent" in msg.lower():
+            if "utun" in msg.lower():
+                # Creating a utun interface on macOS needs root. The helper
+                # process normally owns this, but USB repair goes in-process
+                # through CoreDeviceTunnelProxy and falls over without admin.
+                friendly = (
+                    "RemotePairing 握手失敗：無法建立 utun 介面。"
+                    "請以系統管理員身分重啟 LocWarp（或確認 tunnel helper 已啟用）。"
+                )
+            elif "PairingDialogResponsePending" in msg or "consent" in msg.lower():
                 friendly = "請在 iPhone 解鎖螢幕上按「信任」後重試(timeout 只有幾秒)。"
             elif "not paired" in msg.lower() or "pairingerror" in msg.lower():
                 friendly = "USB 配對失效,請拔 USB 重插一次並按信任。"
