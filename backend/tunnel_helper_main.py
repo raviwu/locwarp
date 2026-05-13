@@ -37,6 +37,7 @@ from typing import Any, Callable, Awaitable
 from core._tunnel_runner import (
     TunnelRunner as _TunnelRunner,
     UsbTunnelRunner as _UsbTunnelRunner,
+    run_repair_handshake as _run_repair_handshake,
 )
 
 logger = logging.getLogger("tunnel_helper")
@@ -98,6 +99,7 @@ class HelperServer:
             "open_usb_tunnel": self._handle_open_usb_tunnel,
             "close_tunnel": self._handle_close_tunnel,
             "list_tunnels": self._handle_list_tunnels,
+            "repair_remote_record": self._handle_repair_remote_record,
         })
 
     # ── lifecycle ─────────────────────────────────────────────────
@@ -359,6 +361,22 @@ class HelperServer:
             raise _HelperRpcError(-32002, f"USB tunnel failed: {exc}")
         self._tunnels[udid] = runner
         return info
+
+    async def _handle_repair_remote_record(self, params: dict) -> dict:
+        """One-shot RemotePairing handshake — write/refresh the pair record.
+
+        Intentionally does NOT touch ``self._tunnels`` — this is a transient
+        handshake, not a persistent tunnel registration. Runs as root so
+        utun creation (the failure mode for the in-process backend path)
+        succeeds.
+        """
+        udid = params.get("udid")
+        if not isinstance(udid, str):
+            raise _HelperRpcError(-32602, "repair_remote_record needs udid:str")
+        try:
+            return await _run_repair_handshake(udid, parent_uid=self.parent_uid)
+        except Exception as exc:
+            raise _HelperRpcError(-32002, f"repair_remote_record failed: {exc}")
 
     async def _handle_close_tunnel(self, params: dict) -> dict:
         udid = params.get("udid")

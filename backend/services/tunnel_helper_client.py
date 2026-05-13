@@ -88,6 +88,10 @@ class TunnelHelperClient:
         )
         logger.info("connected to tunnel helper at %s", self.sock_path)
 
+    @property
+    def is_connected(self) -> bool:
+        return self._writer is not None and self._reader is not None
+
     async def close(self) -> None:
         if self._writer is not None:
             try:
@@ -151,3 +155,6 @@ class TunnelHelperClient:
 
     async def list_tunnels(self) -> list[dict]:
         return await self.call("list_tunnels")
+
+    async def repair_remote_record(self, udid: str) -> dict:
+        return await self.call("repair_remote_record", udid=udid)

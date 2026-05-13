@@ -151,6 +151,114 @@ async def test_open_and_close_wifi_tunnel_via_fake_runner(tmp_path, monkeypatch)
 
 
 @pytest.mark.asyncio
+async def test_repair_remote_record_invokes_handshake(tmp_path, monkeypatch):
+    """The new ``repair_remote_record`` RPC routes through
+    ``run_repair_handshake``, passes the helper's ``parent_uid``, and does
+    NOT register a tunnel — repair is a one-shot side-effect call.
+    """
+    captured: dict = {}
+
+    async def fake_handshake(udid: str, parent_uid: int) -> dict:
+        captured["udid"] = udid
+        captured["parent_uid"] = parent_uid
+        return {"status": "ok", "udid": udid, "record_path": "/fake/path"}
+
+    monkeypatch.setattr("tunnel_helper_main._run_repair_handshake", fake_handshake)
+
+    sock = tmp_path / "h.sock"
+    status = tmp_path / "h.status"
+    server = HelperServer(
+        sock_path=sock,
+        status_path=status,
+        parent_pid=os.getpid(),
+        parent_uid=os.getuid(),
+    )
+    await server.start()
+    try:
+        reader, writer = await asyncio.open_unix_connection(path=str(sock))
+        req = {
+            "jsonrpc": "2.0", "id": 1,
+            "method": "repair_remote_record",
+            "params": {"udid": "abc-123"},
+        }
+        writer.write((json.dumps(req) + "\n").encode())
+        await writer.drain()
+        resp = json.loads((await reader.readline()).decode())
+        assert resp["result"]["status"] == "ok"
+        assert resp["result"]["udid"] == "abc-123"
+        assert captured == {"udid": "abc-123", "parent_uid": os.getuid()}
+        # Crucially: the transient handshake must not leak into the persistent
+        # tunnel registry.
+        assert server._tunnels == {}
+        writer.close()
+        await writer.wait_closed()
+    finally:
+        await server.stop()
+
+
+@pytest.mark.asyncio
+async def test_repair_remote_record_rejects_bad_params(tmp_path, monkeypatch):
+    sock = tmp_path / "h.sock"
+    status = tmp_path / "h.status"
+    server = HelperServer(
+        sock_path=sock,
+        status_path=status,
+        parent_pid=os.getpid(),
+        parent_uid=os.getuid(),
+    )
+    await server.start()
+    try:
+        reader, writer = await asyncio.open_unix_connection(path=str(sock))
+        req = {
+            "jsonrpc": "2.0", "id": 1,
+            "method": "repair_remote_record",
+            "params": {"udid": 123},  # wrong type
+        }
+        writer.write((json.dumps(req) + "\n").encode())
+        await writer.drain()
+        resp = json.loads((await reader.readline()).decode())
+        assert resp["error"]["code"] == -32602
+        writer.close()
+        await writer.wait_closed()
+    finally:
+        await server.stop()
+
+
+@pytest.mark.asyncio
+async def test_repair_remote_record_propagates_handshake_failure(tmp_path, monkeypatch):
+    async def fake_handshake(udid: str, parent_uid: int) -> dict:
+        raise RuntimeError("Failed to create any utun interface")
+
+    monkeypatch.setattr("tunnel_helper_main._run_repair_handshake", fake_handshake)
+
+    sock = tmp_path / "h.sock"
+    status = tmp_path / "h.status"
+    server = HelperServer(
+        sock_path=sock,
+        status_path=status,
+        parent_pid=os.getpid(),
+        parent_uid=os.getuid(),
+    )
+    await server.start()
+    try:
+        reader, writer = await asyncio.open_unix_connection(path=str(sock))
+        req = {
+            "jsonrpc": "2.0", "id": 1,
+            "method": "repair_remote_record",
+            "params": {"udid": "abc"},
+        }
+        writer.write((json.dumps(req) + "\n").encode())
+        await writer.drain()
+        resp = json.loads((await reader.readline()).decode())
+        assert resp["error"]["code"] == -32002
+        assert "utun" in resp["error"]["message"]
+        writer.close()
+        await writer.wait_closed()
+    finally:
+        await server.stop()
+
+
+@pytest.mark.asyncio
 async def test_open_usb_tunnel_uses_usb_runner(tmp_path, monkeypatch):
     fake_started: list[str] = []
 
