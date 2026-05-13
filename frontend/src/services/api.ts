@@ -127,7 +127,14 @@ export const wifiConnect = (ip: string) => request<any>('POST', '/api/device/wif
 export const wifiScan = () => request<any[]>('GET', '/api/device/wifi/scan')
 export const wifiTunnelStartAndConnect = (ip: string, port = 49152, udid?: string) =>
   request<any>('POST', '/api/device/wifi/tunnel/start-and-connect', { ip, port, ...(udid ? { udid } : {}) })
-export interface TunnelInfo { udid: string; rsd_address?: string; rsd_port?: number; interface?: string; protocol?: string }
+export interface TunnelInfo {
+  udid: string
+  name?: string
+  rsd_address?: string
+  rsd_port?: number
+  interface?: string
+  protocol?: string
+}
 export const wifiTunnelStatus = () =>
   request<{ tunnels: TunnelInfo[]; running: boolean; rsd_address?: string; rsd_port?: number }>(
     'GET', '/api/device/wifi/tunnel/status',

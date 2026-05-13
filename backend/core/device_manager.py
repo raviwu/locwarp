@@ -835,6 +835,32 @@ class DeviceManager:
         conn = self._connections.get(udid)
         return conn.connection_type if conn else "USB"
 
+    def get_display_name(self, udid: str) -> str | None:
+        """Resolve the user-friendly DeviceName for *udid*.
+
+        Used by WiFi-only callers (e.g. the /wifi/tunnel/status endpoint
+        that the frontend renders the active-tunnel list from) so they
+        don't have to fall back to displaying the raw UDID when no USB
+        cable is currently plugged in.
+
+        Resolution order (same fallback chain as ``connect_wifi_tunnel``):
+          1. Live active connection (set when ``connect_wifi_tunnel`` or
+             ``connect`` returns a non-generic DeviceName).
+          2. Persisted ``~/.locwarp/device_names.json`` cache populated
+             by previous USB / WiFi sessions.
+          3. ``None`` — caller decides how to render an unknown device
+             (e.g. a UDID slice, the i18n "iPhone" fallback).
+        """
+        if not udid:
+            return None
+        conn = self._connections.get(udid)
+        if conn is not None and conn.name and conn.name not in ("iPhone", "Unknown"):
+            return conn.name
+        cached = _load_device_name_cache().get(udid)
+        if cached:
+            return cached
+        return None
+
     # ------------------------------------------------------------------
     # Recovery helpers (used by location_service factory + API safety net)
     # ------------------------------------------------------------------
