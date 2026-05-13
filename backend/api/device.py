@@ -1052,11 +1052,18 @@ async def wifi_tunnel_status():
     `{"tunnels": [{"udid", "rsd_address", "rsd_port", ...}, ...]}`. Legacy
     fields (`running`, `rsd_address`, `rsd_port`) mirror the FIRST tunnel
     so older single-tunnel callers keep working until they migrate."""
+    dm = _dm()
     tunnels: list[dict] = []
     for udid, runner in list(_tunnels.items()):
         if not runner.is_running():
             continue
-        tunnels.append({"udid": udid, **(runner.info or {})})
+        entry: dict = {"udid": udid, **(runner.info or {})}
+        # Surface a display name so the WiFi-tunnel UI doesn't fall back
+        # to a UDID slice when no USB device entry exists for this udid.
+        name = dm.get_display_name(udid)
+        if name:
+            entry["name"] = name
+        tunnels.append(entry)
 
     legacy = {"running": len(tunnels) > 0}
     if tunnels:

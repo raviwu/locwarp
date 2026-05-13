@@ -599,7 +599,12 @@ const DeviceStatus: React.FC<DeviceStatusProps> = ({
                     <div style={{ marginBottom: 8 }}>
                       {tunnels.map((tn) => {
                         const dev = devices.find((d) => d.id === tn.udid);
-                        const dispName = dev?.name || tn.udid.slice(0, 12);
+                        // tn.name comes from the backend tunnel/status payload —
+                        // it's resolved from the active connection or the persisted
+                        // device_names cache, so it works in pure-WiFi sessions
+                        // where no USB device is currently discoverable.
+                        const dispName =
+                          tn.name || dev?.name || tn.udid.slice(0, 12);
                         return (
                           <div key={tn.udid} style={{
                             fontSize: 11, padding: '6px 8px', marginBottom: 4,
