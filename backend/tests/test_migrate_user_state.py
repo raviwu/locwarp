@@ -12,18 +12,45 @@ def _seed(root: Path) -> None:
     (root / "logs" / "backend.log").write_text("hello")
 
 
-@pytest.mark.skipif(os.geteuid() != 0, reason="needs root to seed root-owned files")
-def test_migrate_chowns_root_files_to_caller_uid(tmp_path):
+def test_migrate_chowns_mismatched_entries(tmp_path, monkeypatch):
+    """Whenever an entry's uid does not match the requested target, the
+    migration must call ``os.chown(path, uid, gid, follow_symlinks=False)``
+    on it. We stub ``os.chown`` so the test runs without root and asserts
+    the call set, not the on-disk ownership (which is the kernel's job)."""
     home = tmp_path
     locwarp = home / ".locwarp"
     _seed(locwarp)
-    target_uid = int(os.environ.get("SUDO_UID", os.getuid()))
-    target_gid = int(os.environ.get("SUDO_GID", os.getgid()))
-    result = migrate_user_state(home=str(home), uid=target_uid, gid=target_gid)
-    assert result["chowned"] >= 3
+
+    calls: list[tuple[str, int, int, bool]] = []
+
+    def fake_chown(path, uid, gid, *, follow_symlinks=True):
+        calls.append((os.fspath(path), uid, gid, follow_symlinks))
+
+    monkeypatch.setattr("migrate_user_state.os.chown", fake_chown)
+
+    # Pass a uid the seeded files don't have (the test runner owns them),
+    # forcing every entry through the chown branch.
+    fake_uid = os.getuid() + 1000
+    fake_gid = os.getgid() + 1000
+    result = migrate_user_state(home=str(home), uid=fake_uid, gid=fake_gid)
+
     assert result["failed"] == 0
-    for path in [locwarp, locwarp / "bookmarks.json", locwarp / "logs", locwarp / "logs" / "backend.log"]:
-        assert path.stat().st_uid == target_uid
+    # locwarp dir + bookmarks.json + logs dir + logs/backend.log == 4
+    assert result["chowned"] == 4
+    assert len(calls) == 4
+
+    # Every call must use follow_symlinks=False (the LPE-safety invariant).
+    assert all(fs is False for *_, fs in calls), calls
+    # Every call targets the requested (uid, gid).
+    assert all(u == fake_uid and g == fake_gid for _, u, g, _ in calls), calls
+
+    expected_paths = {
+        str(locwarp),
+        str(locwarp / "bookmarks.json"),
+        str(locwarp / "logs"),
+        str(locwarp / "logs" / "backend.log"),
+    }
+    assert {p for p, *_ in calls} == expected_paths
 
 
 def test_migrate_no_op_when_already_owned(tmp_path):
