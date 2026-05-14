@@ -146,6 +146,12 @@ const BookmarkList: React.FC<BookmarkListProps> = ({
   // Translate at render time so EN users see "Default" without touching storage.
   const displayCat = (name: string) => (name === '預設' ? t('bm.default') : name);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  // Categories the user has temporarily hidden from the panel. Keyed by the
+  // same category string the `collapsed` map and `bookmarksByCategory` use.
+  const [hidden, setHidden] = useState<Set<string>>(new Set());
+  // True once the persisted hidden list has been merged in — gates the
+  // persist effect so the initial fetch is not echoed straight back.
+  const hiddenLoadedRef = useRef(false);
   const [uiStateLoaded, setUiStateLoaded] = useState(false);
   const uiStateSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastClickTs = useRef<number>(0);
@@ -316,8 +322,12 @@ const BookmarkList: React.FC<BookmarkListProps> = ({
       .then((state) => {
         if (cancelled) return;
         savedExpandedRef.current = state.expanded_categories;
+        if (Array.isArray(state.hidden_categories)) {
+          setHidden(new Set(state.hidden_categories));
+        }
+        hiddenLoadedRef.current = true;
       })
-      .catch(() => { /* leave null, auto-rule handles first load */ })
+      .catch(() => { hiddenLoadedRef.current = true; })
       .finally(() => { if (!cancelled) setUiStateLoaded(true); });
     return () => { cancelled = true; };
   }, []);
@@ -371,6 +381,34 @@ const BookmarkList: React.FC<BookmarkListProps> = ({
       const expanded = categories.filter((c) => !nextCollapsed[c]);
       void setBookmarkUiState({ expanded_categories: expanded }).catch(() => { /* best effort */ });
     }, 400);
+  };
+
+  // Persist the hidden set immediately on change (hide/unhide is a single
+  // deliberate click — no debounce needed). Stale categories (deleted since
+  // they were hidden) are dropped here so they never linger in settings.json.
+  const persistHidden = (nextHidden: Set<string>) => {
+    if (!hiddenLoadedRef.current) return; // don't echo the initial fetch
+    const known = new Set(categories);
+    const cleaned = [...nextHidden].filter((c) => known.has(c));
+    void setBookmarkUiState({ hidden_categories: cleaned }).catch(() => { /* best effort */ });
+  };
+
+  const hideCategory = (cat: string) => {
+    setHidden((prev) => {
+      const next = new Set(prev);
+      next.add(cat);
+      persistHidden(next);
+      return next;
+    });
+  };
+
+  const unhideCategory = (cat: string) => {
+    setHidden((prev) => {
+      const next = new Set(prev);
+      next.delete(cat);
+      persistHidden(next);
+      return next;
+    });
   };
 
   const toggleCategory = (cat: string) => {
