@@ -112,3 +112,25 @@ def test_legacy_bookmarks_path_with_missing_folder_keeps_setting(tmp_path):
     persisted = json.loads((tmp_path / "settings.json").read_text())
     assert persisted.get("bookmarks_path") == "/no/such/dir/bookmarks.json"
     assert persisted.get("sync_folder") is None
+
+
+@pytest.mark.asyncio
+async def test_load_state_rereads_sync_folder_after_init(tmp_path):
+    """Symptom 1: settings.json unreadable at __init__ time (root-owned,
+    pre-chown) but readable by the time load_state() runs after the helper
+    has chowned it back. load_state must re-read sync_folder — _load_settings
+    alone does not, which is why the toggle latched OFF on every rebuild."""
+    import main
+    # __init__ ran with no settings.json → _sync_folder None (the latched
+    # state from a failed pre-chown read).
+    main.app_state._sync_folder = None
+    main.app_state._cloud_sync_dismissed = False
+
+    # Helper has now chowned settings.json back to the user — it is readable.
+    sync_dir = tmp_path / "iCloud" / "LocWarp"
+    sync_dir.mkdir(parents=True)
+    _write_settings(tmp_path, {"sync_folder": str(sync_dir)})
+
+    await main.app_state.load_state()
+
+    assert main.app_state._sync_folder == str(sync_dir)
