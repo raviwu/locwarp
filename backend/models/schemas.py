@@ -164,12 +164,25 @@ class RoutePlanRequest(BaseModel):
     profile: str = "foot"
 
 
+class Tombstone(BaseModel):
+    """Records that an item was deleted, so the deletion propagates across
+    cloud-synced devices instead of being resurrected by a concurrent writer
+    that still has the item. ``kind`` is "bookmark" | "category" | "route".
+    """
+    id: str
+    kind: str
+    deleted_at: str  # ISO 8601
+
+
 class RouteCategory(BaseModel):
     id: str = ""
     name: str
     color: str = "#6c8cff"
     sort_order: int = 0
     created_at: str = ""
+    # Bumped on every mutation so the cloud-sync merge can pick the newer
+    # copy on an id collision. Empty = legacy (pre-sync-merge) record.
+    updated_at: str = ""
 
 
 class SavedRoute(BaseModel):
@@ -194,6 +207,8 @@ class RouteMoveRequest(BaseModel):
 class RouteStore(BaseModel):
     categories: list[RouteCategory] = []
     routes: list[SavedRoute] = []
+    # Deletions pending propagation to other cloud-synced devices.
+    tombstones: list[Tombstone] = []
 
 
 # ── Bookmarks ─────────────────────────────────────────────
@@ -208,6 +223,9 @@ class BookmarkCategory(BaseModel):
     # API layer (api/bookmarks.py::_validate_date_range).
     start_date: str = ""
     end_date: str = ""
+    # Bumped on every mutation so the cloud-sync merge can pick the newer
+    # copy on an id collision. Empty = legacy (pre-sync-merge) record.
+    updated_at: str = ""
 
 
 class Bookmark(BaseModel):
@@ -223,6 +241,9 @@ class Bookmark(BaseModel):
     # geocode. Used to render a flag next to the bookmark. Empty = unknown
     # (legacy bookmarks or offline-added); UI simply skips the flag.
     country_code: str = ""
+    # Bumped on every mutation so the cloud-sync merge can pick the newer
+    # copy on an id collision. Empty = legacy (pre-sync-merge) record.
+    updated_at: str = ""
 
 
 class BookmarkMoveRequest(BaseModel):
@@ -233,6 +254,8 @@ class BookmarkMoveRequest(BaseModel):
 class BookmarkStore(BaseModel):
     categories: list[BookmarkCategory] = []
     bookmarks: list[Bookmark] = []
+    # Deletions pending propagation to other cloud-synced devices.
+    tombstones: list[Tombstone] = []
 
 
 # ── Cooldown ──────────────────────────────────────────────
