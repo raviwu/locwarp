@@ -24,9 +24,10 @@ from watchdog.events import FileSystemEventHandler
 from watchdog.observers.api import ObservedWatch
 
 from config import ROUTES_FILE, get_routes_path
-from models.schemas import RouteCategory, RouteStore, SavedRoute
+from models.schemas import RouteCategory, RouteStore, SavedRoute, Tombstone
 from services.file_watcher import schedule as _watcher_schedule, unschedule as _watcher_unschedule
 from services.json_safe import safe_load_json, safe_write_json
+from services.store_merge import merge_stores
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +38,27 @@ _CONFIG_DEFAULT_ROUTES_FILE = ROUTES_FILE
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _tombstone(obj_id: str, kind: str) -> Tombstone:
+    """Build a deletion record so the delete propagates across cloud-synced
+    devices instead of being resurrected by a concurrent writer."""
+    return Tombstone(id=obj_id, kind=kind, deleted_at=_now_iso())
+
+
+def _load_store_or_empty(path: Path) -> RouteStore:
+    """Read a RouteStore from disk, tolerating a missing or corrupt file.
+
+    Returns an empty store on any failure so merge_stores can treat it as
+    "the other side had nothing" — never raises, never loses our in-memory
+    copy in response to a transient read error."""
+    raw = safe_load_json(path)
+    if not isinstance(raw, dict):
+        return RouteStore(categories=[], routes=[], tombstones=[])
+    try:
+        return RouteStore(**raw)
+    except Exception:
+        return RouteStore(categories=[], routes=[], tombstones=[])
 
 
 def _default_category() -> RouteCategory:
@@ -119,8 +141,16 @@ class RouteManager:
         )
 
     def _save(self) -> None:
-        payload = json.loads(self.store.model_dump_json())
-        safe_write_json(self._routes_path(), payload)
+        """Persist via unconditional read-merge-write.
+
+        Reads the current on-disk file and runs the commutative merge_stores
+        against it before writing, so a concurrent write from another device
+        (delivered through iCloud since our last load) is folded in rather
+        than clobbered. Merging an unchanged file is a no-op (merge is
+        idempotent)."""
+        path = self._routes_path()
+        self.store = merge_stores(self.store, _load_store_or_empty(path))
+        safe_write_json(path, json.loads(self.store.model_dump_json()))
         self._last_loaded_mtime = self._stat_mtime()
 
     def _stat_mtime(self) -> float:
@@ -190,9 +220,12 @@ class RouteManager:
             except FileNotFoundError:
                 return
             if current_mtime <= self._last_loaded_mtime:
-                return
+                return  # self-echo or already reconciled
             before = self.store.model_dump_json()
-            self._load()
+            # Merge the external write into our in-memory store instead of
+            # the old whole-file _load() replace — a blind reload dropped any
+            # local edit not yet flushed to disk.
+            self.store = merge_stores(self.store, _load_store_or_empty(path))
             after = self.store.model_dump_json()
             self._last_loaded_mtime = current_mtime
             if before != after and self._on_external_change is not None:
@@ -212,12 +245,14 @@ class RouteManager:
 
     def create_category(self, name: str, color: str = "#6c8cff") -> RouteCategory:
         max_order = max((c.sort_order for c in self.store.categories), default=-1)
+        now = _now_iso()
         cat = RouteCategory(
             id=str(uuid.uuid4()),
             name=name,
             color=color,
             sort_order=max_order + 1,
-            created_at=_now_iso(),
+            created_at=now,
+            updated_at=now,
         )
         self.store.categories.append(cat)
         self._save()
@@ -236,6 +271,7 @@ class RouteManager:
             cat.name = name
         if color is not None:
             cat.color = color
+        cat.updated_at = _now_iso()
         self._save()
         return cat
 
@@ -246,10 +282,13 @@ class RouteManager:
         cat = self._find_category(cat_id)
         if cat is None:
             return False
+        now = _now_iso()
         for r in self.store.routes:
             if r.category_id == cat_id:
                 r.category_id = "default"
+                r.updated_at = now  # reparenting is a modification
         self.store.categories = [c for c in self.store.categories if c.id != cat_id]
+        self.store.tombstones.append(_tombstone(cat_id, "category"))
         self._save()
         return True
 
@@ -275,8 +314,9 @@ class RouteManager:
         if self._find_category(route.category_id) is None:
             route.category_id = "default"
         route.id = str(uuid.uuid4())
-        route.created_at = _now_iso()
-        route.updated_at = ""
+        now = _now_iso()
+        route.created_at = now
+        route.updated_at = now
         self.store.routes.append(route)
         self._save()
         return route
@@ -314,6 +354,7 @@ class RouteManager:
         before = len(self.store.routes)
         self.store.routes = [r for r in self.store.routes if r.id != route_id]
         if len(self.store.routes) < before:
+            self.store.tombstones.append(_tombstone(route_id, "route"))
             self._save()
             return True
         return False

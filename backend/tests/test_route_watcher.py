@@ -133,3 +133,26 @@ def test_route_watcher_fires_when_bookmark_watcher_shares_dir(tmp_path):
     finally:
         bm.stop_watcher()
         rm.stop_watcher()
+
+
+def test_two_route_managers_converge_without_clobber(tmp_path):
+    """Two RouteManagers on the same file, each saving a distinct route.
+
+    Reproduces symptom 2 for routes: the second _save must read-merge-write
+    so the first manager's route survives instead of being overwritten."""
+    from models.schemas import Coordinate, SavedRoute
+    from services.route_store import RouteManager
+
+    def _r(name):
+        return SavedRoute(
+            name=name,
+            waypoints=[Coordinate(lat=1.0, lng=1.0), Coordinate(lat=2.0, lng=2.0)],
+            profile="walking",
+        )
+
+    a = RouteManager()
+    b = RouteManager()
+    a.create_route(_r("from-A"))
+    b.create_route(_r("from-B"))
+    names = {r.name for r in RouteManager().list_routes()}
+    assert names == {"from-A", "from-B"}
