@@ -56,3 +56,41 @@ def test_load_truly_corrupt_file_is_backed_up(tmp_path, caplog):
     assert len(backups) == 1
     # Original bytes were preserved in the backup.
     assert backups[0].read_text() == "{not json}"
+
+
+def test_write_succeeds_despite_unwritable_stale_tmp(tmp_path):
+    """A stale, unwritable sibling .tmp must not block a write.
+
+    An interrupted admin-mode (root) run can leave a root-owned
+    ``<name>.tmp`` behind. A later non-root run then cannot open that
+    fixed-name temp for writing, so every save fails silently and the
+    real file is never updated. The atomic write must use a unique temp
+    name per call so a foreign or read-only stale .tmp can never collide.
+    """
+    p = tmp_path / "data.json"
+    p.write_text(json.dumps({"original": True}))
+
+    # The stale root-owned temp, simulated: a sibling .tmp the current
+    # process cannot open for writing.
+    stale_tmp = tmp_path / "data.json.tmp"
+    stale_tmp.write_text("garbage from an interrupted run")
+    stale_tmp.chmod(0o444)
+
+    try:
+        assert safe_write_json(p, {"updated": True}) is True
+        assert safe_load_json(p) == {"updated": True}
+    finally:
+        stale_tmp.chmod(0o644)
+
+
+def test_failed_write_leaves_no_orphan_temp(tmp_path):
+    """A write that fails after the temp file is created must not leave
+    the temp behind. With unique per-call temp names, an uncleaned
+    failure would litter the (cloud-synced) folder with junk files."""
+    # Target path is a directory, so the final atomic replace fails.
+    target = tmp_path / "data.json"
+    target.mkdir()
+
+    assert safe_write_json(target, {"x": 1}) is False
+    leftovers = [q for q in tmp_path.iterdir() if q != target]
+    assert leftovers == [], leftovers

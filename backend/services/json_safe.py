@@ -25,6 +25,8 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -87,16 +89,29 @@ def safe_load_json(path: Path) -> Any:
 def safe_write_json(path: Path, payload: Any, *, indent: int = 2) -> bool:
     """Write ``payload`` as JSON to ``path`` atomically.
 
-    Serialises to a ``<name>.tmp`` sibling first and then renames over
-    the real file. Returns ``True`` on success, ``False`` on failure
+    Serialises to a uniquely-named sibling temp file and then renames it
+    over the real file. The temp name is unique per call: a stale or
+    foreign-owned ``<name>.tmp`` left behind by an interrupted run (e.g.
+    a root-owned file from an admin-mode session) must never be able to
+    block the write. Returns ``True`` on success, ``False`` on failure
     (callers that care can react, most don't).
     """
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         body = json.dumps(payload, ensure_ascii=False, indent=indent)
-        tmp = path.with_suffix(path.suffix + ".tmp")
-        tmp.write_text(body, encoding="utf-8")
-        tmp.replace(path)
+        fd, tmp_name = tempfile.mkstemp(
+            dir=path.parent, prefix=f".{path.name}.", suffix=".tmp"
+        )
+        tmp = Path(tmp_name)
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                f.write(body)
+            tmp.replace(path)
+        except Exception:
+            # Unique temp names would otherwise litter the (cloud-synced)
+            # folder on every failed write.
+            tmp.unlink(missing_ok=True)
+            raise
         return True
     except Exception as exc:
         logger.error("failed to write %s: %s", path.name, exc)
