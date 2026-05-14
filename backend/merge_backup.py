@@ -21,7 +21,7 @@ Why it is safe:
     tombstone and re-suppress the item on the next sync.
 
 Usage (via the Makefile):
-    make merge-bookmarks                        # ~/Desktop/bookmarks.json
+    make merge-bookmarks                        # ~/Desktop/locwarp-bookmark.json
     make merge-bookmarks FILE=~/Desktop/x.json
     make merge-bookmarks DRY_RUN=1              # preview, write nothing
     make merge-bookmarks FORCE=1               # ignore tombstones
