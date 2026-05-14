@@ -14,10 +14,10 @@ from watchdog.events import FileSystemEventHandler
 from watchdog.observers.api import ObservedWatch
 
 from config import BOOKMARKS_FILE, get_bookmarks_path
-from models.schemas import Bookmark, BookmarkCategory, BookmarkStore
-from services.bookmark_merge import diff_store, merge_local_wins
+from models.schemas import Bookmark, BookmarkCategory, BookmarkStore, Tombstone
 from services.file_watcher import schedule as _watcher_schedule, unschedule as _watcher_unschedule
 from services.json_safe import safe_load_json, safe_write_json
+from services.store_merge import merge_stores
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +28,27 @@ _CONFIG_DEFAULT_BOOKMARKS_FILE = BOOKMARKS_FILE
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _tombstone(obj_id: str, kind: str) -> Tombstone:
+    """Build a deletion record so the delete propagates across cloud-synced
+    devices instead of being resurrected by a concurrent writer."""
+    return Tombstone(id=obj_id, kind=kind, deleted_at=_now_iso())
+
+
+def _load_store_or_empty(path: Path) -> BookmarkStore:
+    """Read a BookmarkStore from disk, tolerating a missing or corrupt file.
+
+    Returns an empty store on any failure so merge_stores can treat it as
+    "the other side had nothing" — never raises, never loses our in-memory
+    copy in response to a transient read error."""
+    raw = safe_load_json(path)
+    if not isinstance(raw, dict):
+        return BookmarkStore(categories=[], bookmarks=[], tombstones=[])
+    try:
+        return BookmarkStore(**raw)
+    except Exception:
+        return BookmarkStore(categories=[], bookmarks=[], tombstones=[])
 
 
 class BookmarkManager:
@@ -93,33 +114,28 @@ class BookmarkManager:
             logger.warning("Bookmark payload failed schema validation: %s", exc)
 
     def _save(self) -> None:
-        """Persist the current store to disk, merging any external changes.
+        """Persist the current store to disk via unconditional read-merge-write.
 
-        If the disk mtime is newer than the snapshot we hold, another
-        process (or another device via cloud sync) wrote to the file
-        between our last load and this save. In that case we diff our
-        in-memory store against the snapshot, reload the fresh disk
-        state, reapply the diff on top, and only then write.
+        Every save reads the current on-disk file and runs the commutative
+        merge_stores against it before writing. This closes the cross-device
+        clobber window: even if another device wrote the file (through iCloud)
+        since our last load — a write the old mtime guard could not see,
+        because iCloud propagation is asynchronous — its items and tombstones
+        are folded in here instead of being overwritten. Merging against an
+        unchanged file is a verified no-op (merge is idempotent).
         """
         path = self._bookmarks_path()
-        try:
-            current_mtime = path.stat().st_mtime
-        except FileNotFoundError:
-            current_mtime = 0.0
-
-        if current_mtime > self._last_loaded_mtime:
-            self._reconcile_from_disk()
-
+        self.store = merge_stores(self.store, _load_store_or_empty(path))
         payload = json.loads(self.store.model_dump_json())
         safe_write_json(path, payload)
         self._update_snapshot()
 
     def _reconcile_from_disk(self) -> None:
-        """Merge external on-disk changes into self.store using local-wins.
+        """Merge external on-disk changes into self.store via merge_stores.
 
-        No-op (besides updating snapshot) when on-disk content is invalid
-        or unreadable — better to keep our in-memory copy than to wipe it
-        in response to a transient read error.
+        No-op when the on-disk file is empty/missing (transient iCloud
+        eviction) — _load_store_or_empty yields an empty store and merging
+        with empty leaves self.store untouched.
         """
         path = self._bookmarks_path()
         try:
@@ -127,16 +143,7 @@ class BookmarkManager:
                 return
         except FileNotFoundError:
             return
-        raw = safe_load_json(path)
-        if not isinstance(raw, dict):
-            return
-        try:
-            fresh = BookmarkStore(**raw)
-        except Exception as exc:
-            logger.warning("Disk payload failed schema validation during reconcile: %s", exc)
-            return
-        local_diff = diff_store(current=self.store, baseline=self._last_loaded_snapshot)
-        self.store = merge_local_wins(remote=fresh, local_diff=local_diff)
+        self.store = merge_stores(self.store, _load_store_or_empty(path))
 
     def _update_snapshot(self) -> None:
         """Capture current store as the baseline for future diffs.
@@ -262,14 +269,16 @@ class BookmarkManager:
     ) -> BookmarkCategory:
         """Create and return a new category."""
         max_order = max((c.sort_order for c in self.store.categories), default=-1)
+        now = _now_iso()
         cat = BookmarkCategory(
             id=str(uuid.uuid4()),
             name=name,
             color=color,
             sort_order=max_order + 1,
-            created_at=_now_iso(),
+            created_at=now,
             start_date=start_date,
             end_date=end_date,
+            updated_at=now,
         )
         self.store.categories.append(cat)
         self._save()
@@ -299,6 +308,7 @@ class BookmarkManager:
             cat.start_date = start_date
         if end_date is not None:
             cat.end_date = end_date
+        cat.updated_at = _now_iso()
         self._save()
         return cat
 
@@ -323,11 +333,15 @@ class BookmarkManager:
             return False
 
         deleted_count = 0
+        now = _now_iso()
         if cascade:
             kept = []
             for bm in self.store.bookmarks:
                 if bm.category_id == cat_id:
                     deleted_count += 1
+                    # Cascade-deleted bookmarks get their own tombstones so
+                    # the deletion propagates per-item, not just per-category.
+                    self.store.tombstones.append(_tombstone(bm.id, "bookmark"))
                 else:
                     kept.append(bm)
             self.store.bookmarks = kept
@@ -335,8 +349,10 @@ class BookmarkManager:
             for bm in self.store.bookmarks:
                 if bm.category_id == cat_id:
                     bm.category_id = "default"
+                    bm.updated_at = now  # reparenting is a modification
 
         self.store.categories = [c for c in self.store.categories if c.id != cat_id]
+        self.store.tombstones.append(_tombstone(cat_id, "category"))
         self._save()
         return {"deleted": True, "deleted_bookmarks": deleted_count}
 
@@ -375,6 +391,7 @@ class BookmarkManager:
             created_at=now,
             last_used_at=now,
             country_code=country_code.lower(),
+            updated_at=now,
         )
         self.store.bookmarks.append(bm)
         self._save()
@@ -391,6 +408,7 @@ class BookmarkManager:
             if key in allowed and value is not None:
                 setattr(bm, key, value)
 
+        bm.updated_at = _now_iso()
         self._save()
         return bm
 
@@ -399,6 +417,7 @@ class BookmarkManager:
         before = len(self.store.bookmarks)
         self.store.bookmarks = [b for b in self.store.bookmarks if b.id != bm_id]
         if len(self.store.bookmarks) < before:
+            self.store.tombstones.append(_tombstone(bm_id, "bookmark"))
             self._save()
             return True
         return False
@@ -421,9 +440,11 @@ class BookmarkManager:
 
         moved = 0
         ids_set = set(bookmark_ids)
+        now = _now_iso()
         for bm in self.store.bookmarks:
             if bm.id in ids_set and bm.category_id != target_category_id:
                 bm.category_id = target_category_id
+                bm.updated_at = now
                 moved += 1
 
         if moved:
