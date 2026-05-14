@@ -1,7 +1,11 @@
 # LocWarp dev / build / install shortcuts.
 # Run `make help` for the list.
 
-.PHONY: help start dev kill install build build-install push push-build
+.PHONY: help start dev kill install build build-install push push-build merge-bookmarks
+
+# Backup JSON to fold into the live store. Override on the command line:
+#   make merge-bookmarks FILE=~/Desktop/whatever.json
+FILE ?= $(HOME)/Desktop/bookmarks.json
 
 help:
 	@awk 'BEGIN {FS = ":.*##"; printf "Usage:\n  make \033[36m<target>\033[0m\n\nTargets:\n"} \
@@ -29,3 +33,7 @@ push: ## Push the *existing* build to all testers (TESTERS= or scripts/testers.c
 
 push-build: ## Rebuild then push to all testers
 	./scripts/push-to-testers.sh --build
+
+merge-bookmarks: ## Safely merge a backup JSON into the live store (FILE=~/Desktop/x.json, DRY_RUN=1, FORCE=1)
+	@cd backend && .venv/bin/python merge_backup.py "$(FILE)" \
+		$(if $(DRY_RUN),--dry-run,) $(if $(FORCE),--force-restore,)
