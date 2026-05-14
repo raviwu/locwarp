@@ -949,30 +949,33 @@ async def root():
 
 
 
-def _wait_for_port_free(host: str, port: int, timeout: float = 4.0) -> bool:
-    """Return True once the port is free (or was never occupied)."""
-    import socket, time
+def _port_occupied(host: str, port: int) -> bool:
+    import socket
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.settimeout(0.3)
+        try:
+            s.connect((host, port))
+            return True
+        except (ConnectionRefusedError, OSError):
+            return False
+
+
+def _poll_until_free(host: str, port: int, timeout: float) -> bool:
+    import time
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.settimeout(0.3)
-            try:
-                s.connect((host, port))
-            except (ConnectionRefusedError, OSError):
-                return True  # port is free
+        if not _port_occupied(host, port):
+            return True
         time.sleep(0.25)
     return False
 
 
 def _release_stale_backend(host: str, port: int) -> None:
-    """If port is occupied, POST /api/system/shutdown and wait for it to free."""
-    import socket, urllib.request, urllib.error
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.settimeout(0.3)
-        try:
-            s.connect((host, port))
-        except (ConnectionRefusedError, OSError):
-            return  # port is already free
+    """If port is occupied, try API shutdown then lsof force-kill before giving up."""
+    import signal, subprocess, urllib.request, urllib.error
+
+    if not _port_occupied(host, port):
+        return
 
     logger.warning("port %d already in use — attempting graceful shutdown of stale backend", port)
     try:
@@ -981,18 +984,38 @@ def _release_stale_backend(host: str, port: int) -> None:
             data=b"",
             timeout=3,
         )
-    except (urllib.error.URLError, OSError) as exc:
-        logger.debug("shutdown request failed (expected if process is unresponsive): %s", exc)
+    except Exception:
+        pass
 
-    if not _wait_for_port_free(host, port, timeout=4.0):
-        logger.error(
-            "port %d is still occupied after shutdown attempt — "
-            "another LocWarp instance may be running",
-            port,
-        )
-        raise SystemExit(3)
+    if _poll_until_free(host, port, timeout=4.0):
+        logger.info("stale backend released port %d gracefully", port)
+        return
 
-    logger.info("stale backend released port %d — continuing startup", port)
+    # Graceful shutdown didn't work — force-kill by port via lsof
+    logger.warning("graceful shutdown timed out; force-killing process on port %d", port)
+    try:
+        pids = subprocess.check_output(
+            ["lsof", "-ti", f"tcp:{port}"],
+            text=True,
+            stderr=subprocess.DEVNULL,
+        ).split()
+        for pid_str in pids:
+            try:
+                os.kill(int(pid_str), signal.SIGKILL)
+            except (ProcessLookupError, PermissionError, ValueError):
+                pass
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        pass
+
+    if _poll_until_free(host, port, timeout=4.0):
+        logger.info("force-killed stale backend on port %d", port)
+        return
+
+    logger.error(
+        "port %d is still occupied after force-kill — another LocWarp instance may be running",
+        port,
+    )
+    raise SystemExit(3)
 
 
 if __name__ == "__main__":
