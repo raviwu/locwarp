@@ -300,7 +300,22 @@ class RouteManager:
     # ------------------------------------------------------------------
 
     def list_routes(self) -> list[SavedRoute]:
-        return list(self.store.routes)
+        """Routes ordered by category (sort_order), then by created_at within
+        a category, then id as a stable tiebreak.
+
+        merge_stores persists ``self.store.routes`` id-sorted for a
+        deterministic, commutative file — meaningless to a human. This read
+        path restores a sensible order for the API and UI. Routes whose
+        category no longer exists sort last."""
+        order = {c.id: c.sort_order for c in self.store.categories}
+        return sorted(
+            self.store.routes,
+            key=lambda r: (
+                order.get(r.category_id, float("inf")),
+                r.created_at or "",
+                r.id,
+            ),
+        )
 
     def find_by_name(self, name: str) -> SavedRoute | None:
         """First exact-name match. Used by the overwrite-on-save flow on
