@@ -1,7 +1,7 @@
 # LocWarp dev / build / install shortcuts.
 # Run `make help` for the list.
 
-.PHONY: help start dev kill install build build-install push push-build merge-bookmarks merge-routes
+.PHONY: help start dev kill install build build-install push push-build backup merge-bookmarks merge-routes
 
 # Backup JSON to fold into the live store. Each merge target has its own
 # default file; override either with FILE= on the command line:
@@ -34,6 +34,10 @@ push: ## Push the *existing* build to all testers (TESTERS= or scripts/testers.c
 
 push-build: ## Rebuild then push to all testers
 	./scripts/push-to-testers.sh --build
+
+backup: ## Snapshot live bookmarks + routes to ~/.locwarp/backups/, copying the latest to the Desktop
+	@/usr/bin/python3 scripts/desktop_backup.py
+	@cp ~/.locwarp/backups/locwarp-latest-backup.json ~/Desktop/locwarp-latest-backup.json 2>/dev/null && echo "  copied -> ~/Desktop/locwarp-latest-backup.json" || echo "  (no snapshot yet to copy — start LocWarp and re-run)"
 
 merge-bookmarks: ## Safely merge a bookmarks backup into the live store (default ~/Desktop/locwarp-bookmark.json; DRY_RUN=1, FORCE=1)
 	@cd backend && .venv/bin/python merge_backup.py "$(or $(FILE),$(HOME)/Desktop/locwarp-bookmark.json)" \
