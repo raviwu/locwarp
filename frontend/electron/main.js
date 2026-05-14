@@ -245,6 +245,32 @@ function resolveBackendExe() {
   return null
 }
 
+function backendErrorMessage(code, stderrTail) {
+  // Exit code 3 = backend detected port conflict and could not release it.
+  if (code === 3 || /already in use/i.test(stderrTail)) {
+    return (
+      'Another LocWarp instance is already running.\n\n' +
+      'Quit all other LocWarp windows and try again.\n\n' +
+      'If no other window is visible, open Activity Monitor, search for\n' +
+      '"locwarp-backend", and force-quit it before relaunching.'
+    )
+  }
+  // Exit code 1 or 2 = helper handshake failed (timeout or identity rejection).
+  if (code === 1 || code === 2 || /tunnel helper did not become ready/i.test(stderrTail)) {
+    return (
+      'The tunnel helper did not become available.\n\n' +
+      'Common causes:\n' +
+      '• You cancelled (or were not shown) the administrator prompt — quit and relaunch to grant access.\n' +
+      '• A previous session exited uncleanly — try quitting and relaunching once more.\n\n' +
+      'If the problem persists, check /tmp/locwarp-helper-stderr.log for details.'
+    )
+  }
+  return (
+    `The backend exited unexpectedly (code ${code}).\n\n` +
+    'Check /tmp/locwarp-stderr.log for details.'
+  )
+}
+
 function startBackend() {
   const exe = resolveBackendExe()
   if (!exe) return
@@ -265,14 +291,7 @@ function startBackend() {
       backendProc = null
       // Dev / non-Mac path: never show the helper dialog (no helper exists).
       if (code !== 0 && wasRunning && app.isPackaged && process.platform === 'darwin') {
-        dialog.showErrorBox(
-          'LocWarp could not start',
-          'The tunnel helper did not become available.\n\n' +
-          'Common causes:\n' +
-          '• You cancelled (or were not shown) the administrator prompt — quit and relaunch to grant access.\n' +
-          '• A previous session exited uncleanly — try quitting and relaunching once more.\n\n' +
-          'If the problem persists, check /tmp/locwarp-helper-stderr.log for details.'
-        )
+        dialog.showErrorBox('LocWarp could not start', backendErrorMessage(code, ''))
         app.quit()
       }
     })
@@ -284,25 +303,23 @@ function startBackend() {
   // waits inside its own lifespan for the helper's READY status file
   // before doing any disk I/O.
   console.log('[electron] spawning backend (user) + helper (root via osascript)')
+  let stderrBuf = ''
   backendProc = spawn(exe, [], {
     cwd: path.dirname(exe),
     stdio: ['ignore', 'pipe', 'pipe'],
   })
   backendProc.stdout.on('data', (d) => process.stdout.write(`[backend] ${d}`))
-  backendProc.stderr.on('data', (d) => process.stderr.write(`[backend] ${d}`))
+  backendProc.stderr.on('data', (d) => {
+    process.stderr.write(`[backend] ${d}`)
+    // Keep last 4 KB of stderr for error classification.
+    stderrBuf = (stderrBuf + d.toString()).slice(-4096)
+  })
   backendProc.on('exit', (code) => {
     console.log('[electron] backend exited with code', code)
     const wasRunning = backendProc !== null
     backendProc = null
     if (code !== 0 && wasRunning && app.isPackaged && process.platform === 'darwin') {
-      dialog.showErrorBox(
-        'LocWarp could not start',
-        'The tunnel helper did not become available.\n\n' +
-        'Common causes:\n' +
-        '• You cancelled (or were not shown) the administrator prompt — quit and relaunch to grant access.\n' +
-        '• A previous session exited uncleanly — try quitting and relaunching once more.\n\n' +
-        'If the problem persists, check /tmp/locwarp-helper-stderr.log for details.'
-      )
+      dialog.showErrorBox('LocWarp could not start', backendErrorMessage(code, stderrBuf))
       app.quit()
     }
   })

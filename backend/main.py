@@ -949,13 +949,56 @@ async def root():
 
 
 
+def _wait_for_port_free(host: str, port: int, timeout: float = 4.0) -> bool:
+    """Return True once the port is free (or was never occupied)."""
+    import socket, time
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.settimeout(0.3)
+            try:
+                s.connect((host, port))
+            except (ConnectionRefusedError, OSError):
+                return True  # port is free
+        time.sleep(0.25)
+    return False
+
+
+def _release_stale_backend(host: str, port: int) -> None:
+    """If port is occupied, POST /api/system/shutdown and wait for it to free."""
+    import socket, urllib.request, urllib.error
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.settimeout(0.3)
+        try:
+            s.connect((host, port))
+        except (ConnectionRefusedError, OSError):
+            return  # port is already free
+
+    logger.warning("port %d already in use — attempting graceful shutdown of stale backend", port)
+    try:
+        urllib.request.urlopen(
+            f"http://{host}:{port}/api/system/shutdown",
+            data=b"",
+            timeout=3,
+        )
+    except (urllib.error.URLError, OSError) as exc:
+        logger.debug("shutdown request failed (expected if process is unresponsive): %s", exc)
+
+    if not _wait_for_port_free(host, port, timeout=4.0):
+        logger.error(
+            "port %d is still occupied after shutdown attempt — "
+            "another LocWarp instance may be running",
+            port,
+        )
+        raise SystemExit(3)
+
+    logger.info("stale backend released port %d — continuing startup", port)
+
+
 if __name__ == "__main__":
-    # v0.2.59: enable uvicorn access logging so we can see which HTTP
-    # endpoints the frontend is hitting (needed to debug the "WiFi tunnel
-    # drops on USB unplug" report — we need to confirm whether the UI is
-    # POSTing /wifi/tunnel/stop or something else is triggering the
-    # cleanup).
+    _release_stale_backend(API_HOST, API_PORT)
+
     uvicorn_access = logging.getLogger("uvicorn.access")
     uvicorn_access.setLevel(logging.INFO)
-    uvicorn_access.propagate = True  # route through our basicConfig handlers
+    uvicorn_access.propagate = True
     uvicorn.run("main:app", host=API_HOST, port=API_PORT, reload=False, access_log=True)
