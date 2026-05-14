@@ -1429,7 +1429,7 @@ const BookmarkList: React.FC<BookmarkListProps> = ({
         const hiddenList = categories.filter((c) => hidden.has(c));
         if (hiddenList.length === 0) return null;
         return (
-          <div style={{ marginTop: 4, borderTop: '1px solid #333', paddingTop: 4 }}>
+          <div style={{ marginTop: 4, borderTop: '1px solid #444', paddingTop: 4 }}>
             <div
               onClick={() => setHiddenRowOpen((v) => !v)}
               style={{
