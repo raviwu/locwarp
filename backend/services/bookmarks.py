@@ -71,8 +71,11 @@ class BookmarkManager:
             ],
             bookmarks=[],
         )
+        # mtime of the file as of our last load/save. The watcher compares
+        # against it to skip self-echo events. No longer load-bearing for
+        # merge correctness — merge_stores is commutative — just an
+        # optimisation to avoid redundant reconcile work.
         self._last_loaded_mtime: float = 0.0
-        self._last_loaded_snapshot: BookmarkStore = BookmarkStore(categories=[], bookmarks=[])
         # Eagerly materialise iCloud placeholder (if any) so the first _load
         # below returns the real content instead of falling back to defaults
         # and relying on the watcher to catch up several seconds later.
@@ -109,7 +112,7 @@ class BookmarkManager:
                 len(self.store.bookmarks),
                 len(self.store.categories),
             )
-            self._update_snapshot()
+            self._record_disk_mtime()
         except Exception as exc:
             logger.warning("Bookmark payload failed schema validation: %s", exc)
 
@@ -128,7 +131,7 @@ class BookmarkManager:
         self.store = merge_stores(self.store, _load_store_or_empty(path))
         payload = json.loads(self.store.model_dump_json())
         safe_write_json(path, payload)
-        self._update_snapshot()
+        self._record_disk_mtime()
 
     def _reconcile_from_disk(self) -> None:
         """Merge external on-disk changes into self.store via merge_stores.
@@ -145,21 +148,14 @@ class BookmarkManager:
             return
         self.store = merge_stores(self.store, _load_store_or_empty(path))
 
-    def _update_snapshot(self) -> None:
-        """Capture current store as the baseline for future diffs.
-
-        Records the disk mtime at the moment we know self.store is in sync
-        with the file. A deep copy ensures later in-memory edits do not
-        mutate the snapshot.
-        """
+    def _record_disk_mtime(self) -> None:
+        """Record the file's mtime at the moment self.store is known in sync
+        with disk. Used only by the watcher to skip self-echo events."""
         path = self._bookmarks_path()
         try:
             self._last_loaded_mtime = path.stat().st_mtime
         except FileNotFoundError:
             self._last_loaded_mtime = 0.0
-        self._last_loaded_snapshot = BookmarkStore(
-            **json.loads(self.store.model_dump_json())
-        )
 
     def _bookmarks_path(self) -> Path:
         # Allow tests to override by patching the module-level BOOKMARKS_FILE.
@@ -245,14 +241,14 @@ class BookmarkManager:
                 # may have reapplied on top of the remote update.
                 payload = json.loads(after_payload)
                 safe_write_json(path, payload)
-                self._update_snapshot()
+                self._record_disk_mtime()
                 if self._on_external_change is not None:
                     try:
                         self._on_external_change()
                     except Exception:
                         logger.exception("on_external_change callback raised")
             else:
-                self._update_snapshot()  # still resync mtime
+                self._record_disk_mtime()  # still resync mtime
         except Exception:
             logger.exception("Bookmark watcher tick failed")
 
