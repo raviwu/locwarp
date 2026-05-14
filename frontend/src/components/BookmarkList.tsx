@@ -1574,33 +1574,35 @@ const BookmarkList: React.FC<BookmarkListProps> = ({
               <>
                 <div style={{ height: 1, background: '#444', margin: '4px 0' }} />
                 <div style={{ padding: '4px 12px', fontSize: 10, opacity: 0.5 }}>{t('bm.move_to')}</div>
-                {categories
-                  .filter((c) => c !== contextMenu.bm.category)
-                  .map((cat) => (
-                    <div
-                      key={cat}
-                      style={ctxItemStyle}
-                      onMouseEnter={ctxHighlight}
-                      onMouseLeave={ctxUnhighlight}
-                      onClick={() => {
-                        if (contextMenu.bm.id) {
-                          onBookmarkEdit(contextMenu.bm.id, { category: cat });
-                        }
-                        setContextMenu(null);
-                      }}
-                    >
+                <div style={{ maxHeight: 240, overflowY: 'auto' }}>
+                  {categories
+                    .filter((c) => c !== contextMenu.bm.category)
+                    .map((cat) => (
                       <div
-                        style={{
-                          width: 6,
-                          height: 6,
-                          borderRadius: '50%',
-                          background: resolveColor(cat),
-                          marginRight: 6,
+                        key={cat}
+                        style={ctxItemStyle}
+                        onMouseEnter={ctxHighlight}
+                        onMouseLeave={ctxUnhighlight}
+                        onClick={() => {
+                          if (contextMenu.bm.id) {
+                            onBookmarkEdit(contextMenu.bm.id, { category: cat });
+                          }
+                          setContextMenu(null);
                         }}
-                      />
-                      {displayCat(cat)}
-                    </div>
-                  ))}
+                      >
+                        <div
+                          style={{
+                            width: 6,
+                            height: 6,
+                            borderRadius: '50%',
+                            background: resolveColor(cat),
+                            marginRight: 6,
+                          }}
+                        />
+                        {displayCat(cat)}
+                      </div>
+                    ))}
+                </div>
               </>
             )}
           </div>
