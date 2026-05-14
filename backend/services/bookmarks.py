@@ -419,7 +419,22 @@ class BookmarkManager:
         return False
 
     def list_bookmarks(self) -> list[Bookmark]:
-        return list(self.store.bookmarks)
+        """Bookmarks ordered by category (sort_order), then by created_at
+        within a category, then id as a stable tiebreak.
+
+        merge_stores persists ``self.store.bookmarks`` id-sorted for a
+        deterministic, commutative file — meaningless to a human. This read
+        path restores a sensible order for the API and UI. Bookmarks whose
+        category no longer exists sort last."""
+        order = {c.id: c.sort_order for c in self.store.categories}
+        return sorted(
+            self.store.bookmarks,
+            key=lambda b: (
+                order.get(b.category_id, float("inf")),
+                b.created_at or "",
+                b.id,
+            ),
+        )
 
     def move_bookmarks(
         self,
