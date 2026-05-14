@@ -149,6 +149,8 @@ const BookmarkList: React.FC<BookmarkListProps> = ({
   // Categories the user has temporarily hidden from the panel. Keyed by the
   // same category string the `collapsed` map and `bookmarksByCategory` use.
   const [hidden, setHidden] = useState<Set<string>>(new Set());
+  // Whether the "N 個已隱藏" row is expanded to show its category list.
+  const [hiddenRowOpen, setHiddenRowOpen] = useState(false);
   // True once the persisted hidden list has been merged in — gates the
   // persist effect so the initial fetch is not echoed straight back.
   const hiddenLoadedRef = useRef(false);
@@ -1420,6 +1422,74 @@ const BookmarkList: React.FC<BookmarkListProps> = ({
           </div>
         </div>
       )}
+
+      {/* Unhide row — only when not searching and at least one category is hidden.
+          Intersect with current categories so a since-deleted category never shows. */}
+      {search.trim() === '' && (() => {
+        const hiddenList = categories.filter((c) => hidden.has(c));
+        if (hiddenList.length === 0) return null;
+        return (
+          <div style={{ marginTop: 4, borderTop: '1px solid #333', paddingTop: 4 }}>
+            <div
+              onClick={() => setHiddenRowOpen((v) => !v)}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 6,
+                padding: '5px 4px', cursor: 'pointer',
+                fontSize: 11, opacity: 0.6,
+              }}
+            >
+              <svg
+                width="10" height="10" viewBox="0 0 24 24" fill="none"
+                stroke="currentColor" strokeWidth="2"
+                style={{
+                  transform: hiddenRowOpen ? 'rotate(90deg)' : 'rotate(0deg)',
+                  transition: 'transform 0.2s',
+                }}
+              >
+                <polyline points="9,18 15,12 9,6" />
+              </svg>
+              <span>{t('bm.hidden_count', { n: hiddenList.length })}</span>
+            </div>
+            {hiddenRowOpen && (
+              <div style={{ paddingLeft: 20 }}>
+                {hiddenList.map((cat) => (
+                  <div
+                    key={cat}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 6,
+                      padding: '4px 6px', fontSize: 12, opacity: 0.7,
+                    }}
+                  >
+                    <div style={{
+                      width: 8, height: 8, borderRadius: '50%',
+                      background: resolveColor(cat), flexShrink: 0,
+                    }} />
+                    <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {displayCat(cat)}
+                    </span>
+                    <button
+                      type="button"
+                      title={t('bm.unhide_category')}
+                      onClick={() => unhideCategory(cat)}
+                      style={{
+                        background: 'none', border: 'none', padding: 2,
+                        cursor: 'pointer', color: 'inherit', opacity: 0.7,
+                        display: 'inline-flex', alignItems: 'center',
+                      }}
+                    >
+                      {/* eye icon */}
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                        <circle cx="12" cy="12" r="3" />
+                      </svg>
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       {/* Context menu (dismissed via document click listener — see useEffect) */}
       {contextMenu && createPortal(
