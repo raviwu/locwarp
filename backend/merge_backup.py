@@ -22,13 +22,16 @@ Why it is safe:
 
 Usage (via the Makefile):
     make merge-bookmarks                        # ~/Desktop/locwarp-bookmark.json
+    make merge-routes                           # ~/Desktop/locwarp-route.json
     make merge-bookmarks FILE=~/Desktop/x.json
     make merge-bookmarks DRY_RUN=1              # preview, write nothing
     make merge-bookmarks FORCE=1               # ignore tombstones
 
-Auto-detects whether the backup is a BookmarkStore or RouteStore by which
-item key it carries, and merges into the matching live path (the iCloud
-sync folder when sync is on, else ``~/.locwarp/``).
+Bookmarks and routes get the identical treatment — this one script handles
+both. It auto-detects whether the backup is a BookmarkStore or RouteStore
+by which item key it carries, and merges into the matching live path (the
+iCloud sync folder when sync is on, else ``~/.locwarp/``). The two Makefile
+targets differ only in their default backup filename.
 """
 from __future__ import annotations
 

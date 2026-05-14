@@ -1,11 +1,12 @@
 # LocWarp dev / build / install shortcuts.
 # Run `make help` for the list.
 
-.PHONY: help start dev kill install build build-install push push-build merge-bookmarks
+.PHONY: help start dev kill install build build-install push push-build merge-bookmarks merge-routes
 
-# Backup JSON to fold into the live store. Override on the command line:
+# Backup JSON to fold into the live store. Each merge target has its own
+# default file; override either with FILE= on the command line:
 #   make merge-bookmarks FILE=~/Desktop/whatever.json
-FILE ?= $(HOME)/Desktop/locwarp-bookmark.json
+#   make merge-routes    FILE=~/Desktop/whatever.json
 
 help:
 	@awk 'BEGIN {FS = ":.*##"; printf "Usage:\n  make \033[36m<target>\033[0m\n\nTargets:\n"} \
@@ -34,6 +35,10 @@ push: ## Push the *existing* build to all testers (TESTERS= or scripts/testers.c
 push-build: ## Rebuild then push to all testers
 	./scripts/push-to-testers.sh --build
 
-merge-bookmarks: ## Safely merge a backup JSON into the live store (default FILE=~/Desktop/locwarp-bookmark.json; DRY_RUN=1, FORCE=1)
-	@cd backend && .venv/bin/python merge_backup.py "$(FILE)" \
+merge-bookmarks: ## Safely merge a bookmarks backup into the live store (default ~/Desktop/locwarp-bookmark.json; DRY_RUN=1, FORCE=1)
+	@cd backend && .venv/bin/python merge_backup.py "$(or $(FILE),$(HOME)/Desktop/locwarp-bookmark.json)" \
+		$(if $(DRY_RUN),--dry-run,) $(if $(FORCE),--force-restore,)
+
+merge-routes: ## Safely merge a routes backup into the live store (default ~/Desktop/locwarp-route.json; DRY_RUN=1, FORCE=1)
+	@cd backend && .venv/bin/python merge_backup.py "$(or $(FILE),$(HOME)/Desktop/locwarp-route.json)" \
 		$(if $(DRY_RUN),--dry-run,) $(if $(FORCE),--force-restore,)
