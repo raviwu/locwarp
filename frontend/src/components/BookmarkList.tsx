@@ -1141,7 +1141,9 @@ const BookmarkList: React.FC<BookmarkListProps> = ({
       })()}
 
       {/* Bookmark groups — only when NOT searching */}
-      {search.trim() === '' && Object.entries(bookmarksByCategory).map(([cat, bms]) => {
+      {search.trim() === '' && Object.entries(bookmarksByCategory)
+        .filter(([cat]) => !hidden.has(cat))
+        .map(([cat, bms]) => {
         const catIds = bms.map((b) => b.id).filter((x): x is string => !!x);
         const selectedInCat = catIds.filter((id) => selectedIds.has(id)).length;
         const allSelectedInCat = catIds.length > 0 && selectedInCat === catIds.length;
@@ -1231,6 +1233,23 @@ const BookmarkList: React.FC<BookmarkListProps> = ({
             <span style={{ marginLeft: 'auto', opacity: 0.4, fontWeight: 400, fontSize: 10 }}>
               {bms.length}
             </span>
+            <button
+              type="button"
+              className="bookmark-hide-btn"
+              title={t('bm.hide_category')}
+              onClick={(e) => { e.stopPropagation(); hideCategory(cat); }}
+              style={{
+                background: 'none', border: 'none', padding: 2, marginLeft: 2,
+                cursor: 'pointer', color: 'inherit', opacity: 0.55,
+                display: 'inline-flex', alignItems: 'center',
+              }}
+            >
+              {/* eye-off icon */}
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19m-6.72-1.07a3 3 0 11-4.24-4.24" />
+                <line x1="1" y1="1" x2="23" y2="23" />
+              </svg>
+            </button>
           </div>
 
           {!collapsed[cat] && (

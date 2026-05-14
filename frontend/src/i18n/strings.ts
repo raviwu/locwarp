@@ -614,6 +614,7 @@ export const STRINGS = {
   'bm.deselect_all': { zh: '取消全選', en: 'Deselect all' },
   'bm.select_category': { zh: '選取整個分類', en: 'Select entire category' },
   'bm.deselect_category': { zh: '取消整個分類', en: 'Deselect entire category' },
+  'bm.hide_category': { zh: '暫時隱藏此分類', en: 'Hide category' },
   'bm.delete_selected': { zh: '刪除所選 ({n})', en: 'Delete selected ({n})' },
   'bm.delete_confirm': { zh: '確定要刪除 {n} 個收藏嗎?', en: 'Delete {n} bookmarks?' },
   'update.title': { zh: '有新版本可更新', en: 'Update available' },

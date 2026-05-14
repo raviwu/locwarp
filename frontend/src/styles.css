@@ -2871,3 +2871,7 @@ input:focus-visible {
 @media (prefers-reduced-motion: reduce) {
   .lw-update-pill { animation: none; background-position: 0% 50%; }
 }
+
+.bookmark-hide-btn { visibility: hidden; }
+.bookmark-group:hover .bookmark-hide-btn { visibility: visible; }
+.bookmark-hide-btn:hover { opacity: 1 !important; }
