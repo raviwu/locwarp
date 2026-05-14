@@ -66,27 +66,39 @@ class TunnelHelperClient:
         ``osascript`` admin prompt + ``sudo`` bootstrap delay before
         the helper starts writing its status file. Callers that need
         a tighter bound (e.g. tests) should override explicitly.
+
+        A stale READY file from a previous unclean exit (socket already
+        gone) causes an immediate FileNotFoundError if we connect outside
+        the poll loop. Keep the connect attempt inside the loop so we
+        retry after the new helper clears the stale file and writes a
+        fresh READY.
         """
         loop = asyncio.get_running_loop()
         deadline = loop.time() + timeout
-        ready = False
         while loop.time() < deadline:
             if self.status_path.exists():
                 try:
                     if self.status_path.read_text().strip() == "READY":
-                        ready = True
-                        break
+                        try:
+                            self._reader, self._writer = await asyncio.open_unix_connection(
+                                path=str(self.sock_path)
+                            )
+                            logger.info("connected to tunnel helper at %s", self.sock_path)
+                            return
+                        except FileNotFoundError:
+                            # Stale READY (socket already gone from previous
+                            # unclean exit). The new helper will unlink it and
+                            # write a fresh READY once it binds — keep polling.
+                            logger.debug(
+                                "stale READY at %s (socket absent); continuing to poll",
+                                self.status_path,
+                            )
                 except OSError:
-                    pass  # transient — keep polling
+                    pass  # transient read error — keep polling
             await asyncio.sleep(0.2)
-        if not ready:
-            raise TimeoutError(
-                f"helper did not become ready at {self.status_path} within {timeout}s"
-            )
-        self._reader, self._writer = await asyncio.open_unix_connection(
-            path=str(self.sock_path)
+        raise TimeoutError(
+            f"helper did not become ready at {self.status_path} within {timeout}s"
         )
-        logger.info("connected to tunnel helper at %s", self.sock_path)
 
     @property
     def is_connected(self) -> bool:

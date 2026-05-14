@@ -268,8 +268,10 @@ function startBackend() {
         dialog.showErrorBox(
           'LocWarp could not start',
           'The tunnel helper did not become available.\n\n' +
-          'This usually means you cancelled the administrator prompt at launch. ' +
-          'Quit the app and relaunch to grant access.'
+          'Common causes:\n' +
+          '• You cancelled (or were not shown) the administrator prompt — quit and relaunch to grant access.\n' +
+          '• A previous session exited uncleanly — try quitting and relaunching once more.\n\n' +
+          'If the problem persists, check /tmp/locwarp-helper-stderr.log for details.'
         )
         app.quit()
       }
@@ -296,8 +298,10 @@ function startBackend() {
       dialog.showErrorBox(
         'LocWarp could not start',
         'The tunnel helper did not become available.\n\n' +
-        'This usually means you cancelled the administrator prompt at launch. ' +
-        'Quit the app and relaunch to grant access.'
+        'Common causes:\n' +
+        '• You cancelled (or were not shown) the administrator prompt — quit and relaunch to grant access.\n' +
+        '• A previous session exited uncleanly — try quitting and relaunching once more.\n\n' +
+        'If the problem persists, check /tmp/locwarp-helper-stderr.log for details.'
       )
       app.quit()
     }

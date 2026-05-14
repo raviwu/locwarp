@@ -139,3 +139,44 @@ async def test_connect_timeout_when_status_missing(tmp_path):
     )
     with pytest.raises(TimeoutError):
         await client.connect(timeout=0.5)
+
+
+@pytest.mark.asyncio
+async def test_connect_recovers_from_stale_ready(tmp_path):
+    """A stale READY file whose socket is absent must not abort the connect.
+
+    The client should keep polling until the new helper clears the stale
+    READY and writes a fresh one backed by a live socket.
+    """
+    sock = tmp_path / "helper.sock"
+    status = tmp_path / "helper.status"
+
+    async def handler(req):
+        return {"jsonrpc": "2.0", "id": req["id"], "result": {"ok": True, "helper_pid": 99}}
+
+    # Write a READY file with NO socket behind it (simulates unclean previous exit).
+    status.write_text("READY\n")
+
+    client = TunnelHelperClient(sock_path=sock, status_path=status)
+
+    # After a short delay the "new helper" starts: it clears the stale READY,
+    # binds the socket, then writes a fresh READY.
+    async def _delayed_start():
+        await asyncio.sleep(0.3)
+        status.unlink(missing_ok=True)          # helper clears stale status
+        server = await _fake_server(sock, handler)
+        await asyncio.sleep(0.05)               # brief bind window
+        status.write_text("READY\n")            # helper publishes fresh READY
+        return server
+
+    start_task = asyncio.create_task(_delayed_start())
+    await client.connect(timeout=3.0)
+    server = await start_task
+
+    try:
+        result = await client.ping()
+        assert result == {"ok": True, "helper_pid": 99}
+    finally:
+        await client.close()
+        server.close()
+        await server.wait_closed()
