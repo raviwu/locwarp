@@ -8,6 +8,8 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 cd "$ROOT"
 
+bash "$ROOT/scripts/kill-all.sh"
+
 echo
 echo "============================================================"
 echo " [1/3] Build backend with PyInstaller"

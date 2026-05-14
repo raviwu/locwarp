@@ -1,7 +1,7 @@
 # LocWarp dev / build / install shortcuts.
 # Run `make help` for the list.
 
-.PHONY: help start dev install build build-install push push-build
+.PHONY: help start dev kill install build build-install push push-build
 
 help:
 	@awk 'BEGIN {FS = ":.*##"; printf "Usage:\n  make \033[36m<target>\033[0m\n\nTargets:\n"} \
@@ -11,6 +11,9 @@ start: ## Run start.sh (sudo dev launcher — iOS 17+ ready)
 	./start.sh
 
 dev: start ## Alias for start
+
+kill: ## Kill all running LocWarp processes (app + backend + helper)
+	./scripts/kill-all.sh
 
 build: ## Build the DMG via build-installer-mac.sh
 	./build-installer-mac.sh

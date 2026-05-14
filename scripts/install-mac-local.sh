@@ -35,10 +35,7 @@ if [[ ! -d "$APP_SRC" ]]; then
   exit 1
 fi
 
-echo "==> Quitting any running LocWarp"
-osascript -e 'tell application "LocWarp" to quit' 2>/dev/null || true
-sleep 1
-pkill -f "/Applications/LocWarp.app/Contents/MacOS/LocWarp" 2>/dev/null || true
+bash "$ROOT/scripts/kill-all.sh"
 
 echo "==> Replacing /Applications/LocWarp.app"
 sudo rm -rf /Applications/LocWarp.app
