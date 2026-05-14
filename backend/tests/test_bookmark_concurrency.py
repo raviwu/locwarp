@@ -18,7 +18,7 @@ def test_manager_records_mtime_after_load(tmp_path, monkeypatch):
     )
     mgr = BookmarkManager()
     assert mgr._last_loaded_mtime == bookmarks.stat().st_mtime
-    assert len(mgr._last_loaded_snapshot.categories) == 1
+    assert len(mgr.store.categories) == 1
 
 
 def test_manager_records_mtime_after_save(tmp_path, monkeypatch):
@@ -27,7 +27,7 @@ def test_manager_records_mtime_after_save(tmp_path, monkeypatch):
     bm = mgr.create_bookmark(name="A", lat=1.0, lng=2.0)
     assert (tmp_path / "bookmarks.json").exists()
     assert mgr._last_loaded_mtime == (tmp_path / "bookmarks.json").stat().st_mtime
-    assert any(b.id == bm.id for b in mgr._last_loaded_snapshot.bookmarks)
+    assert any(b.id == bm.id for b in mgr.store.bookmarks)
 
 
 import json as _json
@@ -69,17 +69,31 @@ def test_save_merges_when_disk_changed_externally(tmp_path, monkeypatch):
     assert {"A1", "A2", "from-device-b"} <= names
 
 
-def test_save_does_not_merge_when_disk_unchanged(tmp_path, monkeypatch):
+def test_save_merges_concurrent_external_addition(tmp_path, monkeypatch):
+    """Two managers on the same file, each adding a distinct bookmark.
+
+    Reproduces symptom 2: B's _save must read-merge-write so A's
+    already-written bookmark is not clobbered."""
     _patch_paths(tmp_path, monkeypatch)
-    mgr = BookmarkManager()
-    mgr.create_bookmark(name="X", lat=1.0, lng=1.0)
-    first_payload = (tmp_path / "bookmarks.json").read_text(encoding="utf-8")
-    mgr.create_bookmark(name="Y", lat=2.0, lng=2.0)
-    second_payload = (tmp_path / "bookmarks.json").read_text(encoding="utf-8")
-    assert first_payload != second_payload
-    final = _json.loads(second_payload)
-    names = {b["name"] for b in final["bookmarks"]}
-    assert names == {"X", "Y"}
+    a = BookmarkManager()
+    b = BookmarkManager()
+    a.create_bookmark(name="from-A", lat=1.0, lng=1.0)   # a._save writes file
+    b.create_bookmark(name="from-B", lat=2.0, lng=2.0)   # b._save must keep from-A
+    names = {bm.name for bm in BookmarkManager().list_bookmarks()}
+    assert names == {"from-A", "from-B"}
+
+
+def test_delete_propagates_and_does_not_resurrect(tmp_path, monkeypatch):
+    """Reproduces symptom 3: a category deleted on A must stay deleted even
+    after B (which still had it) read-merge-writes an unrelated change."""
+    _patch_paths(tmp_path, monkeypatch)
+    a = BookmarkManager()
+    cat = a.create_category("Trip")
+    b = BookmarkManager()                        # b loads the file, also has "Trip"
+    a.delete_category(cat.id)                    # a writes file w/ tombstone
+    b.create_bookmark(name="unrelated", lat=1.0, lng=1.0)  # b read-merge-writes
+    cats = {c.id for c in BookmarkManager().list_categories()}
+    assert cat.id not in cats
 
 
 def test_reconcile_loads_external_bookmark(tmp_path, monkeypatch):
@@ -214,9 +228,9 @@ def test_watcher_handler_triggers_on_moved_to_target(tmp_path, monkeypatch):
 def test_two_managers_on_same_file_converge(tmp_path, monkeypatch):
     """Simulate two devices both editing the same bookmarks.json.
 
-    After both have written, the final state should contain all
-    non-conflicting edits from both sides. Local-wins semantics apply
-    only on overlapping ids; disjoint edits all survive.
+    After both have written, the final state contains all edits from both
+    sides. merge_stores unions by id; on an id collision the newer
+    updated_at wins. Disjoint edits all survive.
     """
     _patch_paths(tmp_path, monkeypatch)
     bookmarks = tmp_path / "bookmarks.json"

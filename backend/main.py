@@ -117,9 +117,33 @@ class AppState:
         """Load on-disk state. Must run after the helper has migrated
         any root-owned files back to the user. Idempotent — repeated
         calls rebuild the managers and re-read settings from disk."""
+        self._reload_sync_folder()
         self._load_settings()
         self.bookmark_manager = BookmarkManager()
         self.route_manager = RouteManager()
+
+    def _reload_sync_folder(self) -> None:
+        """Re-read sync_folder + cloud_sync_dismissed from settings.json.
+
+        ``_load_persisted_state`` runs in ``__init__`` — which executes at
+        module import time, BEFORE the elevated helper chowns root-owned
+        ~/.locwarp/ files back to the user. If settings.json was root-owned
+        (an older all-root build, or a prior ``sudo ./start.sh`` dev run),
+        that early read fails silently and ``_sync_folder`` latches to None,
+        so the cloud-sync toggle shows OFF for the whole session even though
+        sync was enabled. ``load_state`` runs AFTER the chown, so re-reading
+        here recovers the real value. ``_load_settings`` does not touch
+        sync_folder, so this dedicated re-read is required."""
+        from services.json_safe import safe_load_json
+        data = safe_load_json(SETTINGS_FILE)
+        if not isinstance(data, dict):
+            return
+        sf = data.get("sync_folder")
+        if isinstance(sf, str) and sf:
+            self._sync_folder = sf
+        cdsm = data.get("cloud_sync_dismissed")
+        if isinstance(cdsm, bool):
+            self._cloud_sync_dismissed = cdsm
 
     def _load_settings(self):
         from services.json_safe import safe_load_json

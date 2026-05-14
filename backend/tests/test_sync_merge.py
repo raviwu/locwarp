@@ -200,3 +200,48 @@ def test_merge_bookmark_stores_skips_on_parse_failure(tmp_path):
     # Should not raise; remote file left as-is.
     merge_bookmark_stores(local, remote)
     assert remote.read_text() == "{not json}"
+
+
+def test_merge_bookmark_stores_newer_updated_at_wins(tmp_path):
+    """With timestamps present, the migration merge is per-item LWW —
+    the copy with the newer updated_at wins, not "local" unconditionally."""
+    local = tmp_path / "local.json"
+    remote = tmp_path / "remote.json"
+    _write(local, _bm_payload([{
+        "id": "a", "name": "STALE-LOCAL", "lat": 1.0, "lng": 1.0,
+        "category_id": "default", "created_at": "2026-05-12T00:00:00+00:00",
+        "updated_at": "2026-05-12T01:00:00+00:00",
+    }]))
+    _write(remote, _bm_payload([{
+        "id": "a", "name": "FRESH-REMOTE", "lat": 9.0, "lng": 9.0,
+        "category_id": "default", "created_at": "2026-05-12T00:00:00+00:00",
+        "updated_at": "2026-05-12T09:00:00+00:00",
+    }]))
+
+    merge_bookmark_stores(local, remote)
+
+    [bm] = json.loads(remote.read_text())["bookmarks"]
+    assert bm["name"] == "FRESH-REMOTE"
+
+
+def test_migration_merge_respects_tombstones(tmp_path):
+    """A tombstone on the remote side suppresses an item the local side
+    still carries — the deletion is honoured, not undone by the migration."""
+    local = tmp_path / "local.json"
+    remote = tmp_path / "remote.json"
+    _write(local, _bm_payload([{
+        "id": "1", "name": "stale", "lat": 0.0, "lng": 0.0,
+        "category_id": "default", "created_at": "2026-05-14T00:00:00+00:00",
+        "updated_at": "2026-05-14T01:00:00+00:00",
+    }]))
+    remote_payload = _bm_payload([])
+    remote_payload["tombstones"] = [
+        {"id": "1", "kind": "bookmark", "deleted_at": "2026-05-14T03:00:00+00:00"}
+    ]
+    _write(remote, remote_payload)
+
+    merge_bookmark_stores(local, remote)
+
+    merged = json.loads(remote.read_text())
+    assert merged["bookmarks"] == []
+    assert {t["id"] for t in merged["tombstones"]} == {"1"}

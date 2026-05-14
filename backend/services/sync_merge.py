@@ -4,7 +4,9 @@ Used by ``cloud_sync.migrate_pair`` when enabling/disabling cloud sync
 and the destination already has a file from a prior session on another
 device. Strategy:
 
-1. Union categories + items by ID (local wins on ID conflict).
+1. ``merge_stores``: per-item LWW union by ID (newer ``updated_at`` wins;
+   tie keeps local), plus tombstone suppression so a deletion on either
+   side is honoured rather than resurrected.
 2. **Collapse same-name categories**: when two distinct category IDs
    carry the same ``name``, keep the one with the earliest ``created_at``
    and remap items pointing at the dropped duplicate.
@@ -30,6 +32,7 @@ from pathlib import Path
 
 from models.schemas import BookmarkStore, RouteStore
 from services.json_safe import safe_load_json, safe_write_json
+from services.store_merge import merge_stores
 
 logger = logging.getLogger(__name__)
 
@@ -60,39 +63,42 @@ def _build_category_remap(categories: list) -> tuple[list, dict[str, str]]:
 
 
 def _merge_bookmark_payload(local: BookmarkStore, remote: BookmarkStore) -> BookmarkStore:
-    cats = {c.id: c for c in remote.categories}
-    cats.update({c.id: c for c in local.categories})
-    bms = {b.id: b for b in remote.bookmarks}
-    bms.update({b.id: b for b in local.bookmarks})
-
-    deduped_cats, remap = _build_category_remap(list(cats.values()))
+    # merge_stores does the per-item LWW union + tombstone suppression; the
+    # same-name category collapse below is a separate bootstrap concern (two
+    # devices independently created "Trips" with different ids).
+    merged = merge_stores(local, remote)
+    deduped_cats, remap = _build_category_remap(list(merged.categories))
     if remap:
-        for bm in bms.values():
+        for bm in merged.bookmarks:
             if bm.category_id in remap:
                 bm.category_id = remap[bm.category_id]
         logger.info(
             "sync_merge bookmarks: collapsed %d same-name duplicate categories",
             len(remap),
         )
-    return BookmarkStore(categories=deduped_cats, bookmarks=list(bms.values()))
+    return BookmarkStore(
+        categories=deduped_cats,
+        bookmarks=merged.bookmarks,
+        tombstones=merged.tombstones,
+    )
 
 
 def _merge_route_payload(local: RouteStore, remote: RouteStore) -> RouteStore:
-    cats = {c.id: c for c in remote.categories}
-    cats.update({c.id: c for c in local.categories})
-    routes = {r.id: r for r in remote.routes}
-    routes.update({r.id: r for r in local.routes})
-
-    deduped_cats, remap = _build_category_remap(list(cats.values()))
+    merged = merge_stores(local, remote)
+    deduped_cats, remap = _build_category_remap(list(merged.categories))
     if remap:
-        for r in routes.values():
+        for r in merged.routes:
             if r.category_id in remap:
                 r.category_id = remap[r.category_id]
         logger.info(
             "sync_merge routes: collapsed %d same-name duplicate categories",
             len(remap),
         )
-    return RouteStore(categories=deduped_cats, routes=list(routes.values()))
+    return RouteStore(
+        categories=deduped_cats,
+        routes=merged.routes,
+        tombstones=merged.tombstones,
+    )
 
 
 def merge_bookmark_stores(local_path: Path, remote_path: Path) -> None:
