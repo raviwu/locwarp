@@ -177,11 +177,19 @@ export const wifiRepair = () => request<{ status: string; udid: string; name: st
 export const amfiRevealDeveloperMode = (udid: string) =>
   request<{ status: string }>('POST', `/api/device/${encodeURIComponent(udid)}/amfi/reveal-developer-mode`)
 
-// Bookmark UI state (expand/collapse per category, persisted in settings.json)
+// Bookmark UI state (expand/collapse + hide per category, in settings.json)
 export const getBookmarkUiState = () =>
-  request<{ expanded_categories: string[] | null }>('GET', '/api/bookmarks/ui-state')
-export const setBookmarkUiState = (expanded_categories: string[]) =>
-  request<{ status: string; expanded_categories: string[] }>('POST', '/api/bookmarks/ui-state', { expanded_categories })
+  request<{ expanded_categories: string[] | null; hidden_categories: string[] | null }>(
+    'GET', '/api/bookmarks/ui-state',
+  )
+// Partial update: pass only the keys you want to change — sending
+// hidden_categories alone never clears expanded_categories, and vice versa.
+export const setBookmarkUiState = (
+  state: { expanded_categories?: string[]; hidden_categories?: string[] },
+) =>
+  request<{ status: string; expanded_categories: string[] | null; hidden_categories: string[] | null }>(
+    'POST', '/api/bookmarks/ui-state', state,
+  )
 
 // Location simulation
 // Every action accepts an optional `udid` so the caller can target a specific

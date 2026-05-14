@@ -369,7 +369,7 @@ const BookmarkList: React.FC<BookmarkListProps> = ({
     if (uiStateSaveTimer.current) clearTimeout(uiStateSaveTimer.current);
     uiStateSaveTimer.current = setTimeout(() => {
       const expanded = categories.filter((c) => !nextCollapsed[c]);
-      void setBookmarkUiState(expanded).catch(() => { /* best effort */ });
+      void setBookmarkUiState({ expanded_categories: expanded }).catch(() => { /* best effort */ });
     }, 400);
   };
 
