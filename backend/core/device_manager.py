@@ -32,7 +32,7 @@ from pymobiledevice3.services.dvt.instruments.location_simulation import Locatio
 from pymobiledevice3.services.simulate_location import DtSimulateLocation
 from pymobiledevice3.usbmux import list_devices
 
-from config import DEVICE_NAMES_FILE
+from config import DEVICE_NAMES_FILE, WIFI_ALIASES_FILE
 from models.schemas import DeviceInfo
 from services.json_safe import safe_load_json, safe_write_json
 from services.location_service import (
@@ -91,6 +91,85 @@ def _remember_device_name(udid: str, name: str) -> None:
         return
     cache[udid] = name
     safe_write_json(DEVICE_NAMES_FILE, cache)
+
+
+# ---------------------------------------------------------------------------
+# WiFi-discovery alias cache
+# ---------------------------------------------------------------------------
+#
+# /wifi/tunnel/discover only has what Bonjour broadcasts: an IP, a port, and
+# the service instance name (``<hex-id>._remotepairing._tcp.local.``). None of
+# those are human-readable. Resolving the real DeviceName requires the full
+# RemotePairing handshake + RSD tunnel, which is too expensive (and needs
+# root for utun) to run for every entry in the picker.
+#
+# Instead, we remember it the moment we've already paid that cost — on a
+# successful connect — and key the cache by the stable Bonjour instance id
+# so the next discover can label the same iPhone correctly.
+
+_REMOTEPAIRING_BONJOUR_SUFFIX = "._remotepairing._tcp.local."
+
+
+def strip_bonjour_suffix(instance: Optional[str]) -> str:
+    """Return the bare stable id from a ``_remotepairing._tcp.local.`` PTR.
+
+    e.g. ``"ABCDEF1234567890._remotepairing._tcp.local."`` → ``"ABCDEF1234567890"``.
+    Accepts the form with or without a trailing dot since different
+    pymobiledevice3 code paths normalize it differently — both must yield
+    the same cache key. Returns an empty string for falsy input.
+    """
+    if not instance:
+        return ""
+    s = instance.rstrip(".")
+    suffix_no_dot = _REMOTEPAIRING_BONJOUR_SUFFIX.rstrip(".")
+    if s.endswith(suffix_no_dot):
+        s = s[: -len(suffix_no_dot)]
+    return s.rstrip(".")
+
+
+def _load_wifi_alias_cache() -> Dict[str, Dict[str, str]]:
+    """Load the persisted Bonjour-id → {udid, name} map.
+
+    Returns an empty dict on any failure (missing file, bad JSON, wrong
+    shape) so callers can blindly ``.get(...)``. Entries with non-string
+    values are dropped silently — the alias cache is best-effort UX
+    polish, not authoritative state.
+    """
+    raw = safe_load_json(WIFI_ALIASES_FILE)
+    if not isinstance(raw, dict):
+        return {}
+    out: Dict[str, Dict[str, str]] = {}
+    for k, v in raw.items():
+        if not isinstance(v, dict):
+            continue
+        udid = v.get("udid")
+        name = v.get("name")
+        if not isinstance(udid, str) or not isinstance(name, str) or not name:
+            continue
+        out[str(k)] = {"udid": udid, "name": name}
+    return out
+
+
+def _remember_wifi_alias(bonjour_id: str, udid: str, name: str) -> None:
+    """Persist ``bonjour_id`` → {udid, name} so future discoveries label
+    this iPhone with its real DeviceName.
+
+    Skips writes when:
+      - ``bonjour_id`` or ``udid`` is empty (nothing stable to key on)
+      - ``name`` is a generic DeviceClass fallback (would mislabel the
+        cache the next time discovery runs)
+      - the entry already matches what's on disk (avoid pointless I/O)
+    """
+    if not bonjour_id or not udid or not name:
+        return
+    if name in ("iPhone", "iPad", "iPod touch", "Unknown"):
+        return
+    cache = _load_wifi_alias_cache()
+    existing = cache.get(bonjour_id)
+    if existing and existing.get("udid") == udid and existing.get("name") == name:
+        return
+    cache[bonjour_id] = {"udid": udid, "name": name}
+    safe_write_json(WIFI_ALIASES_FILE, cache)
 
 
 @dataclass
@@ -657,13 +736,23 @@ class DeviceManager:
     # ------------------------------------------------------------------
 
     async def connect_wifi_tunnel(
-        self, rsd_address: str, rsd_port: int
+        self,
+        rsd_address: str,
+        rsd_port: int,
+        *,
+        bonjour_id: Optional[str] = None,
     ) -> DeviceInfo:
         """Connect to a device via an existing WiFi tunnel.
 
         Use this when a WiFi tunnel has already been established (by the
         in-process ``TunnelRunner`` or ``pymobiledevice3 remote start-tunnel``).
         The caller provides the RSD address and port.
+
+        Pass ``bonjour_id`` (stable id stripped from the ``_remotepairing._tcp``
+        PTR) if the caller knows which Bonjour entry the user picked from
+        /wifi/tunnel/discover — we persist a ``bonjour_id → {udid, name}``
+        alias so the next discover can label the picker with the real
+        DeviceName instead of an opaque hex id or IPv6 link-local address.
 
         Returns a ``DeviceInfo`` describing the connected device.
         """
@@ -728,6 +817,10 @@ class DeviceManager:
         # USB, so feed it back into the persistent cache too — covers the
         # "user renamed the device since last USB plug" case.
         _remember_device_name(udid, device_name)
+        # If discover handed us a Bonjour id, remember which UDID+name it
+        # mapped to. _remember_wifi_alias skips generic names internally.
+        if bonjour_id:
+            _remember_wifi_alias(bonjour_id, udid, device_name)
 
         if udid in self._connections:
             await self.disconnect(udid)

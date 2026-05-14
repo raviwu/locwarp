@@ -128,8 +128,22 @@ export const connectDevice = (udid: string) => request<any>('POST', `/api/device
 export const disconnectDevice = (udid: string) => request<any>('DELETE', `/api/device/${udid}/connect`)
 export const wifiConnect = (ip: string) => request<any>('POST', '/api/device/wifi/connect', { ip })
 export const wifiScan = () => request<any[]>('GET', '/api/device/wifi/scan')
-export const wifiTunnelStartAndConnect = (ip: string, port = 49152, udid?: string) =>
-  request<any>('POST', '/api/device/wifi/tunnel/start-and-connect', { ip, port, ...(udid ? { udid } : {}) })
+// bonjour_id: stable id stripped from the RemotePairing PTR by the
+// backend's discover endpoint. When we know which Bonjour entry the user
+// picked we echo it back so the backend can persist a
+// bonjour_id → DeviceName alias for next time.
+export const wifiTunnelStartAndConnect = (
+  ip: string,
+  port = 49152,
+  udid?: string,
+  bonjour_id?: string,
+) =>
+  request<any>('POST', '/api/device/wifi/tunnel/start-and-connect', {
+    ip,
+    port,
+    ...(udid ? { udid } : {}),
+    ...(bonjour_id ? { bonjour_id } : {}),
+  })
 export interface TunnelInfo {
   udid: string
   name?: string
@@ -142,7 +156,16 @@ export const wifiTunnelStatus = () =>
   request<{ tunnels: TunnelInfo[]; running: boolean; rsd_address?: string; rsd_port?: number }>(
     'GET', '/api/device/wifi/tunnel/status',
   )
-export const wifiTunnelDiscover = () => request<{ devices: { ip: string; port: number; host: string; name: string }[] }>('GET', '/api/device/wifi/tunnel/discover')
+export const wifiTunnelDiscover = () =>
+  request<{
+    devices: {
+      ip: string
+      port: number
+      host: string
+      name: string
+      bonjour_id?: string
+    }[]
+  }>('GET', '/api/device/wifi/tunnel/discover')
 export const wifiTunnelFindPort = (ip: string) =>
   request<{ ip: string; ports: number[] }>('POST', '/api/device/wifi/tunnel/find_port', { ip })
 // udid: stop one specific tunnel; omit to stop all (legacy stop-all)

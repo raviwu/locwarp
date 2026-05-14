@@ -25,7 +25,12 @@ interface DeviceStatusProps {
   isConnected: boolean;
   onScan: () => void | Promise<void>;
   onSelect: (id: string) => void;
-  onStartWifiTunnel?: (ip: string, port?: number) => Promise<any>;
+  onStartWifiTunnel?: (
+    ip: string,
+    port?: number,
+    udidHint?: string,
+    bonjourId?: string,
+  ) => Promise<any>;
   onStopTunnel?: (udid?: string) => Promise<void>;
   tunnelStatus?: TunnelStatus;
   tunnels?: TunnelInfo[];
@@ -112,11 +117,18 @@ const DeviceStatus: React.FC<DeviceStatusProps> = ({
 
   // Multi-result detect: keep the full list and let the user pick one when
   // mDNS / subnet scan returns 2+ iPhones. Single result auto-fills as before.
-  const [discoverResults, setDiscoverResults] = useState<Array<{ ip: string; port: number; name: string }>>([]);
+  const [discoverResults, setDiscoverResults] = useState<
+    Array<{ ip: string; port: number; name: string; bonjour_id?: string }>
+  >([]);
+  // bonjour_id of the entry the user picked (or the sole auto-filled
+  // result). Sent to the backend on connect so the resolved DeviceName
+  // can be remembered against this Bonjour service for next time.
+  const [pendingBonjourId, setPendingBonjourId] = useState<string>('');
   const handleDiscover = async () => {
     setDiscovering(true);
     setTunnelError(null);
     setDiscoverResults([]);
+    setPendingBonjourId('');
     try {
       const res = await wifiTunnelDiscover();
       const list = res?.devices || [];
@@ -125,8 +137,16 @@ const DeviceStatus: React.FC<DeviceStatusProps> = ({
       } else if (list.length === 1) {
         setTunnelIp(list[0].ip);
         setTunnelPort(String(list[0].port));
+        setPendingBonjourId(list[0].bonjour_id || '');
       } else {
-        setDiscoverResults(list.map((d) => ({ ip: d.ip, port: d.port, name: d.name || d.ip })));
+        setDiscoverResults(
+          list.map((d) => ({
+            ip: d.ip,
+            port: d.port,
+            name: d.name || d.ip,
+            bonjour_id: d.bonjour_id,
+          })),
+        );
       }
     } catch (err: any) {
       setTunnelError(err.message || t('wifi.detect_failed'));
@@ -134,9 +154,14 @@ const DeviceStatus: React.FC<DeviceStatusProps> = ({
       setDiscovering(false);
     }
   };
-  const pickDiscoverResult = (r: { ip: string; port: number }) => {
+  const pickDiscoverResult = (r: {
+    ip: string
+    port: number
+    bonjour_id?: string
+  }) => {
     setTunnelIp(r.ip);
     setTunnelPort(String(r.port));
+    setPendingBonjourId(r.bonjour_id || '');
     setDiscoverResults([]);
   };
 
@@ -550,8 +575,15 @@ const DeviceStatus: React.FC<DeviceStatusProps> = ({
                       padding: '4px 0', borderTop: '1px solid rgba(255,255,255,0.06)',
                     }}>
                       <div style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        <span style={{ opacity: 0.85 }}>{r.ip}</span>
-                        <span style={{ opacity: 0.55, marginLeft: 6 }}>{r.name}</span>
+                        {/* Show the DeviceName (or stripped bonjour_id) as
+                            the primary label so the user picks by device,
+                            not by IP. When the backend has no name to
+                            offer (TCP-scan fallback sets name = ip), the
+                            IP suffix is suppressed to avoid duplication. */}
+                        <span style={{ opacity: 0.85, fontWeight: 600 }}>{r.name}</span>
+                        {r.name !== r.ip && (
+                          <span style={{ opacity: 0.55, marginLeft: 6 }}>{r.ip}</span>
+                        )}
                       </div>
                       <button
                         onClick={() => pickDiscoverResult(r)}
@@ -737,7 +769,12 @@ const DeviceStatus: React.FC<DeviceStatusProps> = ({
                           }
                           setTunnelConnecting(true);
                           try {
-                            await onStartWifiTunnel(ip, port);
+                            await onStartWifiTunnel(
+                              ip,
+                              port,
+                              undefined,
+                              pendingBonjourId || undefined,
+                            );
                             // Legacy single-entry keys — kept so the IP
                             // input field pre-fills correctly next launch.
                             // The savedips multi-entry list is written by
@@ -746,6 +783,7 @@ const DeviceStatus: React.FC<DeviceStatusProps> = ({
                             localStorage.setItem('locwarp.tunnel.ip', ip);
                             localStorage.setItem('locwarp.tunnel.port', String(port));
                             setTunnelIp('');
+                            setPendingBonjourId('');
                           } catch (err: any) {
                             setTunnelError(err.message || 'WiFi tunnel failed');
                           } finally { setTunnelConnecting(false); }

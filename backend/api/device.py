@@ -273,6 +273,12 @@ class WifiTunnelStartRequest(BaseModel):
     ip: str
     port: int = 49152
     udid: str | None = None
+    # Stable Bonjour service id stripped from the ``_remotepairing._tcp.local.``
+    # PTR — passed back from the frontend when the user picks an entry from
+    # /wifi/tunnel/discover. We use it to persist a ``bonjour_id → {udid,
+    # name}`` alias on a successful connect, so the next discover can label
+    # the picker with the real DeviceName.
+    bonjour_id: str | None = None
 
 
 def _get_primary_local_ip() -> str | None:
@@ -382,7 +388,23 @@ async def wifi_tunnel_find_port(req: WifiTunnelFindPortRequest):
 async def wifi_tunnel_discover():
     """Find iPhones on the local network. First tries mDNS (Bonjour RemotePairing
     broadcast); if that yields nothing, falls back to a /24 subnet TCP scan on the
-    standard RemotePairing port (49152)."""
+    standard RemotePairing port (49152).
+
+    Each result carries:
+      - ``bonjour_id``: stable id stripped from the ``_remotepairing._tcp.local.``
+        PTR (empty for TCP-scan fallback). The frontend echoes it back to
+        /wifi/tunnel/start-and-connect so we can remember the DeviceName.
+      - ``name``: human-readable label for the picker — cached DeviceName from
+        a previous connect when we recognise ``bonjour_id``; otherwise the
+        bare bonjour_id (still way better than a full PTR), and as a last
+        resort the IP (TCP-scan path).
+    """
+    # Loaded once per call. The cache is small (one entry per iPhone the user
+    # has ever WiFi-paired through LocWarp) and we'd rather pay one read than
+    # hammer the disk per discovered device.
+    from core.device_manager import strip_bonjour_suffix, _load_wifi_alias_cache
+    alias_cache = _load_wifi_alias_cache()
+
     results: list[dict] = []
 
     # --- 1) mDNS / Bonjour broadcast ---
@@ -404,12 +426,25 @@ async def wifi_tunnel_discover():
                     str_addrs.append(str(a))
             ipv4s = [s for s in str_addrs if ":" not in s]
             addrs = ipv4s if ipv4s else str_addrs
+            bonjour_id = strip_bonjour_suffix(inst.instance)
+            # alias_cache holds the user's DeviceName from the previous
+            # successful connect for this Bonjour id. If we don't have one
+            # yet, fall back to the stripped bonjour_id — at least it's
+            # short, stable, and not an IPv6 link-local.
+            alias = alias_cache.get(bonjour_id)
+            if alias and alias.get("name"):
+                display_name = alias["name"]
+            elif bonjour_id:
+                display_name = bonjour_id
+            else:
+                display_name = inst.host or ""
             for addr in addrs:
                 results.append({
                     "ip": addr,
                     "port": inst.port,
                     "host": inst.host,
-                    "name": inst.instance or inst.host,
+                    "name": display_name,
+                    "bonjour_id": bonjour_id,
                     "method": "mdns",
                 })
     except Exception as e:
@@ -466,11 +501,14 @@ async def wifi_tunnel_discover():
                         continue
                     # Use the first open port in the dynamic range. We
                     # add one entry per IP — the user picks from the list.
+                    # No Bonjour data on this path, so no alias lookup is
+                    # possible; the IP is the only meaningful label.
                     results.append({
                         "ip": ip,
                         "port": ports[0],
                         "host": ip,
                         "name": ip,
+                        "bonjour_id": "",
                         "method": "tcp_scan",
                     })
         except Exception as e:
@@ -1204,7 +1242,9 @@ async def wifi_tunnel_start_and_connect(req: WifiTunnelStartRequest):
             detail={"code": "max_devices_reached", "message": f"已連接最多 {MAX_DEVICES} 台裝置"},
         )
     try:
-        info = await dm.connect_wifi_tunnel(rsd_address, rsd_port)
+        info = await dm.connect_wifi_tunnel(
+            rsd_address, rsd_port, bonjour_id=req.bonjour_id
+        )
         # v0.2.60: Drop the stale engine from the prior USB conn so
         # create_engine_for_device rebuilds a fresh one bound to the new
         # WiFi RSD. v0.2.57 made create_engine_for_device idempotent (to

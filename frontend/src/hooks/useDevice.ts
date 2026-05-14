@@ -209,9 +209,9 @@ export function useDevice(subscribe?: WsSubscribe) {
     : { running: false }
 
   const startWifiTunnel = useCallback(
-    async (ip: string, port = 49152, udidHint?: string) => {
+    async (ip: string, port = 49152, udidHint?: string, bonjourId?: string) => {
       try {
-        const res = await wifiTunnelStartAndConnect(ip, port, udidHint)
+        const res = await wifiTunnelStartAndConnect(ip, port, udidHint, bonjourId)
         const info: DeviceInfo = {
           udid: res.udid,
           name: res.name,

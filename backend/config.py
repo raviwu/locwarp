@@ -72,6 +72,12 @@ RECENT_PLACES_FILE = DATA_DIR / "recent_places.json"
 # — can still display the user's chosen name.
 DEVICE_NAMES_FILE = DATA_DIR / "device_names.json"
 
+# Persisted Bonjour-instance → { udid, name } map. Populated after every
+# successful WiFi tunnel pair-and-connect so the next /wifi/tunnel/discover
+# can label the picker with the user's DeviceName instead of an opaque
+# RemotePairing identifier or an IPv6 link-local address.
+WIFI_ALIASES_FILE = DATA_DIR / "wifi_aliases.json"
+
 # OSRM
 OSRM_BASE_URL = "https://router.project-osrm.org"
 
