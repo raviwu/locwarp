@@ -105,6 +105,10 @@ class AppState:
         # "auto-collapse when total bookmarks > 30" rule. Empty list means
         # explicitly all-collapsed.
         self._bookmark_expanded_categories: list[str] | None = None
+        # Which bookmark categories the user has temporarily hidden from the
+        # panel. Per-device view preference — persisted in settings.json,
+        # never iCloud-synced. None = never set.
+        self._bookmark_hidden_categories: list[str] | None = None
         self._sync_folder: str | None = None
         self._cloud_sync_dismissed: bool = False
         # Load sync-related persisted state eagerly (no I/O risk; just reads
@@ -164,6 +168,9 @@ class AppState:
             bmExp = data.get("bookmark_expanded_categories")
             if isinstance(bmExp, list):
                 self._bookmark_expanded_categories = [str(x) for x in bmExp]
+            bmHid = data.get("bookmark_hidden_categories")
+            if isinstance(bmHid, list):
+                self._bookmark_hidden_categories = [str(x) for x in bmHid]
         except (ValueError, KeyError):
             logger.warning("Settings payload field malformed; keeping defaults", exc_info=True)
 
@@ -235,6 +242,7 @@ class AppState:
             "coord_format": self.coord_formatter.format.value,
             "initial_map_position": self._initial_map_position,
             "bookmark_expanded_categories": self._bookmark_expanded_categories,
+            "bookmark_hidden_categories": self._bookmark_hidden_categories,
             "sync_folder": self._sync_folder,
             "cloud_sync_dismissed": self._cloud_sync_dismissed,
         }
