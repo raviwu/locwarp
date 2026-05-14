@@ -181,8 +181,10 @@ def ui_state_client(tmp_path, monkeypatch):
     monkeypatch.setattr("main.SETTINGS_FILE", settings)
     monkeypatch.setattr("config.SETTINGS_FILE", settings)
     import main
-    main.app_state._bookmark_expanded_categories = None
-    main.app_state._bookmark_hidden_categories = None
+    # Go through monkeypatch so pytest auto-restores the singleton's state
+    # after the test — consistent with the SETTINGS_FILE patches above.
+    monkeypatch.setattr(main.app_state, "_bookmark_expanded_categories", None)
+    monkeypatch.setattr(main.app_state, "_bookmark_hidden_categories", None)
     return TestClient(main.app)
 
 
