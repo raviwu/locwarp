@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
+import { BookmarkGeoLine } from './BookmarkGeoLine';
 import { useT, useI18n } from '../i18n';
 import { getBookmarkUiState, setBookmarkUiState } from '../services/api';
 import {
@@ -18,8 +19,12 @@ interface Bookmark {
   lng: number;
   category: string;
   // ISO 3166-1 alpha-2 (lowercase), optional. Rendered as a small flag
-  // icon next to the bookmark name when present.
+  // icon on the bookmark's geo line when present.
   country_code?: string;
+  // Offline-resolved geo metadata (see backend geo_offline.resolve).
+  timezone?: string;  // IANA zone, e.g. 'Asia/Taipei'
+  city?: string;      // nearest notable city
+  region?: string;    // admin1 — province / state / county
   created_at?: string;  // ISO timestamp, used by 'date added' sort
   last_used_at?: string;  // ISO timestamp, used by 'last used' sort
 }
@@ -1116,24 +1121,14 @@ const BookmarkList: React.FC<BookmarkListProps> = ({
                     }}
                     title={displayCat(bm.category)}
                   />
-                  {bm.country_code && (
-                    <img
-                      src={`https://flagcdn.com/w20/${bm.country_code}.png`}
-                      alt={bm.country_code.toUpperCase()}
-                      title={bm.country_code.toUpperCase()}
-                      width={14}
-                      height={10}
-                      style={{ borderRadius: 2, flexShrink: 0, boxShadow: '0 0 0 1px rgba(255,255,255,0.12)' }}
-                      onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
-                    />
-                  )}
-                  <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+                  <div
+                    style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', minWidth: 0 }}
+                    title={`${displayCat(bm.category)} · ${bm.lat.toFixed(5)}, ${bm.lng.toFixed(5)}${bm.region ? ` · ${bm.region}` : ''}`}
+                  >
                     <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                       {bm.name}
                     </span>
-                    <span style={{ fontSize: 10, opacity: 0.55, fontFamily: 'monospace' }}>
-                      {displayCat(bm.category)} · {bm.lat.toFixed(5)}, {bm.lng.toFixed(5)}
-                    </span>
+                    <BookmarkGeoLine countryCode={bm.country_code} city={bm.city} timezone={bm.timezone} />
                   </div>
                 </div>
               );
@@ -1315,17 +1310,6 @@ const BookmarkList: React.FC<BookmarkListProps> = ({
                     >
                       <path d="M19 21l-7-5-7 5V5a2 2 0 012-2h10a2 2 0 012 2z" />
                     </svg>
-                    {bm.country_code && (
-                      <img
-                        src={`https://flagcdn.com/w20/${bm.country_code}.png`}
-                        alt={bm.country_code.toUpperCase()}
-                        title={bm.country_code.toUpperCase()}
-                        width={14}
-                        height={10}
-                        style={{ borderRadius: 2, flexShrink: 0, boxShadow: '0 0 0 1px rgba(255,255,255,0.12)' }}
-                        onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
-                      />
-                    )}
                     {editingId === bm.id ? (
                       <input
                         type="text"
@@ -1345,13 +1329,14 @@ const BookmarkList: React.FC<BookmarkListProps> = ({
                         autoFocus
                       />
                     ) : (
-                      <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+                      <div
+                        style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', minWidth: 0 }}
+                        title={`${bm.lat.toFixed(5)}, ${bm.lng.toFixed(5)}${bm.region ? ` · ${bm.region}` : ''}`}
+                      >
                         <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                           {bm.name}
                         </span>
-                        <span style={{ fontSize: 10, opacity: 0.55, fontFamily: 'monospace' }}>
-                          {bm.lat.toFixed(5)}, {bm.lng.toFixed(5)}
-                        </span>
+                        <BookmarkGeoLine countryCode={bm.country_code} city={bm.city} timezone={bm.timezone} />
                       </div>
                     )}
                   </div>
