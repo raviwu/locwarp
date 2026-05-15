@@ -100,3 +100,20 @@ def test_create_bookmark_enriches(manager):
     assert bm.timezone == "Asia/Taipei"
     assert bm.city != ""
     assert bm.region != ""
+
+
+def test_update_bookmark_reresolves_on_coord_change(manager):
+    bm = manager.create_bookmark(name="x", lat=25.0339, lng=121.5645)
+    assert bm.country_code == "tw"
+    updated = manager.update_bookmark(bm.id, lat=35.6762, lng=139.6503)  # Tokyo
+    assert updated.country_code == "jp"
+    assert updated.timezone == "Asia/Tokyo"
+
+
+def test_update_bookmark_keeps_geo_when_coords_unchanged(manager):
+    bm = manager.create_bookmark(name="x", lat=25.0339, lng=121.5645)
+    tz_before, city_before = bm.timezone, bm.city
+    updated = manager.update_bookmark(bm.id, name="renamed")
+    assert updated.timezone == tz_before
+    assert updated.city == city_before
+    assert updated.name == "renamed"

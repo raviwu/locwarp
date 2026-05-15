@@ -439,15 +439,24 @@ class BookmarkManager:
         return bm
 
     def update_bookmark(self, bm_id: str, **kwargs: object) -> Bookmark | None:
-        """Update a bookmark's fields. Returns ``None`` if not found."""
+        """Update a bookmark's fields. Returns ``None`` if not found.
+
+        When the coordinates change, the offline geo fields (country_code,
+        timezone, city, region) are re-resolved from the new position so
+        the bookmark's flag / city / timezone labels never go stale.
+        """
         bm = self._find_bookmark(bm_id)
         if bm is None:
             return None
 
+        old_lat, old_lng = bm.lat, bm.lng
         allowed = {"name", "lat", "lng", "address", "category_id", "last_used_at", "country_code"}
         for key, value in kwargs.items():
             if key in allowed and value is not None:
                 setattr(bm, key, value)
+
+        if bm.lat != old_lat or bm.lng != old_lng:
+            enrich_bookmark(bm, force=True)
 
         bm.updated_at = _now_iso()
         self._save()
