@@ -39,9 +39,11 @@ fastapi_hidden = collect_submodules('fastapi')
 # for NIC enumeration to work in the frozen exe.
 ps_datas, ps_binaries, ps_hidden = collect_all('psutil')
 
-# timezonefinder ships its boundary data as package data files and pulls
-# in numpy + a compiled h3 extension; collect_all grabs data, binaries,
-# and the hidden submodule imports in one shot.
+# timezonefinder ships its boundary data as package data files and requires
+# numpy + h3 (Cython extensions). collect_all grabs timezonefinder's own data
+# and hidden submodule imports; PyInstaller's Analysis then follows the static
+# h3 import transitively to pull in h3's compiled extensions. numpy is kept
+# out of the 'excludes' list below for the same reason.
 tzf_datas, tzf_binaries, tzf_hidden = collect_all('timezonefinder')
 
 hidden = [
