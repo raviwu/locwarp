@@ -563,6 +563,7 @@ class BookmarkManager:
                 # Ensure the bookmark's category exists
                 if bm.category_id not in existing_cat_ids:
                     bm.category_id = "default"
+                enrich_bookmark(bm)  # fill any geo fields the import lacked
                 self.store.bookmarks.append(bm)
                 existing_bm_ids.add(bm.id)
                 imported += 1

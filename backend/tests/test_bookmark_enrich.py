@@ -135,3 +135,30 @@ def test_update_bookmark_lat_only_change_triggers_reresolve(manager, monkeypatch
     assert calls == [(35.6762, 121.5645)]
     assert updated.country_code == "xx"
     assert updated.timezone == "Test/Zone"
+
+
+def test_import_json_enriches_bookmarks(manager):
+    payload = (
+        '{"categories": [], "bookmarks": ['
+        '{"id": "imp1", "name": "Tokyo Tower", "lat": 35.6586, "lng": 139.7454, '
+        '"category_id": "default"}]}'
+    )
+    manager.import_json(payload)
+    bm = next(b for b in manager.store.bookmarks if b.id == "imp1")
+    assert bm.country_code == "jp"
+    assert bm.timezone == "Asia/Tokyo"
+    assert bm.city != ""
+
+
+def test_import_geojson_enriches_bookmarks(manager):
+    from services.bookmark_import import detect_and_import
+
+    payload = (
+        '{"type": "FeatureCollection", "name": "trip", "features": ['
+        '{"type": "Feature", "geometry": {"type": "Point", '
+        '"coordinates": [121.5645, 25.0339]}, "properties": {"name": "Taipei 101"}}]}'
+    )
+    detect_and_import(manager, payload)
+    bm = next(b for b in manager.store.bookmarks if b.name == "Taipei 101")
+    assert bm.country_code == "tw"
+    assert bm.timezone == "Asia/Taipei"
