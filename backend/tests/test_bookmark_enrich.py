@@ -205,3 +205,10 @@ def test_enrich_all_does_not_bump_updated_at(manager):
     ]
     manager.enrich_all()
     assert manager.store.bookmarks[0].updated_at == "2020-01-01"
+
+
+def test_enrich_all_empty_store(manager):
+    # Empty store: nothing to enrich, no _save() call. Guards against an
+    # accidental `if not changed: self._save()` flip in a future refactor.
+    manager.store.bookmarks = []
+    assert manager.enrich_all() == 0

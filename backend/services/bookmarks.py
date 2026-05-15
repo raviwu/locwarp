@@ -540,8 +540,10 @@ class BookmarkManager:
         for bm in self.store.bookmarks:
             if enrich_bookmark(bm):
                 changed += 1
+        # Always log — a "0 filled" line confirms the sweep ran on a
+        # clean store, distinguishing it from a sweep that never fired.
+        logger.info("enrich_all filled geo fields on %d bookmarks", changed)
         if changed:
-            logger.info("enrich_all filled geo fields on %d bookmarks", changed)
             self._save()
         return changed
 
