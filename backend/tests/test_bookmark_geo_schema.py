@@ -1,4 +1,6 @@
 """Bookmark schema carries the offline geo-metadata fields."""
+from __future__ import annotations
+
 from models.schemas import Bookmark
 
 
@@ -18,4 +20,7 @@ def test_bookmark_geo_fields_round_trip():
     assert dumped["timezone"] == "Asia/Taipei"
     assert dumped["city"] == "Taipei"
     assert dumped["region"] == "Taipei"
-    assert Bookmark(**dumped).timezone == "Asia/Taipei"
+    rehydrated = Bookmark(**dumped)
+    assert rehydrated.timezone == "Asia/Taipei"
+    assert rehydrated.city == "Taipei"
+    assert rehydrated.region == "Taipei"
