@@ -5,9 +5,9 @@ IANA zone; a bundled GeoNames cities5000 extract supplies the nearest
 city + admin1 region; zone_to_country.json maps the zone to a country.
 Everything is offline and deterministic — no network, no rate limits.
 
-resolve() never raises: any failure (missing data, import error, a point
-with no timezone polygon) yields ("", "", "", "") and the caller leaves
-the bookmark's geo fields empty for the next reconciliation pass.
+resolve() never raises: any failure (missing data, import error, an
+unexpected None from timezonefinder) yields ("", "", "", "") and the
+caller leaves the bookmark's geo fields empty for the next pass.
 """
 from __future__ import annotations
 
@@ -94,9 +94,10 @@ def _ensure_loaded() -> bool:
 def resolve(lat: float, lng: float) -> tuple[str, str, str, str]:
     """Return (country_code, timezone, city, region) for a coordinate.
 
-    All-empty when the point has no timezone (open ocean) or the offline
-    tables are unavailable. country_code is lowercase ISO 3166-1 alpha-2;
-    timezone is an IANA zone string.
+    All-empty only when the offline tables are unavailable. (TimezoneFinderL
+    covers the whole globe with Etc/GMT±N bands, so open-ocean points still
+    resolve — to an Etc zone plus the nearest territory.) country_code is
+    lowercase ISO 3166-1 alpha-2; timezone is an IANA zone string.
     """
     if not _ensure_loaded():
         return ("", "", "", "")
