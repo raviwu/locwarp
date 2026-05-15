@@ -442,8 +442,13 @@ class BookmarkManager:
         """Update a bookmark's fields. Returns ``None`` if not found.
 
         When the coordinates change, the offline geo fields (country_code,
-        timezone, city, region) are re-resolved from the new position so
-        the bookmark's flag / city / timezone labels never go stale.
+        timezone, city, region) are re-resolved from the new position via
+        ``enrich_bookmark(force=True)`` so the bookmark's flag / city /
+        timezone labels never go stale. The resolver is authoritative on a
+        coord-change re-resolve: an explicit ``country_code`` passed in the
+        same call is overwritten. If the new coordinates cannot be resolved
+        (transient data-load failure), the geo fields are left at their
+        prior values rather than wiped — see ``enrich_bookmark``.
         """
         bm = self._find_bookmark(bm_id)
         if bm is None:
@@ -455,6 +460,8 @@ class BookmarkManager:
             if key in allowed and value is not None:
                 setattr(bm, key, value)
 
+        # Float equality is safe here: no arithmetic was performed on
+        # lat/lng, so an unchanged coordinate compares equal bit-for-bit.
         if bm.lat != old_lat or bm.lng != old_lng:
             enrich_bookmark(bm, force=True)
 

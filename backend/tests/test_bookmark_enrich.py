@@ -117,3 +117,21 @@ def test_update_bookmark_keeps_geo_when_coords_unchanged(manager):
     assert updated.timezone == tz_before
     assert updated.city == city_before
     assert updated.name == "renamed"
+
+
+def test_update_bookmark_lat_only_change_triggers_reresolve(manager, monkeypatch):
+    # A real user action: vertical drag changes only lat. The disjunction
+    # in update_bookmark's change-detection must fire on either side, and
+    # the resolver must be called with the new lat + the original lng.
+    bm = manager.create_bookmark(name="x", lat=25.0339, lng=121.5645)
+    calls: list[tuple[float, float]] = []
+
+    def fake_resolve(lat, lng):
+        calls.append((lat, lng))
+        return ("xx", "Test/Zone", "TestCity", "TestRegion")
+
+    monkeypatch.setattr("services.bookmarks._geo_resolve", fake_resolve)
+    updated = manager.update_bookmark(bm.id, lat=35.6762)  # lng unchanged
+    assert calls == [(35.6762, 121.5645)]
+    assert updated.country_code == "xx"
+    assert updated.timezone == "Test/Zone"
