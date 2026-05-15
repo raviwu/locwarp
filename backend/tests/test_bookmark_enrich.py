@@ -48,3 +48,33 @@ def test_enrich_does_not_touch_updated_at():
     bm = Bookmark(name="x", lat=25.0339, lng=121.5645, updated_at="2020-01-01")
     enrich_bookmark(bm)
     assert bm.updated_at == "2020-01-01"
+
+
+def test_enrich_partial_fill_only_blank_fields(monkeypatch):
+    # The common enrich_all() case: a legacy bookmark with some fields set
+    # and some blank. force=False fills only the blanks, preserves the rest.
+    monkeypatch.setattr("services.bookmarks._geo_resolve",
+                        lambda lat, lng: ("tw", "Asia/Taipei", "Taipei", "Taipei City"))
+    bm = Bookmark(name="x", lat=25.0, lng=121.5,
+                  country_code="zz", timezone="", city="", region="")
+    changed = enrich_bookmark(bm)
+    assert changed is True
+    assert bm.country_code == "zz"       # existing value preserved
+    assert bm.timezone == "Asia/Taipei"  # blank filled
+    assert bm.city == "Taipei"
+    assert bm.region == "Taipei City"
+
+
+def test_enrich_partial_resolve_skips_empty_fields(monkeypatch):
+    # resolve() can return a partial tuple (e.g. region empty when the
+    # admin1 lookup misses). The "never write empty" rule is per-field:
+    # non-empty fields are filled, empty ones stay blank.
+    monkeypatch.setattr("services.bookmarks._geo_resolve",
+                        lambda lat, lng: ("tw", "Asia/Taipei", "Taipei", ""))
+    bm = Bookmark(name="x", lat=25.0, lng=121.5)
+    changed = enrich_bookmark(bm)
+    assert changed is True
+    assert bm.country_code == "tw"
+    assert bm.timezone == "Asia/Taipei"
+    assert bm.city == "Taipei"
+    assert bm.region == ""  # empty resolve value not written

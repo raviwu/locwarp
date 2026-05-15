@@ -70,20 +70,23 @@ def enrich_bookmark(bm: Bookmark, *, force: bool = False) -> bool:
     Does NOT touch ``updated_at`` — callers own that, so the startup
     sweep can fill legacy records without forcing a cloud-sync write.
     """
-    blanks = not (bm.country_code and bm.timezone and bm.city and bm.region)
-    if not force and not blanks:
+    all_filled = bool(bm.country_code and bm.timezone and bm.city and bm.region)
+    if not force and all_filled:
         return False
-    country_code, timezone, city, region = _geo_resolve(bm.lat, bm.lng)
+    # Local is `tz`, not `timezone`, to avoid shadowing `datetime.timezone`
+    # (imported at module scope and used by _now_iso).
+    country_code, tz, city, region = _geo_resolve(bm.lat, bm.lng)
     changed = False
     for field, value in (
         ("country_code", country_code),
-        ("timezone", timezone),
+        ("timezone", tz),
         ("city", city),
         ("region", region),
     ):
         if not value:
             continue  # never overwrite a known value with an empty lookup
-        if (force or not getattr(bm, field)) and getattr(bm, field) != value:
+        current = getattr(bm, field)
+        if (force or not current) and current != value:
             setattr(bm, field, value)
             changed = True
     return changed
