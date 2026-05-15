@@ -78,3 +78,27 @@ def test_enrich_partial_resolve_skips_empty_fields(monkeypatch):
     assert bm.timezone == "Asia/Taipei"
     assert bm.city == "Taipei"
     assert bm.region == ""  # empty resolve value not written
+
+
+import pytest
+from services.bookmarks import BookmarkManager
+
+
+@pytest.fixture
+def manager(tmp_path, monkeypatch):
+    """A BookmarkManager with its store redirected to tmp_path.
+
+    Mirrors the fixture in test_list_ordering.py: patch BOOKMARKS_FILE and
+    replace the captured config default so _bookmarks_path() honours it.
+    """
+    monkeypatch.setattr("services.bookmarks.BOOKMARKS_FILE", tmp_path / "bookmarks.json")
+    monkeypatch.setattr("services.bookmarks._CONFIG_DEFAULT_BOOKMARKS_FILE", object())
+    return BookmarkManager()
+
+
+def test_create_bookmark_enriches(manager):
+    bm = manager.create_bookmark(name="Taipei 101", lat=25.0339, lng=121.5645)
+    assert bm.country_code == "tw"
+    assert bm.timezone == "Asia/Taipei"
+    assert bm.city != ""
+    assert bm.region != ""

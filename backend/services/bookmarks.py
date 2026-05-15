@@ -430,6 +430,10 @@ class BookmarkManager:
             country_code=country_code.lower(),
             updated_at=now,
         )
+        # Offline-resolve country / timezone / city / region. force=False
+        # respects an explicitly supplied country_code; the other three are
+        # always blank on a fresh bookmark and get filled.
+        enrich_bookmark(bm)
         self.store.bookmarks.append(bm)
         self._save()
         return bm
