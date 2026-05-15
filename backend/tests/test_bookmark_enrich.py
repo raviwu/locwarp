@@ -1,6 +1,8 @@
 """enrich_bookmark — offline geo-field fill and force-refresh semantics."""
+import pytest
+
 from models.schemas import Bookmark
-from services.bookmarks import enrich_bookmark
+from services.bookmarks import BookmarkManager, enrich_bookmark
 
 
 def test_enrich_fills_blank_fields():
@@ -78,10 +80,6 @@ def test_enrich_partial_resolve_skips_empty_fields(monkeypatch):
     assert bm.timezone == "Asia/Taipei"
     assert bm.city == "Taipei"
     assert bm.region == ""  # empty resolve value not written
-
-
-import pytest
-from services.bookmarks import BookmarkManager
 
 
 @pytest.fixture
