@@ -36,7 +36,9 @@ C_TIMEZONE = 17
 def _fetch(url: str) -> bytes:
     print(f"  downloading {url}")
     with urllib.request.urlopen(url, timeout=60) as resp:
-        return resp.read()
+        data = resp.read()
+    print(f"    {len(data) // 1024} KB received")
+    return data
 
 
 def build() -> None:
@@ -44,7 +46,13 @@ def build() -> None:
 
     # ── cities5000 ────────────────────────────────────────────────
     with zipfile.ZipFile(io.BytesIO(_fetch(CITIES_URL))) as zf:
-        text = zf.read("cities5000.txt").decode("utf-8")
+        # The single .txt entry, not a hardcoded name — GeoNames has
+        # renamed entries in past exports; a clear error beats a bare
+        # KeyError if it ever happens again.
+        txt_name = next((n for n in zf.namelist() if n.endswith(".txt")), None)
+        if txt_name is None:
+            raise ValueError(f"No .txt entry in {CITIES_URL}; zip has {zf.namelist()}")
+        text = zf.read(txt_name).decode("utf-8")
 
     lat: list[float] = []
     lng: list[float] = []
