@@ -64,7 +64,11 @@ def _bm():
 
 
 class BookmarkUiState(BaseModel):
+    # Both optional: a POST updates only the fields it carries, so the
+    # frontend can persist expand and hide independently without one
+    # request clobbering the other.
     expanded_categories: list[str] | None = None
+    hidden_categories: list[str] | None = None
 
 
 # ── Bookmarks ─────────────────────────────────────────────
@@ -255,17 +259,26 @@ async def import_bookmarks(data: dict):
 @router.get("/ui-state")
 async def get_bookmark_ui_state():
     from main import app_state
-    return {"expanded_categories": app_state._bookmark_expanded_categories}
+    return {
+        "expanded_categories": app_state._bookmark_expanded_categories,
+        "hidden_categories": app_state._bookmark_hidden_categories,
+    }
 
 
 @router.post("/ui-state")
 async def set_bookmark_ui_state(req: BookmarkUiState):
     from main import app_state
-    app_state._bookmark_expanded_categories = (
-        list(req.expanded_categories) if req.expanded_categories is not None else []
-    )
+    # Per-field update: only touch a field the request actually carries.
+    if req.expanded_categories is not None:
+        app_state._bookmark_expanded_categories = list(req.expanded_categories)
+    if req.hidden_categories is not None:
+        app_state._bookmark_hidden_categories = list(req.hidden_categories)
     app_state.save_settings()
-    return {"status": "ok", "expanded_categories": app_state._bookmark_expanded_categories}
+    return {
+        "status": "ok",
+        "expanded_categories": app_state._bookmark_expanded_categories,
+        "hidden_categories": app_state._bookmark_hidden_categories,
+    }
 
 
 # ── Catalog (bundled curated event seed) ──────────────────

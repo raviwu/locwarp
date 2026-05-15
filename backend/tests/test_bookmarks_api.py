@@ -169,3 +169,70 @@ def test_import_geojson_via_api(client):
 def test_import_garbage_returns_400(client):
     resp = client.post("/api/bookmarks/import", json={"random": True})
     assert resp.status_code == 400
+
+
+# ── UI state: hidden categories ───────────────────────────────────────────
+
+@pytest.fixture
+def ui_state_client(tmp_path, monkeypatch):
+    """TestClient with settings.json redirected to tmp_path so the ui-state
+    endpoint's save_settings() does not touch the real ~/.locwarp/."""
+    settings = tmp_path / "settings.json"
+    monkeypatch.setattr("main.SETTINGS_FILE", settings)
+    monkeypatch.setattr("config.SETTINGS_FILE", settings)
+    import main
+    # Go through monkeypatch so pytest auto-restores the singleton's state
+    # after the test — consistent with the SETTINGS_FILE patches above.
+    monkeypatch.setattr(main.app_state, "_bookmark_expanded_categories", None)
+    monkeypatch.setattr(main.app_state, "_bookmark_hidden_categories", None)
+    return TestClient(main.app)
+
+
+def test_ui_state_get_returns_expanded_and_hidden(ui_state_client):
+    resp = ui_state_client.get("/api/bookmarks/ui-state")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert "expanded_categories" in body
+    assert "hidden_categories" in body
+
+
+def test_ui_state_post_hidden_persists(ui_state_client):
+    resp = ui_state_client.post(
+        "/api/bookmarks/ui-state", json={"hidden_categories": ["私人", "測試"]}
+    )
+    assert resp.status_code == 200
+    assert resp.json()["hidden_categories"] == ["私人", "測試"]
+    # survives a fresh GET
+    assert ui_state_client.get("/api/bookmarks/ui-state").json()["hidden_categories"] == ["私人", "測試"]
+
+
+def test_ui_state_post_hidden_does_not_clobber_expanded(ui_state_client):
+    ui_state_client.post("/api/bookmarks/ui-state", json={"expanded_categories": ["工作"]})
+    ui_state_client.post("/api/bookmarks/ui-state", json={"hidden_categories": ["私人"]})
+    body = ui_state_client.get("/api/bookmarks/ui-state").json()
+    assert body["expanded_categories"] == ["工作"]
+    assert body["hidden_categories"] == ["私人"]
+
+
+def test_ui_state_post_expanded_does_not_clobber_hidden(ui_state_client):
+    ui_state_client.post("/api/bookmarks/ui-state", json={"hidden_categories": ["私人"]})
+    ui_state_client.post("/api/bookmarks/ui-state", json={"expanded_categories": ["工作"]})
+    body = ui_state_client.get("/api/bookmarks/ui-state").json()
+    assert body["hidden_categories"] == ["私人"]
+    assert body["expanded_categories"] == ["工作"]
+
+
+def test_ui_state_hidden_round_trips_through_settings(tmp_path, monkeypatch):
+    """AppState writes bookmark_hidden_categories to settings.json and
+    _load_settings reads it back."""
+    import json
+    settings = tmp_path / "settings.json"
+    monkeypatch.setattr("main.SETTINGS_FILE", settings)
+    monkeypatch.setattr("config.SETTINGS_FILE", settings)
+    import main
+    main.app_state._bookmark_hidden_categories = ["私人", "舊資料"]
+    main.app_state.save_settings()
+    assert json.loads(settings.read_text())["bookmark_hidden_categories"] == ["私人", "舊資料"]
+    main.app_state._bookmark_hidden_categories = None
+    main.app_state._load_settings()
+    assert main.app_state._bookmark_hidden_categories == ["私人", "舊資料"]

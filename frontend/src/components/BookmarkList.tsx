@@ -146,6 +146,14 @@ const BookmarkList: React.FC<BookmarkListProps> = ({
   // Translate at render time so EN users see "Default" without touching storage.
   const displayCat = (name: string) => (name === '預設' ? t('bm.default') : name);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  // Categories the user has temporarily hidden from the panel. Keyed by the
+  // same category string the `collapsed` map and `bookmarksByCategory` use.
+  const [hidden, setHidden] = useState<Set<string>>(new Set());
+  // Whether the "N 個已隱藏" row is expanded to show its category list.
+  const [hiddenRowOpen, setHiddenRowOpen] = useState(false);
+  // True once the persisted hidden list has been merged in — gates the
+  // persist effect so the initial fetch is not echoed straight back.
+  const hiddenLoadedRef = useRef(false);
   const [uiStateLoaded, setUiStateLoaded] = useState(false);
   const uiStateSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastClickTs = useRef<number>(0);
@@ -316,8 +324,12 @@ const BookmarkList: React.FC<BookmarkListProps> = ({
       .then((state) => {
         if (cancelled) return;
         savedExpandedRef.current = state.expanded_categories;
+        if (Array.isArray(state.hidden_categories)) {
+          setHidden(new Set(state.hidden_categories));
+        }
+        hiddenLoadedRef.current = true;
       })
-      .catch(() => { /* leave null, auto-rule handles first load */ })
+      .catch(() => { hiddenLoadedRef.current = true; })
       .finally(() => { if (!cancelled) setUiStateLoaded(true); });
     return () => { cancelled = true; };
   }, []);
@@ -369,8 +381,36 @@ const BookmarkList: React.FC<BookmarkListProps> = ({
     if (uiStateSaveTimer.current) clearTimeout(uiStateSaveTimer.current);
     uiStateSaveTimer.current = setTimeout(() => {
       const expanded = categories.filter((c) => !nextCollapsed[c]);
-      void setBookmarkUiState(expanded).catch(() => { /* best effort */ });
+      void setBookmarkUiState({ expanded_categories: expanded }).catch(() => { /* best effort */ });
     }, 400);
+  };
+
+  // Persist the hidden set immediately on change (hide/unhide is a single
+  // deliberate click — no debounce needed). Stale categories (deleted since
+  // they were hidden) are dropped here so they never linger in settings.json.
+  const persistHidden = (nextHidden: Set<string>) => {
+    if (!hiddenLoadedRef.current) return; // don't echo the initial fetch
+    const known = new Set(categories);
+    const cleaned = [...nextHidden].filter((c) => known.has(c));
+    void setBookmarkUiState({ hidden_categories: cleaned }).catch(() => { /* best effort */ });
+  };
+
+  const hideCategory = (cat: string) => {
+    setHidden((prev) => {
+      const next = new Set(prev);
+      next.add(cat);
+      persistHidden(next);
+      return next;
+    });
+  };
+
+  const unhideCategory = (cat: string) => {
+    setHidden((prev) => {
+      const next = new Set(prev);
+      next.delete(cat);
+      persistHidden(next);
+      return next;
+    });
   };
 
   const toggleCategory = (cat: string) => {
@@ -1103,7 +1143,9 @@ const BookmarkList: React.FC<BookmarkListProps> = ({
       })()}
 
       {/* Bookmark groups — only when NOT searching */}
-      {search.trim() === '' && Object.entries(bookmarksByCategory).map(([cat, bms]) => {
+      {search.trim() === '' && Object.entries(bookmarksByCategory)
+        .filter(([cat]) => !hidden.has(cat))
+        .map(([cat, bms]) => {
         const catIds = bms.map((b) => b.id).filter((x): x is string => !!x);
         const selectedInCat = catIds.filter((id) => selectedIds.has(id)).length;
         const allSelectedInCat = catIds.length > 0 && selectedInCat === catIds.length;
@@ -1193,6 +1235,23 @@ const BookmarkList: React.FC<BookmarkListProps> = ({
             <span style={{ marginLeft: 'auto', opacity: 0.4, fontWeight: 400, fontSize: 10 }}>
               {bms.length}
             </span>
+            <button
+              type="button"
+              className="bookmark-hide-btn"
+              title={t('bm.hide_category')}
+              onClick={(e) => { e.stopPropagation(); hideCategory(cat); }}
+              style={{
+                background: 'none', border: 'none', padding: 2, marginLeft: 2,
+                cursor: 'pointer', color: 'inherit',
+                display: 'inline-flex', alignItems: 'center',
+              }}
+            >
+              {/* eye-off icon (decorative — the button's title is the label) */}
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                <path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19m-6.72-1.07a3 3 0 11-4.24-4.24" />
+                <line x1="1" y1="1" x2="23" y2="23" />
+              </svg>
+            </button>
           </div>
 
           {!collapsed[cat] && (
@@ -1364,6 +1423,74 @@ const BookmarkList: React.FC<BookmarkListProps> = ({
         </div>
       )}
 
+      {/* Unhide row — only when not searching and at least one category is hidden.
+          Intersect with current categories so a since-deleted category never shows. */}
+      {search.trim() === '' && (() => {
+        const hiddenList = categories.filter((c) => hidden.has(c));
+        if (hiddenList.length === 0) return null;
+        return (
+          <div style={{ marginTop: 4, borderTop: '1px solid #444', paddingTop: 4 }}>
+            <div
+              onClick={() => setHiddenRowOpen((v) => !v)}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 6,
+                padding: '5px 4px', cursor: 'pointer',
+                fontSize: 11, opacity: 0.6,
+              }}
+            >
+              <svg
+                width="10" height="10" viewBox="0 0 24 24" fill="none"
+                stroke="currentColor" strokeWidth="2"
+                style={{
+                  transform: hiddenRowOpen ? 'rotate(90deg)' : 'rotate(0deg)',
+                  transition: 'transform 0.2s',
+                }}
+              >
+                <polyline points="9,18 15,12 9,6" />
+              </svg>
+              <span>{t('bm.hidden_count', { n: hiddenList.length })}</span>
+            </div>
+            {hiddenRowOpen && (
+              <div style={{ paddingLeft: 20 }}>
+                {hiddenList.map((cat) => (
+                  <div
+                    key={cat}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 6,
+                      padding: '4px 6px', fontSize: 12, opacity: 0.7,
+                    }}
+                  >
+                    <div style={{
+                      width: 8, height: 8, borderRadius: '50%',
+                      background: resolveColor(cat), flexShrink: 0,
+                    }} />
+                    <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {displayCat(cat)}
+                    </span>
+                    <button
+                      type="button"
+                      title={t('bm.unhide_category')}
+                      onClick={() => unhideCategory(cat)}
+                      style={{
+                        background: 'none', border: 'none', padding: 2,
+                        cursor: 'pointer', color: 'inherit', opacity: 0.7,
+                        display: 'inline-flex', alignItems: 'center',
+                      }}
+                    >
+                      {/* eye icon */}
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                        <circle cx="12" cy="12" r="3" />
+                      </svg>
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })()}
+
       {/* Context menu (dismissed via document click listener — see useEffect) */}
       {contextMenu && createPortal(
         <>
@@ -1447,33 +1574,35 @@ const BookmarkList: React.FC<BookmarkListProps> = ({
               <>
                 <div style={{ height: 1, background: '#444', margin: '4px 0' }} />
                 <div style={{ padding: '4px 12px', fontSize: 10, opacity: 0.5 }}>{t('bm.move_to')}</div>
-                {categories
-                  .filter((c) => c !== contextMenu.bm.category)
-                  .map((cat) => (
-                    <div
-                      key={cat}
-                      style={ctxItemStyle}
-                      onMouseEnter={ctxHighlight}
-                      onMouseLeave={ctxUnhighlight}
-                      onClick={() => {
-                        if (contextMenu.bm.id) {
-                          onBookmarkEdit(contextMenu.bm.id, { category: cat });
-                        }
-                        setContextMenu(null);
-                      }}
-                    >
+                <div style={{ maxHeight: 240, overflowY: 'auto' }}>
+                  {categories
+                    .filter((c) => c !== contextMenu.bm.category)
+                    .map((cat) => (
                       <div
-                        style={{
-                          width: 6,
-                          height: 6,
-                          borderRadius: '50%',
-                          background: resolveColor(cat),
-                          marginRight: 6,
+                        key={cat}
+                        style={ctxItemStyle}
+                        onMouseEnter={ctxHighlight}
+                        onMouseLeave={ctxUnhighlight}
+                        onClick={() => {
+                          if (contextMenu.bm.id) {
+                            onBookmarkEdit(contextMenu.bm.id, { category: cat });
+                          }
+                          setContextMenu(null);
                         }}
-                      />
-                      {displayCat(cat)}
-                    </div>
-                  ))}
+                      >
+                        <div
+                          style={{
+                            width: 6,
+                            height: 6,
+                            borderRadius: '50%',
+                            background: resolveColor(cat),
+                            marginRight: 6,
+                          }}
+                        />
+                        {displayCat(cat)}
+                      </div>
+                    ))}
+                </div>
               </>
             )}
           </div>

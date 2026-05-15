@@ -2871,3 +2871,10 @@ input:focus-visible {
 @media (prefers-reduced-motion: reduce) {
   .lw-update-pill { animation: none; background-position: 0% 50%; }
 }
+
+/* Hover-revealed category-hide button — mirrors the .bookmark-actions
+   pattern (opacity + transition) rather than visibility, so it fades in
+   and needs no !important to override an inline style. */
+.bookmark-hide-btn { opacity: 0; transition: opacity var(--transition-fast); }
+.bookmark-group:hover .bookmark-hide-btn { opacity: 0.55; }
+.bookmark-hide-btn:hover { opacity: 1; }
