@@ -36,8 +36,6 @@ const NEEDS_START_POS: ReadonlySet<SimMode> = new Set([
   SimMode.RandomWalk,
   SimMode.Joystick,
   SimMode.Navigate,
-  SimMode.Loop,
-  SimMode.MultiStop,
 ]);
 import AddressSearch from './AddressSearch';
 import BookmarkList from './BookmarkList';
