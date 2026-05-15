@@ -534,6 +534,12 @@ class BookmarkManager:
         the same coordinates and converges. Idempotent: once every
         bookmark is filled, later sweeps change nothing and skip the save.
 
+        Cross-version note: an older client that lacks the geo fields in
+        its schema will strip them on its next write (pydantic v2 silently
+        drops unknown fields). The new client's next sweep refills them.
+        That cycle is harmless because the values are deterministic from
+        (lat, lng) — just don't try to "optimize" the sweep away.
+
         Returns the number of bookmarks modified.
         """
         changed = 0

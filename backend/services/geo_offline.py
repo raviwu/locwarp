@@ -6,8 +6,8 @@ city + admin1 region; zone_to_country.json maps the zone to a country.
 Everything is offline and deterministic — no network, no rate limits.
 
 resolve() never raises: any failure (missing data, import error, an
-unexpected None from timezonefinder) yields ("", "", "", "") and the
-caller leaves the bookmark's geo fields empty for the next pass.
+unexpected failure inside timezonefinder) yields ("", "", "", "") and
+the caller leaves the bookmark's geo fields empty for the next pass.
 """
 from __future__ import annotations
 
