@@ -35,13 +35,13 @@ export const BookmarkGeoLine: React.FC<BookmarkGeoLineProps> = ({
         minWidth: 0,
         whiteSpace: 'nowrap',
         overflow: 'hidden',
-        textOverflow: 'ellipsis',
       }}
     >
       {countryCode && (
         <img
           src={`https://flagcdn.com/w20/${countryCode}.png`}
           alt={countryCode.toUpperCase()}
+          title={countryCode.toUpperCase()}
           width={14}
           height={10}
           style={{
