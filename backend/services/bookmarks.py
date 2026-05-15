@@ -18,6 +18,7 @@ from models.schemas import Bookmark, BookmarkCategory, BookmarkStore, Tombstone
 from services.file_watcher import schedule as _watcher_schedule, unschedule as _watcher_unschedule
 from services.json_safe import safe_load_json, safe_write_json
 from services.store_merge import merge_stores
+from services.geo_offline import resolve as _geo_resolve
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +50,43 @@ def _load_store_or_empty(path: Path) -> BookmarkStore:
         return BookmarkStore(**raw)
     except Exception:
         return BookmarkStore(categories=[], bookmarks=[], tombstones=[])
+
+
+def enrich_bookmark(bm: Bookmark, *, force: bool = False) -> bool:
+    """Fill a bookmark's offline geo fields from its coordinates.
+
+    country_code / timezone / city / region come from
+    ``geo_offline.resolve``. With ``force=False`` (default) only empty
+    fields are filled — an idempotent reconciliation safe to run on every
+    bookmark repeatedly. With ``force=True`` every field is re-resolved
+    and overwritten — used when a bookmark's coordinates change.
+
+    Never writes an empty value: a failed or ocean-point lookup leaves
+    the existing fields untouched rather than wiping them, so a transient
+    data-load failure cannot destroy good data (the trade-off: moving a
+    bookmark from land to open ocean keeps its now-stale labels — a rare,
+    cosmetic edge). Returns True if any field changed.
+
+    Does NOT touch ``updated_at`` — callers own that, so the startup
+    sweep can fill legacy records without forcing a cloud-sync write.
+    """
+    blanks = not (bm.country_code and bm.timezone and bm.city and bm.region)
+    if not force and not blanks:
+        return False
+    country_code, timezone, city, region = _geo_resolve(bm.lat, bm.lng)
+    changed = False
+    for field, value in (
+        ("country_code", country_code),
+        ("timezone", timezone),
+        ("city", city),
+        ("region", region),
+    ):
+        if not value:
+            continue  # never overwrite a known value with an empty lookup
+        if (force or not getattr(bm, field)) and getattr(bm, field) != value:
+            setattr(bm, field, value)
+            changed = True
+    return changed
 
 
 class BookmarkManager:
