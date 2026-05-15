@@ -162,3 +162,21 @@ def test_import_geojson_enriches_bookmarks(manager):
     bm = next(b for b in manager.store.bookmarks if b.name == "Taipei 101")
     assert bm.country_code == "tw"
     assert bm.timezone == "Asia/Taipei"
+
+
+def test_import_single_category_enriches_bookmarks(manager):
+    # The third import path: _meta / category / bookmarks shape (single-
+    # category export). Symmetric assertion-level coverage with the other
+    # two import paths so the enrich call there cannot regress silently.
+    from services.bookmark_import import detect_and_import
+
+    payload = (
+        '{"_meta": {"scope": "category"}, '
+        '"category": {"name": "trip", "color": "#6c8cff"}, '
+        '"bookmarks": [{"name": "Taipei 101", "lat": 25.0339, "lng": 121.5645}]}'
+    )
+    detect_and_import(manager, payload)
+    bm = next(b for b in manager.store.bookmarks if b.name == "Taipei 101")
+    assert bm.country_code == "tw"
+    assert bm.timezone == "Asia/Taipei"
+    assert bm.city != ""

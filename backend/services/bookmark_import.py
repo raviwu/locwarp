@@ -89,7 +89,7 @@ def _import_single_category(manager, payload: dict) -> dict:
             created_at=raw_bm.get("created_at", ""),
             last_used_at=raw_bm.get("last_used_at", ""),
         )
-        enrich_bookmark(bm)
+        enrich_bookmark(bm)  # fill any geo fields the import lacked
         manager.store.bookmarks.append(bm)
         existing_bm_ids.add(bm_id)
         imported += 1
@@ -134,7 +134,7 @@ def _import_geojson(manager, payload: dict) -> dict:
                 created_at="",
                 last_used_at="",
             )
-            enrich_bookmark(bm)
+            enrich_bookmark(bm)  # fill any geo fields the import lacked
             manager.store.bookmarks.append(bm)
             existing_bm_ids.add(bm_id)
             imported += 1
