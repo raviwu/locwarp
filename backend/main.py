@@ -124,6 +124,10 @@ class AppState:
         self._reload_sync_folder()
         self._load_settings()
         self.bookmark_manager = BookmarkManager()
+        # Reconciliation sweep: backfill country / timezone / city / region
+        # on any bookmark (legacy, imported, offline-added) still missing
+        # them. Offline + idempotent — a no-op once everything is filled.
+        self.bookmark_manager.enrich_all()
         self.route_manager = RouteManager()
 
     def _reload_sync_folder(self) -> None:

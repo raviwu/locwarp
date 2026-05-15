@@ -1533,6 +1533,9 @@ const App: React.FC = () => {
             lng: b.lng,
             category: bm.categories.find(c => c.id === b.category_id)?.name || t('bm.default'),
             country_code: b.country_code || '',
+            timezone: b.timezone || '',
+            city: b.city || '',
+            region: b.region || '',
             created_at: b.created_at || '',
             last_used_at: b.last_used_at || '',
           }))}
@@ -1550,28 +1553,14 @@ const App: React.FC = () => {
           onBookmarkPreview={(b: any) => handleMapPanOnly(b.lat, b.lng)}
           onBookmarkAdd={(b: any) => {
             const cat = bm.categories.find(c => c.name === b.category)
-            // Reverse-geocode first so custom-coordinate bookmarks also get a
-            // country flag. If lookup fails or takes too long, save without
-            // one so the user isn't blocked.
-            ;(async () => {
-              let cc = ''
-              try {
-                const geo = await Promise.race([
-                  api.reverseGeocode(b.lat, b.lng),
-                  new Promise<null>((resolve) => setTimeout(() => resolve(null), 4000)),
-                ])
-                if (geo && (geo as any).country_code) {
-                  cc = String((geo as any).country_code).toLowerCase()
-                }
-              } catch { /* ignore */ }
-              bm.createBookmark({
-                name: b.name,
-                lat: b.lat,
-                lng: b.lng,
-                category_id: cat?.id || 'default',
-                country_code: cc,
-              } as any)
-            })()
+            // Country / timezone / city / region are resolved offline by
+            // the backend on create — no online reverse-geocode needed.
+            bm.createBookmark({
+              name: b.name,
+              lat: b.lat,
+              lng: b.lng,
+              category_id: cat?.id || 'default',
+            } as any)
           }}
           onBookmarkDelete={(id: string) => bm.deleteBookmark(id)}
           onBookmarkEdit={(id: string, data: any) => {
@@ -1583,50 +1572,19 @@ const App: React.FC = () => {
             // If orig is missing (bm.bookmarks briefly out of sync with a
             // background refresh), fall back to the patch data — the edit
             // dialog supplies a full bookmark via spread so we still have the
-            // fields we need. This prevents the silent-noop save the user saw
-            // after running Fix Flags.
+            // fields we need.
+            //
+            // The backend re-resolves country / timezone / city / region
+            // offline whenever the coordinates change, so the frontend no
+            // longer reverse-geocodes here.
             const orig = bm.bookmarks.find(b => b.id === id)
-            const base: any = orig ? { ...orig } : { ...data, id }
-            const patch: any = base
+            const patch: any = orig ? { ...orig } : { ...data, id }
             if (data.name != null) patch.name = data.name
             if (data.lat != null) patch.lat = data.lat
             if (data.lng != null) patch.lng = data.lng
             if (data.category != null) {
               const cat = bm.categories.find(c => c.name === data.category)
               if (cat) patch.category_id = cat.id
-            }
-            // Flag-backfill-on-save: trigger reverse-geocode whenever we'd
-            // benefit from a fresh country_code — i.e. coords moved (stale),
-            // OR the bookmark never had a flag to begin with (legacy entry
-            // from before the feature shipped). Runs in the background so
-            // the save itself feels instant.
-            const refLat = orig ? orig.lat : base.lat
-            const refLng = orig ? orig.lng : base.lng
-            const coordsChanged =
-              (data.lat != null && data.lat !== refLat) ||
-              (data.lng != null && data.lng !== refLng)
-            const flagMissing = !base.country_code
-            const needsGeocode = coordsChanged || flagMissing
-            if (coordsChanged) {
-              // Coordinates moved — clear the stale flag so UI doesn't show
-              // the wrong country while the async lookup is in flight.
-              patch.country_code = ''
-            }
-            if (needsGeocode) {
-              ;(async () => {
-                try {
-                  const geo = await Promise.race([
-                    api.reverseGeocode(patch.lat, patch.lng),
-                    new Promise<null>((resolve) => setTimeout(() => resolve(null), 4000)),
-                  ])
-                  const cc = geo && (geo as any).country_code
-                    ? String((geo as any).country_code).toLowerCase()
-                    : ''
-                  if (cc) {
-                    await bm.updateBookmark(id, { ...patch, country_code: cc } as any)
-                  }
-                } catch { /* ignore */ }
-              })()
             }
             bm.updateBookmark(id, patch)
           }}

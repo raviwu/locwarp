@@ -241,6 +241,14 @@ class Bookmark(BaseModel):
     # geocode. Used to render a flag next to the bookmark. Empty = unknown
     # (legacy bookmarks or offline-added); UI simply skips the flag.
     country_code: str = ""
+    # Offline-resolved geo metadata (timezonefinder + a bundled GeoNames
+    # extract), populated by enrich_bookmark on create / GPS-edit / import
+    # and by the startup reconciliation sweep. Empty = unresolved (an ocean
+    # point, or a pre-feature record awaiting the next sweep) — the UI
+    # simply skips whichever field is blank.
+    timezone: str = ""   # IANA zone, e.g. 'Asia/Taipei'
+    city: str = ""       # nearest notable city, ASCII name
+    region: str = ""     # admin1 — province / state / county
     # Bumped on every mutation so the cloud-sync merge can pick the newer
     # copy on an id collision. Empty = legacy (pre-sync-merge) record.
     updated_at: str = ""

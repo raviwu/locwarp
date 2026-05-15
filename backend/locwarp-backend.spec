@@ -39,6 +39,13 @@ fastapi_hidden = collect_submodules('fastapi')
 # for NIC enumeration to work in the frozen exe.
 ps_datas, ps_binaries, ps_hidden = collect_all('psutil')
 
+# timezonefinder ships its boundary data as package data files and requires
+# numpy + h3 (Cython extensions). collect_all grabs timezonefinder's own data
+# and hidden submodule imports; PyInstaller's Analysis then follows the static
+# h3 import transitively to pull in h3's compiled extensions. numpy is kept
+# out of the 'excludes' list below for the same reason.
+tzf_datas, tzf_binaries, tzf_hidden = collect_all('timezonefinder')
+
 hidden = [
     *pmd_hiddenimports,
     *pytun_hidden,
@@ -47,6 +54,7 @@ hidden = [
     *uvicorn_hidden,
     *fastapi_hidden,
     *ps_hidden,
+    *tzf_hidden,
     'uvicorn.logging',
     'uvicorn.loops',
     'uvicorn.loops.auto',
@@ -70,16 +78,17 @@ a = Analysis(
     ['main.py'],
     pathex=['.'],
     binaries=[*pmd_binaries, *pytun_binaries, *ddi_binaries, *pyimg4_binaries,
-              *ps_binaries],
+              *ps_binaries, *tzf_binaries],
     datas=[*pmd_datas, *pytun_datas, *ddi_datas, *pyimg4_datas, *pyimg4_meta,
-           *ps_datas,
+           *ps_datas, *tzf_datas,
            ('static/phone.html', 'static'),
-           ('static/catalog.json', 'static')],
+           ('static/catalog.json', 'static'),
+           ('data/geo', 'data/geo')],
     hiddenimports=hidden,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=['tkinter', 'matplotlib', 'PIL', 'numpy', 'scipy', 'pandas'],
+    excludes=['tkinter', 'matplotlib', 'PIL', 'scipy', 'pandas'],
     noarchive=False,
 )
 

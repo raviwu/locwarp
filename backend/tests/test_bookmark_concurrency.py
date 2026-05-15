@@ -1,3 +1,8 @@
+# Note: every ``create_bookmark`` call below runs ``enrich_bookmark`` via the
+# offline geo resolver, so coordinates like (1.0, 1.0) / (2.0, 2.0) come back
+# with concrete country_code / timezone / city / region (the nearest GeoNames
+# city). These tests don't assert on those fields — they're orthogonal to
+# concurrency — but be aware they're populated if you ever add assertions.
 from datetime import datetime, timezone
 from pathlib import Path
 

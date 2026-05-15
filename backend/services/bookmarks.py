@@ -18,6 +18,7 @@ from models.schemas import Bookmark, BookmarkCategory, BookmarkStore, Tombstone
 from services.file_watcher import schedule as _watcher_schedule, unschedule as _watcher_unschedule
 from services.json_safe import safe_load_json, safe_write_json
 from services.store_merge import merge_stores
+from services.geo_offline import resolve as _geo_resolve
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +50,46 @@ def _load_store_or_empty(path: Path) -> BookmarkStore:
         return BookmarkStore(**raw)
     except Exception:
         return BookmarkStore(categories=[], bookmarks=[], tombstones=[])
+
+
+def enrich_bookmark(bm: Bookmark, *, force: bool = False) -> bool:
+    """Fill a bookmark's offline geo fields from its coordinates.
+
+    country_code / timezone / city / region come from
+    ``geo_offline.resolve``. With ``force=False`` (default) only empty
+    fields are filled — an idempotent reconciliation safe to run on every
+    bookmark repeatedly. With ``force=True`` every field is re-resolved
+    and overwritten — used when a bookmark's coordinates change.
+
+    Never writes an empty value: a failed or ocean-point lookup leaves
+    the existing fields untouched rather than wiping them, so a transient
+    data-load failure cannot destroy good data (the trade-off: moving a
+    bookmark from land to open ocean keeps its now-stale labels — a rare,
+    cosmetic edge). Returns True if any field changed.
+
+    Does NOT touch ``updated_at`` — callers own that, so the startup
+    sweep can fill legacy records without forcing a cloud-sync write.
+    """
+    all_filled = bool(bm.country_code and bm.timezone and bm.city and bm.region)
+    if not force and all_filled:
+        return False
+    # Local is `tz`, not `timezone`, to avoid shadowing `datetime.timezone`
+    # (imported at module scope and used by _now_iso).
+    country_code, tz, city, region = _geo_resolve(bm.lat, bm.lng)
+    changed = False
+    for field, value in (
+        ("country_code", country_code),
+        ("timezone", tz),
+        ("city", city),
+        ("region", region),
+    ):
+        if not value:
+            continue  # never overwrite a known value with an empty lookup
+        current = getattr(bm, field)
+        if (force or not current) and current != value:
+            setattr(bm, field, value)
+            changed = True
+    return changed
 
 
 class BookmarkManager:
@@ -389,20 +430,40 @@ class BookmarkManager:
             country_code=country_code.lower(),
             updated_at=now,
         )
+        # Offline-resolve country / timezone / city / region. force=False
+        # respects an explicitly supplied country_code; the other three are
+        # always blank on a fresh bookmark and get filled.
+        enrich_bookmark(bm)
         self.store.bookmarks.append(bm)
         self._save()
         return bm
 
     def update_bookmark(self, bm_id: str, **kwargs: object) -> Bookmark | None:
-        """Update a bookmark's fields. Returns ``None`` if not found."""
+        """Update a bookmark's fields. Returns ``None`` if not found.
+
+        When the coordinates change, the offline geo fields (country_code,
+        timezone, city, region) are re-resolved from the new position via
+        ``enrich_bookmark(force=True)`` so the bookmark's flag / city /
+        timezone labels never go stale. The resolver is authoritative on a
+        coord-change re-resolve: an explicit ``country_code`` passed in the
+        same call is overwritten. If the new coordinates cannot be resolved
+        (transient data-load failure), the geo fields are left at their
+        prior values rather than wiped — see ``enrich_bookmark``.
+        """
         bm = self._find_bookmark(bm_id)
         if bm is None:
             return None
 
+        old_lat, old_lng = bm.lat, bm.lng
         allowed = {"name", "lat", "lng", "address", "category_id", "last_used_at", "country_code"}
         for key, value in kwargs.items():
             if key in allowed and value is not None:
                 setattr(bm, key, value)
+
+        # Float equality is safe here: no arithmetic was performed on
+        # lat/lng, so an unchanged coordinate compares equal bit-for-bit.
+        if bm.lat != old_lat or bm.lng != old_lng:
+            enrich_bookmark(bm, force=True)
 
         bm.updated_at = _now_iso()
         self._save()
@@ -462,6 +523,36 @@ class BookmarkManager:
             self._save()
         return moved
 
+    def enrich_all(self) -> int:
+        """Reconciliation sweep: fill missing offline geo fields on every
+        bookmark, persisting once if anything changed.
+
+        Runs at startup. ``enrich_bookmark`` only fills blanks here
+        (force=False) and does not touch ``updated_at``, so legacy records
+        get their flag / city / timezone without manufacturing a
+        cloud-sync conflict — every device resolves identical values from
+        the same coordinates and converges. Idempotent: once every
+        bookmark is filled, later sweeps change nothing and skip the save.
+
+        Cross-version note: an older client that lacks the geo fields in
+        its schema will strip them on its next write (pydantic v2 silently
+        drops unknown fields). The new client's next sweep refills them.
+        That cycle is harmless because the values are deterministic from
+        (lat, lng) — just don't try to "optimize" the sweep away.
+
+        Returns the number of bookmarks modified.
+        """
+        changed = 0
+        for bm in self.store.bookmarks:
+            if enrich_bookmark(bm):
+                changed += 1
+        # Always log — a "0 filled" line confirms the sweep ran on a
+        # clean store, distinguishing it from a sweep that never fired.
+        logger.info("enrich_all filled geo fields on %d bookmarks", changed)
+        if changed:
+            self._save()
+        return changed
+
     def _find_bookmark(self, bm_id: str) -> Bookmark | None:
         return next((b for b in self.store.bookmarks if b.id == bm_id), None)
 
@@ -502,6 +593,7 @@ class BookmarkManager:
                 # Ensure the bookmark's category exists
                 if bm.category_id not in existing_cat_ids:
                     bm.category_id = "default"
+                enrich_bookmark(bm)  # fill any geo fields the import lacked
                 self.store.bookmarks.append(bm)
                 existing_bm_ids.add(bm.id)
                 imported += 1

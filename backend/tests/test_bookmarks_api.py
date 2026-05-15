@@ -236,3 +236,33 @@ def test_ui_state_hidden_round_trips_through_settings(tmp_path, monkeypatch):
     main.app_state._bookmark_hidden_categories = None
     main.app_state._load_settings()
     assert main.app_state._bookmark_hidden_categories == ["私人", "舊資料"]
+
+
+# ── Geo fields: API-layer wire-contract checks ───────────────────────────
+
+
+def test_create_bookmark_api_returns_geo_fields(client):
+    """POST /api/bookmarks resolves geo fields offline before responding —
+    locks the wire contract the frontend depends on."""
+    cat = _create_category(client)
+    resp = client.post(
+        "/api/bookmarks",
+        json={"name": "Taipei 101", "lat": 25.0339, "lng": 121.5645, "category_id": cat["id"]},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["country_code"] == "tw"
+    assert body["timezone"] == "Asia/Taipei"
+    assert body["city"] != ""
+    assert body["region"] != ""
+
+
+def test_list_bookmarks_api_carries_geo_fields(client):
+    """GET /api/bookmarks lists each bookmark with its resolved geo fields."""
+    cat = _create_category(client)
+    _create_bookmark(client, cat["id"], lat=25.0339, lng=121.5645)
+    body = client.get("/api/bookmarks").json()
+    bms = [b for b in body["bookmarks"] if b["category_id"] == cat["id"]]
+    assert len(bms) == 1
+    assert bms[0]["country_code"] == "tw"
+    assert bms[0]["timezone"] == "Asia/Taipei"
