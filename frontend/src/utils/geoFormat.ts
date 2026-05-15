@@ -5,10 +5,13 @@ import type { Lang } from '../i18n';
 
 // "越短越好": Intl.DisplayNames returns the full ICU name ("United
 // States", "United Kingdom"); override the handful too long for a label.
-const SHORT_OVERRIDES: Record<string, { zh: string; en: string }> = {
+// Typed against `Lang` (not a hand-rolled { zh, en }) so a future locale
+// addition forces an exhaustive update here at compile time.
+const SHORT_OVERRIDES: Record<string, Record<Lang, string>> = {
   US: { zh: '美國', en: 'USA' },
   GB: { zh: '英國', en: 'UK' },
   AE: { zh: '阿聯', en: 'UAE' },
+  HK: { zh: '香港', en: 'HK' },
   KR: { zh: '南韓', en: 'S. Korea' },
   KP: { zh: '北韓', en: 'N. Korea' },
   RU: { zh: '俄羅斯', en: 'Russia' },
@@ -56,7 +59,9 @@ export function formatGmtOffset(timezone: string | undefined): string {
       timeZoneName: 'shortOffset',
     }).formatToParts(new Date());
     const tzName = parts.find((p) => p.type === 'timeZoneName')?.value ?? '';
-    // shortOffset yields "GMT+8" / "GMT" (for UTC); normalize "GMT" → "GMT+0".
+    // shortOffset on current Chromium yields "GMT+8" / "GMT+0" directly.
+    // Defensive: some ICU builds historically returned a bare "GMT" for
+    // UTC — normalize if it ever happens again.
     return tzName === 'GMT' ? 'GMT+0' : tzName;
   } catch {
     return '';
