@@ -1578,8 +1578,7 @@ const App: React.FC = () => {
             // offline whenever the coordinates change, so the frontend no
             // longer reverse-geocodes here.
             const orig = bm.bookmarks.find(b => b.id === id)
-            const base: any = orig ? { ...orig } : { ...data, id }
-            const patch: any = base
+            const patch: any = orig ? { ...orig } : { ...data, id }
             if (data.name != null) patch.name = data.name
             if (data.lat != null) patch.lat = data.lat
             if (data.lng != null) patch.lng = data.lng
