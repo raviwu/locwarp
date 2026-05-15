@@ -180,3 +180,28 @@ def test_import_single_category_enriches_bookmarks(manager):
     assert bm.country_code == "tw"
     assert bm.timezone == "Asia/Taipei"
     assert bm.city != ""
+
+
+def test_enrich_all_fills_legacy_bookmarks(manager):
+    manager.store.bookmarks = [
+        Bookmark(id="a", name="Taipei", lat=25.0339, lng=121.5645),
+        Bookmark(id="b", name="Tokyo", lat=35.6762, lng=139.6503),
+    ]
+    n = manager.enrich_all()
+    assert n == 2
+    assert manager.store.bookmarks[0].country_code == "tw"
+    assert manager.store.bookmarks[1].country_code == "jp"
+
+
+def test_enrich_all_idempotent(manager):
+    manager.store.bookmarks = [Bookmark(id="a", name="x", lat=25.0339, lng=121.5645)]
+    assert manager.enrich_all() == 1
+    assert manager.enrich_all() == 0  # second sweep changes nothing
+
+
+def test_enrich_all_does_not_bump_updated_at(manager):
+    manager.store.bookmarks = [
+        Bookmark(id="a", name="x", lat=25.0339, lng=121.5645, updated_at="2020-01-01"),
+    ]
+    manager.enrich_all()
+    assert manager.store.bookmarks[0].updated_at == "2020-01-01"

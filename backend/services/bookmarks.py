@@ -523,6 +523,28 @@ class BookmarkManager:
             self._save()
         return moved
 
+    def enrich_all(self) -> int:
+        """Reconciliation sweep: fill missing offline geo fields on every
+        bookmark, persisting once if anything changed.
+
+        Runs at startup. ``enrich_bookmark`` only fills blanks here
+        (force=False) and does not touch ``updated_at``, so legacy records
+        get their flag / city / timezone without manufacturing a
+        cloud-sync conflict — every device resolves identical values from
+        the same coordinates and converges. Idempotent: once every
+        bookmark is filled, later sweeps change nothing and skip the save.
+
+        Returns the number of bookmarks modified.
+        """
+        changed = 0
+        for bm in self.store.bookmarks:
+            if enrich_bookmark(bm):
+                changed += 1
+        if changed:
+            logger.info("enrich_all filled geo fields on %d bookmarks", changed)
+            self._save()
+        return changed
+
     def _find_bookmark(self, bm_id: str) -> Bookmark | None:
         return next((b for b in self.store.bookmarks if b.id == bm_id), None)
 
