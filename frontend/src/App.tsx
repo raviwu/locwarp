@@ -689,11 +689,16 @@ const App: React.FC = () => {
     countryCode?: string; nameResolving?: boolean;
   } | null>(null)
 
-  const handleAddBookmark = useCallback((lat: number, lng: number) => {
+  const handleAddBookmark = useCallback((lat: number, lng: number, suggestedName?: string) => {
+    // When the caller already knows a name (e.g. a recent-history entry
+    // from a search), seed the dialog so reverse-geocode only fills the
+    // country_code and won't overwrite the typed name — the existing
+    // "if (prev.name.length > 0)" branch below already protects it.
+    const seedName = (suggestedName || '').trim()
     setAddBmDialog({
       lat,
       lng,
-      name: '',
+      name: seedName,
       category: bm.categories[0]?.name || t('bm.default'),
       nameResolving: true,
     })
