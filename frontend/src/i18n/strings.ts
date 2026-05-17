@@ -410,6 +410,7 @@ export const STRINGS = {
   'map.navigate_here': { zh: '導航到這裡', en: 'Navigate here' },
   'map.add_waypoint': { zh: '添加路徑點', en: 'Add waypoint' },
   'map.add_bookmark': { zh: '加入座標收藏', en: 'Add to bookmarks' },
+  'map.already_bookmarked': { zh: '已加入書籤', en: 'Already bookmarked' },
   'map.show_coords': { zh: '顯示座標', en: 'Show coordinates' },
   'map.copy_coords': { zh: '複製座標', en: 'Copy coordinates' },
   'map.coords_copied': { zh: '座標已複製', en: 'Coordinates copied' },
