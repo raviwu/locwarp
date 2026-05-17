@@ -83,7 +83,18 @@ interface MapViewProps {
   devices?: DeviceInfo[];
   // Optional bookmark list to render as small clickable markers. When
   // enabled, clicking a marker calls onTeleport at that coordinate.
-  bookmarkPins?: Array<{ id?: string; name: string; lat: number; lng: number; country_code?: string }>;
+  bookmarkPins?: Array<{
+    id?: string;
+    name: string;
+    lat: number;
+    lng: number;
+    country_code?: string;
+    // Populated by the backend reverse-geocode reconciliation sweep.
+    // Used to render the BookmarkGeoLine on matched history rows; may
+    // be absent for freshly-saved bookmarks not yet reconciled.
+    city?: string;
+    timezone?: string;
+  }>;
   showBookmarkPins?: boolean;
   // Imperative escape hatch so non-map components (e.g. the StatusBar's
   // "Locate PC" pan-only flow) can move the map view without going
