@@ -35,6 +35,10 @@ echo "============================================================"
 echo " [2/3] Build frontend with Vite"
 echo "============================================================"
 cd "$ROOT/frontend"
+if [[ ! -d "$ROOT/frontend/node_modules" ]]; then
+    echo "==> Bootstrapping frontend/node_modules (first-time setup)"
+    npm install
+fi
 npm run build
 
 echo
