@@ -2681,22 +2681,44 @@ const MapView: React.FC<MapViewProps> = ({
             {t('map.copy_coords')}
           </div>
 
-          {/* 5. Add to bookmarks. */}
-          <div
-            className="context-menu-item"
-            style={contextMenuItemStyle}
-            onMouseEnter={highlightItem}
-            onMouseLeave={unhighlightItem}
-            onClick={() => {
-              onAddBookmark(contextMenu.lat, contextMenu.lng, contextMenu.name);
-              closeContextMenu();
-            }}
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: 8 }}>
-              <path d="M19 21l-7-5-7 5V5a2 2 0 012-2h10a2 2 0 012 2z" />
-            </svg>
-            {t('map.add_bookmark')}
-          </div>
+          {/* 5. Add to bookmarks — disabled when the coord matches an
+              existing bookmark, to prevent duplicates. Visual mirrors
+              the device-disconnected disabled item above. */}
+          {(() => {
+            const ctxMatch = bookmarkByCoord.get(
+              `${contextMenu.lat.toFixed(5)}|${contextMenu.lng.toFixed(5)}`
+            );
+            if (ctxMatch) {
+              return (
+                <div
+                  style={{ ...contextMenuItemStyle, color: '#9499ac', cursor: 'not-allowed', opacity: 0.75 }}
+                  title={ctxMatch.name}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: 8 }}>
+                    <path d="M19 21l-7-5-7 5V5a2 2 0 012-2h10a2 2 0 012 2z" />
+                  </svg>
+                  {t('map.already_bookmarked')}
+                </div>
+              );
+            }
+            return (
+              <div
+                className="context-menu-item"
+                style={contextMenuItemStyle}
+                onMouseEnter={highlightItem}
+                onMouseLeave={unhighlightItem}
+                onClick={() => {
+                  onAddBookmark(contextMenu.lat, contextMenu.lng, contextMenu.name);
+                  closeContextMenu();
+                }}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: 8 }}>
+                  <path d="M19 21l-7-5-7 5V5a2 2 0 012-2h10a2 2 0 012 2z" />
+                </svg>
+                {t('map.add_bookmark')}
+              </div>
+            );
+          })()}
 
           {/* 6. Add waypoint (only when in a route mode). */}
           {showWaypointOption && onAddWaypoint && (
