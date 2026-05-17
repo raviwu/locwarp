@@ -2145,7 +2145,7 @@ const MapView: React.FC<MapViewProps> = ({
           switcher). Click the clock to toggle a list of the last 20
           places the user flew to; click an entry to re-fly using that
           entry's original action (teleport / navigate / search). */}
-      {(recentPlaces && recentPlaces.length > 0) && (
+      {recentPlaces && (
         <div
           onContextMenu={(e) => e.stopPropagation()}
           onMouseDown={(e) => e.stopPropagation()}
