@@ -51,7 +51,7 @@ interface MapViewProps {
   onMapClick: (lat: number, lng: number) => void;
   onTeleport: (lat: number, lng: number, source?: 'menu' | 'coord') => void;
   onNavigate: (lat: number, lng: number, source?: 'menu' | 'coord') => void;
-  onAddBookmark: (lat: number, lng: number) => void;
+  onAddBookmark: (lat: number, lng: number, suggestedName?: string) => void;
   onAddWaypoint?: (lat: number, lng: number) => void;
   // Left-click on a waypoint marker opens a small action menu. Both
   // handlers are optional — when undefined, the waypoint marker stays
@@ -2563,7 +2563,7 @@ const MapView: React.FC<MapViewProps> = ({
             onMouseEnter={highlightItem}
             onMouseLeave={unhighlightItem}
             onClick={() => {
-              onAddBookmark(contextMenu.lat, contextMenu.lng);
+              onAddBookmark(contextMenu.lat, contextMenu.lng, contextMenu.name);
               closeContextMenu();
             }}
           >
