@@ -2343,7 +2343,6 @@ const MapView: React.FC<MapViewProps> = ({
                       lng: entry.lng,
                       name: entry.name || undefined,
                     });
-                    setRecentOpen(false);
                   };
                   return (
                     <div
