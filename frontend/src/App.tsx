@@ -607,7 +607,11 @@ const App: React.FC = () => {
   const refreshRecent = useCallback(async () => {
     try { setRecentPlaces(await api.getRecent()) } catch { /* silent */ }
   }, [])
-  useEffect(() => { void refreshRecent() }, [refreshRecent])
+  // Re-fetch on initial mount AND whenever the backend WebSocket becomes
+  // reachable. Without the ws.connected dep, a slow/racing backend boot
+  // could blow the only fetch attempt and the recent list would stay empty
+  // for the rest of the session (silent catch in refreshRecent above).
+  useEffect(() => { void refreshRecent() }, [refreshRecent, ws.connected])
   const pushRecent = useCallback(async (lat: number, lng: number, kind: api.RecentKind, name?: string) => {
     try {
       await api.pushRecent({ lat, lng, kind, name: name || null })
