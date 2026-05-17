@@ -33,6 +33,10 @@ interface ContextMenuState {
   y: number;
   lat: number;
   lng: number;
+  // Set when the menu is opened from a history entry that has a known
+  // name (e.g. an address from search). Forwarded to onAddBookmark to
+  // pre-fill the dialog. Undefined when opened from a map right-click.
+  name?: string;
 }
 
 import type { DeviceRuntime, RuntimesMap } from '../hooks/useSimulation';
