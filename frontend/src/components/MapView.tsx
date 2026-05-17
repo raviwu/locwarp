@@ -2305,49 +2305,111 @@ const MapView: React.FC<MapViewProps> = ({
                   const display = entry.name && entry.name.length > 0
                     ? entry.name
                     : `${entry.lat.toFixed(5)}, ${entry.lng.toFixed(5)}`;
+                  // Open the shared context menu anchored at the given
+                  // viewport coords, carrying the entry's name so the
+                  // Add Bookmark item can pre-fill the dialog. Full
+                  // object replacement (no spread) so no stale field
+                  // from a prior opening leaks in.
+                  const openMenuAt = (x: number, y: number) => {
+                    setContextMenu({
+                      visible: true,
+                      x, y,
+                      lat: entry.lat,
+                      lng: entry.lng,
+                      name: entry.name || undefined,
+                    });
+                    setRecentOpen(false);
+                  };
                   return (
-                    <button
+                    <div
                       key={`${entry.ts}-${idx}`}
-                      onClick={() => {
-                        if (onRecentReFly) onRecentReFly(entry);
-                        setRecentOpen(false);
-                      }}
                       style={{
-                        display: 'flex', alignItems: 'center', gap: 10,
+                        display: 'flex', alignItems: 'stretch',
                         width: '100%',
-                        padding: '9px 12px',
-                        background: 'transparent', border: 'none',
                         borderBottom: idx < recentPlaces.length - 1 ? '1px solid rgba(255,255,255,0.05)' : 'none',
-                        color: '#e8eaf0', textAlign: 'left',
-                        cursor: 'pointer', transition: 'background 0.12s',
+                        transition: 'background 0.12s',
                       }}
-                      onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.04)'; }}
-                      onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = 'transparent'; }}
+                      onMouseEnter={(e) => { (e.currentTarget as HTMLDivElement).style.background = 'rgba(255,255,255,0.04)'; }}
+                      onMouseLeave={(e) => { (e.currentTarget as HTMLDivElement).style.background = 'transparent'; }}
+                      onContextMenu={(e) => {
+                        // Suppress the browser's native menu and stop
+                        // the event from bubbling to the dropdown's
+                        // outside-click handler.
+                        e.preventDefault();
+                        e.stopPropagation();
+                        openMenuAt(e.clientX, e.clientY);
+                      }}
                     >
-                      <span style={{
-                        flexShrink: 0,
-                        fontSize: 10, fontWeight: 700,
-                        letterSpacing: '0.05em',
-                        color: badge.color,
-                        background: badge.bg,
-                        border: `1px solid ${badge.color}33`,
-                        borderRadius: 4,
-                        padding: '3px 6px',
-                        minWidth: 34,
-                        textAlign: 'center',
-                      }}>{badge.label}</span>
-                      <div style={{ minWidth: 0, flex: 1 }}>
-                        <div style={{
-                          fontSize: 13, fontWeight: 500,
-                          whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-                        }}>{display}</div>
-                        <div style={{
-                          fontSize: 10, opacity: 0.55, fontFamily: 'monospace', marginTop: 2,
-                        }}>
-                          {entry.lat.toFixed(5)}, {entry.lng.toFixed(5)} · {agoLabel}
+                      <button
+                        onClick={() => {
+                          if (onRecentReFly) onRecentReFly(entry);
+                          setRecentOpen(false);
+                        }}
+                        style={{
+                          flex: 1, minWidth: 0,
+                          display: 'flex', alignItems: 'center', gap: 10,
+                          padding: '9px 12px',
+                          background: 'transparent', border: 'none',
+                          color: '#e8eaf0', textAlign: 'left',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        <span style={{
+                          flexShrink: 0,
+                          fontSize: 10, fontWeight: 700,
+                          letterSpacing: '0.05em',
+                          color: badge.color,
+                          background: badge.bg,
+                          border: `1px solid ${badge.color}33`,
+                          borderRadius: 4,
+                          padding: '3px 6px',
+                          minWidth: 34,
+                          textAlign: 'center',
+                        }}>{badge.label}</span>
+                        <div style={{ minWidth: 0, flex: 1 }}>
+                          <div style={{
+                            fontSize: 13, fontWeight: 500,
+                            whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                          }}>{display}</div>
+                          <div style={{
+                            fontSize: 10, opacity: 0.55, fontFamily: 'monospace', marginTop: 2,
+                          }}>
+                            {entry.lat.toFixed(5)}, {entry.lng.toFixed(5)} · {agoLabel}
+                          </div>
                         </div>
-                      </div>
-                    </button>
+                      </button>
+                      <button
+                        title={tRef.current('recent.menu_tooltip')}
+                        aria-label={tRef.current('recent.menu_tooltip')}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          openMenuAt(e.clientX, e.clientY);
+                        }}
+                        style={{
+                          flexShrink: 0, alignSelf: 'stretch',
+                          padding: '0 10px',
+                          background: 'transparent', border: 'none',
+                          color: '#9499ac',
+                          cursor: 'pointer',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          transition: 'color 0.12s, background 0.12s',
+                        }}
+                        onMouseEnter={(e) => {
+                          (e.currentTarget as HTMLButtonElement).style.color = '#e8eaf0';
+                          (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.06)';
+                        }}
+                        onMouseLeave={(e) => {
+                          (e.currentTarget as HTMLButtonElement).style.color = '#9499ac';
+                          (e.currentTarget as HTMLButtonElement).style.background = 'transparent';
+                        }}
+                      >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <circle cx="12" cy="5"  r="1" />
+                          <circle cx="12" cy="12" r="1" />
+                          <circle cx="12" cy="19" r="1" />
+                        </svg>
+                      </button>
+                    </div>
                   );
                 })}
                 {recentPlaces.length === 0 && (
