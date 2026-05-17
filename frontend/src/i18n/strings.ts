@@ -352,6 +352,7 @@ export const STRINGS = {
   'recent.kind_navigate': { zh: '導航', en: 'Navigate' },
   'recent.kind_search': { zh: '地址', en: 'Address' },
   'recent.kind_coord': { zh: '座標', en: 'Coord' },
+  'recent.menu_tooltip': { zh: '更多動作', en: 'More actions' },
   'time.just_now': { zh: '剛剛', en: 'just now' },
   'time.minutes_ago': { zh: '分鐘前', en: 'min ago' },
   'time.hours_ago': { zh: '小時前', en: 'h ago' },
