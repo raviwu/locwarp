@@ -10,6 +10,7 @@ from models.schemas import (
     RouteOptimizeResponse,
     TimezoneInfo,
 )
+from services import geo_offline
 from services.geocoding import GeocodingService
 from services.geo_extras import (
     _HAVERSINE_PROFILE_SPEED_MPS,
@@ -45,7 +46,32 @@ async def search_address(
 
 @router.get("/reverse", response_model=GeocodingResult | None)
 async def reverse_geocode(lat: float, lng: float):
-    return await geocoding_service.reverse(lat, lng)
+    """Reverse-geocode a coordinate. Tries Nominatim first; falls back
+    to the offline city/region/country DB when Nominatim is unreachable,
+    rate-limited, or returns an error. Returns ``None`` only when both
+    layers have nothing.
+    """
+    try:
+        result = await geocoding_service.reverse(lat, lng)
+        if result is not None:
+            return result
+    except Exception:
+        logger.exception("Nominatim reverse failed; falling back to offline")
+
+    cc, _tz, city, region = geo_offline.resolve(lat, lng)
+    parts: list[str] = []
+    for p in [city, region, cc.upper() if cc else ""]:
+        if p and (not parts or parts[-1].lower() != p.lower()):
+            parts.append(p)
+    if not parts:
+        return None
+    return GeocodingResult(
+        display_name=", ".join(parts),
+        lat=lat,
+        lng=lng,
+        country_code=cc.lower(),
+        short_name=city or region or (cc.upper() if cc else ""),
+    )
 
 
 @router.get("/timezone", response_model=TimezoneInfo | None)
