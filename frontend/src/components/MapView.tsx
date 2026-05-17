@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useLayoutEffect, useState, useCallback } from 'react';
+import React, { useRef, useEffect, useLayoutEffect, useState, useCallback, useMemo } from 'react';
 import { useT } from '../i18n';
 import { reverseGeocode } from '../services/api';
 import L from 'leaflet';
@@ -8,6 +8,7 @@ import '@maplibre/maplibre-gl-leaflet';
 import { cellsInBounds, approxCellSizeMeters } from '../services/s2grid';
 import type { S2CellPolygon } from '../services/s2grid';
 import { parseCoord } from '../utils/coords';
+import { BookmarkGeoLine } from './BookmarkGeoLine';
 
 // MapLibre's Leaflet binding looks up `window.maplibregl` rather than
 // taking it as a constructor argument. Hoist it once at module load so
@@ -292,6 +293,19 @@ const MapView: React.FC<MapViewProps> = ({
   onBulkPasteOpen,
   onMapCenterChange,
 }) => {
+  // Lookup: bookmark coords → bookmark pin. Used by recent-history rows
+  // and the context-menu's Add Bookmark item to detect matches.
+  // toFixed(5) gives ~1m precision and avoids float drift in comparisons.
+  const bookmarkByCoord = useMemo(() => {
+    const m = new Map<string, NonNullable<typeof bookmarkPins>[number]>();
+    if (bookmarkPins) {
+      for (const bm of bookmarkPins) {
+        m.set(`${bm.lat.toFixed(5)}|${bm.lng.toFixed(5)}`, bm);
+      }
+    }
+    return m;
+  }, [bookmarkPins]);
+
   // Dual-mode rendering disabled by design: with pre-sync (both devices
   // teleport to the same start before any group action) and shared random
   // seed, the two phones always sit at the exact same coordinate, so two
@@ -2378,15 +2392,53 @@ const MapView: React.FC<MapViewProps> = ({
                           textAlign: 'center',
                         }}>{badge.label}</span>
                         <div style={{ minWidth: 0, flex: 1 }}>
-                          <div style={{
-                            fontSize: 13, fontWeight: 500,
-                            whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-                          }}>{display}</div>
-                          <div style={{
-                            fontSize: 10, opacity: 0.55, fontFamily: 'monospace', marginTop: 2,
-                          }}>
-                            {entry.lat.toFixed(5)}, {entry.lng.toFixed(5)} · {agoLabel}
-                          </div>
+                          {(() => {
+                            // If this entry's coords match an existing
+                            // bookmark, show the bookmark's name + geo
+                            // line so the row reads like a bookmark
+                            // entry while keeping the kind badge + time
+                            // (those are history-specific).
+                            const match = bookmarkByCoord.get(
+                              `${entry.lat.toFixed(5)}|${entry.lng.toFixed(5)}`
+                            );
+                            if (match) {
+                              const hasGeo = !!(match.country_code || match.city || match.timezone);
+                              return (
+                                <>
+                                  <div style={{
+                                    fontSize: 13, fontWeight: 500,
+                                    whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                                  }}>{match.name}</div>
+                                  <div style={{
+                                    fontSize: 10, marginTop: 2,
+                                    display: 'flex', alignItems: 'center', gap: 4,
+                                    minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden',
+                                  }}>
+                                    <BookmarkGeoLine
+                                      countryCode={match.country_code}
+                                      city={match.city}
+                                      timezone={match.timezone}
+                                    />
+                                    {hasGeo && <span style={{ opacity: 0.55 }}>·</span>}
+                                    <span style={{ opacity: 0.55, fontFamily: 'monospace' }}>{agoLabel}</span>
+                                  </div>
+                                </>
+                              );
+                            }
+                            return (
+                              <>
+                                <div style={{
+                                  fontSize: 13, fontWeight: 500,
+                                  whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                                }}>{display}</div>
+                                <div style={{
+                                  fontSize: 10, opacity: 0.55, fontFamily: 'monospace', marginTop: 2,
+                                }}>
+                                  {entry.lat.toFixed(5)}, {entry.lng.toFixed(5)} · {agoLabel}
+                                </div>
+                              </>
+                            );
+                          })()}
                         </div>
                       </button>
                       <button
