@@ -1430,6 +1430,21 @@ const App: React.FC = () => {
   const isRunning = sim.status.running
   const isPaused = sim.status.paused
 
+  // Memoized so MapView's bookmarkByCoord lookup memo isn't invalidated
+  // on every parent render. Re-derives only when bm.bookmarks changes.
+  const bookmarkPins = useMemo(
+    () => bm.bookmarks.map((b: any) => ({
+      id: b.id,
+      name: b.name,
+      lat: b.lat,
+      lng: b.lng,
+      country_code: b.country_code || '',
+      city: b.city || undefined,
+      timezone: b.timezone || undefined,
+    })),
+    [bm.bookmarks]
+  )
+
   return (
     <div className="app-layout">
       <div className="noise-overlay" aria-hidden />
@@ -2081,9 +2096,7 @@ const App: React.FC = () => {
           deviceConnected={device.connectedDevice !== null}
           onShowToast={showToast}
           userAvatarHtml={avatarToHtml(userAvatar, customPng)}
-          bookmarkPins={bm.bookmarks.map((b: any) => ({
-            id: b.id, name: b.name, lat: b.lat, lng: b.lng, country_code: b.country_code || '',
-          }))}
+          bookmarkPins={bookmarkPins}
           showBookmarkPins={showBookmarkPins}
           onMapReady={(api) => { mapApiRef.current = api }}
           previewPin={previewPin}
