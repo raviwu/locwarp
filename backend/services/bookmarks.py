@@ -604,3 +604,91 @@ class BookmarkManager:
             self._save()
         logger.info("Imported %d bookmarks (%d skipped as duplicates)", imported, skipped)
         return {"imported": imported, "skipped": skipped}
+
+    def import_catalog(self, data: str) -> dict:
+        """Force-sync from the bundled catalog. Catalog ids are authoritative.
+
+        Differences from :meth:`import_json`:
+
+        * Existing items with catalog ids are **upserted** (name / coords /
+          category etc. overwritten with the catalog version) — the
+          catalog is the source of truth, so coordinate corrections and
+          renames propagate.
+        * Every imported item gets ``updated_at = now()``. This is the
+          load-bearing detail: locally-deleted catalog entries have a
+          tombstone whose ``deleted_at`` is a real ISO timestamp; the
+          catalog's incoming ``updated_at`` is empty, so the CRDT
+          ``_alive(...)`` check would otherwise let the tombstone win and
+          silently kill the import inside ``_save()``. Stamping
+          ``updated_at = now()`` flips that contest, resurrecting the
+          item.
+        * Local items whose ids are NOT in the catalog are left alone.
+
+        Returns ``{'added': N, 'updated': N, 'resurrected': N}`` where
+        *resurrected* counts incoming ids that had a tombstone before
+        this call. The tombstones themselves are not removed — the
+        ``updated_at > deleted_at`` rule handles the resurrection, and
+        the stale tombstones GC out after ``TOMBSTONE_RETENTION_DAYS``.
+        """
+        try:
+            incoming = BookmarkStore(**json.loads(data))
+        except Exception as exc:
+            logger.error("Invalid catalog JSON: %s", exc)
+            return {"added": 0, "updated": 0, "resurrected": 0}
+
+        now = _now_iso()
+        catalog_ids = {c.id for c in incoming.categories} | {b.id for b in incoming.bookmarks}
+        resurrected = sum(1 for t in self.store.tombstones if t.id in catalog_ids)
+
+        existing_cats = {c.id: c for c in self.store.categories}
+        added_cats = updated_cats = 0
+        for cat in incoming.categories:
+            cat.updated_at = now
+            if cat.id in existing_cats:
+                old = existing_cats[cat.id]
+                old.name = cat.name
+                old.color = cat.color
+                old.sort_order = cat.sort_order
+                old.start_date = cat.start_date
+                old.end_date = cat.end_date
+                old.updated_at = now
+                updated_cats += 1
+            else:
+                self.store.categories.append(cat)
+                existing_cats[cat.id] = cat
+                added_cats += 1
+
+        valid_cat_ids = {c.id for c in self.store.categories}
+        existing_bms = {b.id: b for b in self.store.bookmarks}
+        added_bms = updated_bms = 0
+        for bm in incoming.bookmarks:
+            if bm.category_id not in valid_cat_ids:
+                bm.category_id = "default"
+            bm.updated_at = now
+            if bm.id in existing_bms:
+                old = existing_bms[bm.id]
+                old.name = bm.name
+                old.lat = bm.lat
+                old.lng = bm.lng
+                old.address = bm.address
+                old.category_id = bm.category_id
+                old.country_code = bm.country_code
+                old.updated_at = now
+                enrich_bookmark(old, force=True)
+                updated_bms += 1
+            else:
+                enrich_bookmark(bm)
+                self.store.bookmarks.append(bm)
+                existing_bms[bm.id] = bm
+                added_bms += 1
+
+        self._save()
+        logger.info(
+            "Catalog sync: +%d added, %d updated, %d resurrected",
+            added_cats + added_bms, updated_cats + updated_bms, resurrected,
+        )
+        return {
+            "added": added_cats + added_bms,
+            "updated": updated_cats + updated_bms,
+            "resurrected": resurrected,
+        }

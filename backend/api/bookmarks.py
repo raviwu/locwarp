@@ -299,3 +299,26 @@ async def get_catalog():
     except (OSError, ValueError):
         raise HTTPException(status_code=500, detail="Catalog unreadable or malformed")
     return Response(content=text, media_type="application/json")
+
+
+@router.post("/catalog/sync")
+async def sync_catalog():
+    """Force-sync the bundled catalog into the local store.
+
+    Catalog ids are authoritative — entries previously deleted on this
+    device come back (their tombstones lose the merge contest because
+    the imported items get ``updated_at = now()``), and catalog
+    corrections to lat / lng / name propagate. Local items whose ids
+    are not in the catalog are untouched.
+
+    Distinct from ``POST /import`` which keeps skip-existing semantics
+    for user-supplied file imports (typical "restore backup" intent).
+    """
+    path = _catalog_path()
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="Catalog not bundled")
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise HTTPException(status_code=500, detail=f"Catalog unreadable: {exc}")
+    return _bm().import_catalog(text)

@@ -419,6 +419,19 @@ export interface CatalogPayload {
 export const getCatalog = () =>
   request<CatalogPayload>('GET', '/api/bookmarks/catalog')
 
+export interface CatalogSyncResult {
+  added: number;
+  updated: number;
+  resurrected: number;
+}
+
+// Force-syncs the bundled catalog into the local store. Unlike
+// importBookmarks (which goes through /import and skips duplicates),
+// this endpoint upserts catalog ids and resurrects locally-deleted
+// entries — see backend/services/bookmarks.py::import_catalog.
+export const syncCatalog = () =>
+  request<CatalogSyncResult>('POST', '/api/bookmarks/catalog/sync')
+
 export const getInitialPosition = () =>
   request<{ position: { lat: number; lng: number } | null }>('GET', '/api/location/settings/initial-position')
 export const setInitialPosition = (lat: number | null, lng: number | null) =>

@@ -644,6 +644,9 @@ export const STRINGS = {
   'bm.catalog.up_to_date':         { zh: '已是最新',                   en: 'Up to date' },
   'bm.catalog.up_to_date_tooltip': { zh: '無新活動可加入',             en: 'No new events available' },
   'bm.catalog.failed':             { zh: '更新失敗',                   en: 'Update failed' },
+  'bm.catalog.synced':             { zh: '已同步：新增 {added}・更新 {updated}・復原 {resurrected}',
+                                     en: 'Synced: {added} added · {updated} updated · {resurrected} restored' },
+  // Legacy string for the pre-force-sync import path; kept for tests / log fallback.
   'bm.catalog.imported':           { zh: '已加入 {imported} 筆 (跳過 {skipped} 筆已存在)',
                                      en: 'Added {imported} entries ({skipped} already present, skipped)' },
   'bm.picker.end_event': { zh: '結束此活動 🗑', en: 'End event 🗑' },

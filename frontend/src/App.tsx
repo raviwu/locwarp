@@ -1369,11 +1369,16 @@ const App: React.FC = () => {
     if (!catalog || catalogRefreshing) return
     setCatalogRefreshing(true)
     try {
-      const res = await api.importBookmarks(catalog)
+      // Force-sync — catalog ids are authoritative. Resurrects entries the
+      // user previously deleted from a catalog-seeded category and propagates
+      // any lat/lng/name corrections from the bundled file.
+      const res = await api.syncCatalog()
       await bm.refresh()
-      // bm.refresh() already invalidates catalogNewCount via the bm.bookmarks dep,
-      // so no need to refetch the catalog file (its content is unchanged).
-      showToast(t('bm.catalog.imported', { imported: res.imported, skipped: res.skipped ?? 0 }))
+      showToast(t('bm.catalog.synced', {
+        added: res.added,
+        updated: res.updated,
+        resurrected: res.resurrected,
+      }))
     } catch (err: unknown) {
       showToast(err instanceof Error ? err.message : t('bm.catalog.failed'))
     } finally {

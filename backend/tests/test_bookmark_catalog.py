@@ -69,3 +69,53 @@ def test_get_catalog_500_when_malformed(client, tmp_path, monkeypatch):
     monkeypatch.setattr("api.bookmarks._catalog_path", lambda: bad)
     resp = client.get("/api/bookmarks/catalog")
     assert resp.status_code == 500
+
+
+# ── POST /catalog/sync ──────────────────────────────────────────────
+
+
+def _seed_catalog(tmp_path):
+    """Write a tiny catalog file and return its path."""
+    f = tmp_path / "catalog.json"
+    f.write_text(json.dumps({
+        "categories": [
+            {"id": "cat-X", "name": "X", "color": "#000", "sort_order": 1, "created_at": "2026-05-23T00:00:00Z"},
+        ],
+        "bookmarks": [
+            {"id": "bm-X1", "name": "X1", "lat": 1.0, "lng": 2.0, "category_id": "cat-X", "created_at": "2026-05-23T00:00:00Z"},
+            {"id": "bm-X2", "name": "X2", "lat": 3.0, "lng": 4.0, "category_id": "cat-X", "created_at": "2026-05-23T00:00:00Z"},
+        ],
+    }))
+    return f
+
+
+def test_catalog_sync_first_call_adds_all(client, tmp_path, monkeypatch):
+    monkeypatch.setattr("api.bookmarks._catalog_path", lambda: _seed_catalog(tmp_path))
+    resp = client.post("/api/bookmarks/catalog/sync")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body == {"added": 3, "updated": 0, "resurrected": 0}
+
+
+def test_catalog_sync_resurrects_after_delete(client, tmp_path, monkeypatch):
+    monkeypatch.setattr("api.bookmarks._catalog_path", lambda: _seed_catalog(tmp_path))
+    # 1) seed
+    client.post("/api/bookmarks/catalog/sync")
+    # 2) user deletes the category cascade
+    resp = client.delete("/api/bookmarks/categories/cat-X?cascade=true")
+    assert resp.status_code == 200
+    assert resp.json()["deleted_bookmarks"] == 2
+    # 3) re-sync
+    resp = client.post("/api/bookmarks/catalog/sync")
+    body = resp.json()
+    assert body["resurrected"] == 3
+    # The deleted items are back
+    listing = client.get("/api/bookmarks").json()
+    assert {b["id"] for b in listing["bookmarks"]} >= {"bm-X1", "bm-X2"}
+
+
+def test_catalog_sync_404_when_file_missing(client, tmp_path, monkeypatch):
+    missing = tmp_path / "nope.json"
+    monkeypatch.setattr("api.bookmarks._catalog_path", lambda: missing)
+    resp = client.post("/api/bookmarks/catalog/sync")
+    assert resp.status_code == 404
