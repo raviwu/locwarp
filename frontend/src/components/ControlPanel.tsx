@@ -884,7 +884,7 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
           className="anim-scale-in"
           style={{
             position: 'fixed', left: libraryPos.x, top: libraryPos.y, zIndex: 800,
-            width: 'min(420px, 90vw)', maxHeight: '75vh',
+            width: 'min(250px, 90vw)', maxHeight: '75vh',
             background: 'rgba(26, 29, 39, 0.96)',
             backdropFilter: 'blur(14px)', WebkitBackdropFilter: 'blur(14px)',
             border: '1px solid rgba(108, 140, 255, 0.18)', borderRadius: 12,

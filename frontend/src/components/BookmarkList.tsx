@@ -1123,7 +1123,7 @@ const BookmarkList: React.FC<BookmarkListProps> = ({
                   />
                   <div
                     style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', minWidth: 0 }}
-                    title={`${displayCat(bm.category)} · ${bm.lat.toFixed(5)}, ${bm.lng.toFixed(5)}${bm.region ? ` · ${bm.region}` : ''}`}
+                    title={`${bm.name} · ${displayCat(bm.category)} · ${bm.lat.toFixed(5)}, ${bm.lng.toFixed(5)}${bm.region ? ` · ${bm.region}` : ''}`}
                   >
                     <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                       {bm.name}
@@ -1331,7 +1331,7 @@ const BookmarkList: React.FC<BookmarkListProps> = ({
                     ) : (
                       <div
                         style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', minWidth: 0 }}
-                        title={`${bm.lat.toFixed(5)}, ${bm.lng.toFixed(5)}${bm.region ? ` · ${bm.region}` : ''}`}
+                        title={`${bm.name} · ${bm.lat.toFixed(5)}, ${bm.lng.toFixed(5)}${bm.region ? ` · ${bm.region}` : ''}`}
                       >
                         <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                           {bm.name}
