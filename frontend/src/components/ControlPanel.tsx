@@ -884,12 +884,16 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
           className="anim-scale-in"
           style={{
             position: 'fixed', left: libraryPos.x, top: libraryPos.y, zIndex: 800,
-            width: 'min(250px, 90vw)', maxHeight: '75vh',
+            width: 340, maxWidth: '90vw', minWidth: 240,
+            maxHeight: '90vh', minHeight: 240,
             background: 'rgba(26, 29, 39, 0.96)',
             backdropFilter: 'blur(14px)', WebkitBackdropFilter: 'blur(14px)',
             border: '1px solid rgba(108, 140, 255, 0.18)', borderRadius: 12,
             boxShadow: '0 20px 60px rgba(12, 18, 40, 0.65), 0 0 0 1px rgba(255, 255, 255, 0.04) inset',
             display: 'flex', flexDirection: 'column', overflow: 'hidden',
+            // Native CSS resize — browser writes inline width/height on drag.
+            // Session-only (matches libraryPos which also doesn't persist).
+            resize: 'both',
           }}
         >
           <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
