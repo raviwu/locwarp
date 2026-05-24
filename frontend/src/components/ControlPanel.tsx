@@ -91,10 +91,16 @@ interface ControlPanelProps {
   bookmarkCategories: string[];
   bookmarkCategoryColors?: Record<string, string>;
   onBookmarkClick: (bm: Bookmark) => void;
-  // Camera-only fly: pans the map to the bookmark coordinate without
-  // moving the iPhone GPS. BookmarkList exposes a checkbox letting the
-  // user choose between this and the legacy GPS teleport.
-  onBookmarkPreview?: (bm: Bookmark) => void;
+  // Right-click jump actions for bookmarks. Mirror MapView's identically-
+  // named props so the bookmark right-click menu has parity with the map
+  // right-click menu. onTeleport / onNavigate are already typed above for
+  // the address-search flow — these new entries gate Set Gold A, Add
+  // Waypoint, device-disconnected fallback, and toast feedback.
+  onSetAsGoldDittoA?: (lat: number, lng: number) => void;
+  onAddWaypoint?: (lat: number, lng: number) => void;
+  deviceConnected: boolean;
+  showWaypointOption: boolean;
+  onShowToast?: (msg: string) => void;
   onBookmarkAdd: (bm: Bookmark) => void;
   onBookmarkDelete: (id: string) => void;
   onBookmarkEdit: (id: string, bm: Partial<Bookmark>) => void;
@@ -297,7 +303,11 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
   bookmarkCategories,
   bookmarkCategoryColors,
   onBookmarkClick,
-  onBookmarkPreview,
+  onSetAsGoldDittoA,
+  onAddWaypoint,
+  deviceConnected,
+  showWaypointOption,
+  onShowToast,
   onBookmarkAdd,
   onBookmarkDelete,
   onBookmarkEdit,
@@ -939,7 +949,13 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
                     categoryColors={bookmarkCategoryColors}
                     currentPosition={currentPosition}
                     onBookmarkClick={(b) => { onBookmarkClick(b); }}
-                    onBookmarkPreview={onBookmarkPreview}
+                    onTeleport={onTeleport}
+                    onNavigate={onNavigate}
+                    onSetAsGoldDittoA={onSetAsGoldDittoA}
+                    onAddWaypoint={onAddWaypoint}
+                    deviceConnected={deviceConnected}
+                    showWaypointOption={showWaypointOption}
+                    onShowToast={onShowToast}
                     onBookmarkAdd={onBookmarkAdd}
                     onBookmarkDelete={onBookmarkDelete}
                     onBookmarkEdit={onBookmarkEdit}

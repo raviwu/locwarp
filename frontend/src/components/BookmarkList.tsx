@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { BookmarkGeoLine } from './BookmarkGeoLine';
 import { useT, useI18n } from '../i18n';
-import { getBookmarkUiState, setBookmarkUiState } from '../services/api';
+import { getBookmarkUiState, setBookmarkUiState, reverseGeocode } from '../services/api';
 import {
   getCategoryStatus,
   todayLocal,
@@ -41,11 +41,21 @@ interface BookmarkListProps {
   // fallback so renaming a category doesn't re-roll its dot color.
   categoryColors?: Record<string, string>;
   currentPosition: Position | null;
+  // Left-click on a bookmark row. Pans the map only — never moves GPS.
+  // All GPS jump actions are reached via right-click (see onTeleport etc.).
   onBookmarkClick: (bm: Bookmark) => void;
-  // Camera-only fly: pans the map to the bookmark coordinate without
-  // moving the iPhone GPS. Used when the "click also flies GPS"
-  // checkbox is unticked. Optional: if not supplied the toggle hides.
-  onBookmarkPreview?: (bm: Bookmark) => void;
+  // Right-click jump actions. Mirror the map context menu so bookmark
+  // right-click has parity with map / history right-click.
+  onTeleport: (lat: number, lng: number) => void;
+  onNavigate: (lat: number, lng: number) => void;
+  onSetAsGoldDittoA?: (lat: number, lng: number) => void;
+  onAddWaypoint?: (lat: number, lng: number) => void;
+  // Gates Teleport / Navigate (greyed when no device) and Add Waypoint
+  // (hidden when not in a route mode). Mirrors MapView prop semantics.
+  deviceConnected: boolean;
+  showWaypointOption: boolean;
+  // Toast hook for "coords copied" / What's-here transient feedback.
+  onShowToast?: (msg: string) => void;
   onBookmarkAdd: (bm: Bookmark) => void;
   onBookmarkDelete: (id: string) => void;
   onBookmarkEdit: (id: string, bm: Partial<Bookmark>) => void;
@@ -115,7 +125,13 @@ const BookmarkList: React.FC<BookmarkListProps> = ({
   categoryColors,
   currentPosition,
   onBookmarkClick,
-  onBookmarkPreview,
+  onTeleport,
+  onNavigate,
+  onSetAsGoldDittoA,
+  onAddWaypoint,
+  deviceConnected,
+  showWaypointOption,
+  onShowToast,
   onBookmarkAdd,
   onBookmarkDelete,
   onBookmarkEdit,
@@ -194,6 +210,12 @@ const BookmarkList: React.FC<BookmarkListProps> = ({
   };
 
   const [contextMenu, setContextMenu] = useState<{ bm: Bookmark; x: number; y: number } | null>(null);
+  // Reverse-geocode state for the menu's coords header. Reset whenever
+  // the menu closes — see the dismissal useEffect below.
+  const [reverseGeo, setReverseGeo] = useState<{
+    loading: boolean; address: string | null; error: string | null;
+    key: string; // lat|lng the result belongs to
+  }>({ loading: false, address: null, error: null, key: '' });
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
   // Full edit dialog (name + lat + lng) — triggered by context menu "Edit".
@@ -232,21 +254,6 @@ const BookmarkList: React.FC<BookmarkListProps> = ({
     }));
     exitMultiSelect();
   };
-  // "Click also flies GPS" toggle persisted in localStorage so the choice
-  // survives restart. Default true = legacy behavior (clicking a bookmark
-  // teleports iPhone). When false, click only pans the map view (preview).
-  const [flyGps, setFlyGpsRaw] = useState<boolean>(() => {
-    try {
-      const v = localStorage.getItem('locwarp.bookmark_fly_gps');
-      // Default to true unless the user has explicitly stored '0'.
-      return v === null ? true : v === '1';
-    } catch { return true; }
-  });
-  const setFlyGps = (v: boolean) => {
-    setFlyGpsRaw(v);
-    try { localStorage.setItem('locwarp.bookmark_fly_gps', v ? '1' : '0'); } catch { /* ignore */ }
-  };
-
   // Sort mode persisted in localStorage so it survives restart.
   type SortMode = 'default' | 'name' | 'date_added' | 'last_used';
   const [sortMode, setSortModeRaw] = useState<SortMode>(() => {
@@ -300,6 +307,23 @@ const BookmarkList: React.FC<BookmarkListProps> = ({
       document.removeEventListener('contextmenu', onOutside);
       document.removeEventListener('keydown', onEsc);
     };
+  }, [contextMenu]);
+
+  // Drop any in-flight or completed reverse-geocode result when the
+  // menu closes, so a stale address from a previous right-click can
+  // never leak into a new lookup.
+  useEffect(() => {
+    if (!contextMenu) {
+      setReverseGeo({ loading: false, address: null, error: null, key: '' });
+    }
+  }, [contextMenu]);
+
+  // Tracks the current `contextMenu` value so async handlers can detect
+  // whether the menu was dismissed or re-targeted mid-flight and drop
+  // their result instead of writing back stale state.
+  const contextMenuRef = useRef<typeof contextMenu>(null);
+  useEffect(() => {
+    contextMenuRef.current = contextMenu;
   }, [contextMenu]);
 
   // Collapse state is persisted in ~/.locwarp/settings.json via the
@@ -432,18 +456,13 @@ const BookmarkList: React.FC<BookmarkListProps> = ({
 
   // Click handler: flash the bookmark green for 500ms as visual feedback
   // and apply a 150ms debounce so accidental double-clicks don't fire
-  // twice (which on slow connections would race the teleport).
-  // When `flyGps` is off and a preview handler is wired, we route to the
-  // camera-only path instead of the GPS teleport.
+  // twice. Left-click is always a pan-only preview — GPS jump actions
+  // live on the right-click menu now (see the context menu below).
   const handleBookmarkClick = (bm: Bookmark) => {
     const now = Date.now();
     if (now - lastClickTs.current < 150) return;
     lastClickTs.current = now;
-    if (!flyGps && onBookmarkPreview) {
-      onBookmarkPreview(bm);
-    } else {
-      onBookmarkClick(bm);
-    }
+    onBookmarkClick(bm);
     if (bm.id) {
       setFlashedBmId(bm.id);
       if (flashTimer.current) clearTimeout(flashTimer.current);
@@ -713,25 +732,6 @@ const BookmarkList: React.FC<BookmarkListProps> = ({
           />
           <span className="lw-checkbox-box"></span>
           <span className="lw-checkbox-label">{t('bm.show_on_map')}</span>
-        </label>
-      )}
-
-      {/* Click-also-flies-GPS toggle. Only useful when the parent wires up
-          the camera-only preview path; otherwise hide so the checkbox
-          doesn't look like a no-op. */}
-      {onBookmarkPreview && (
-        <label
-          className="lw-checkbox"
-          title={t('bm.fly_gps_tooltip')}
-          style={{ display: 'flex', marginTop: 6, fontSize: 11.5 }}
-        >
-          <input
-            type="checkbox"
-            checked={flyGps}
-            onChange={(e) => setFlyGps(e.target.checked)}
-          />
-          <span className="lw-checkbox-box"></span>
-          <span className="lw-checkbox-label">{t('bm.fly_gps')}</span>
         </label>
       )}
 
@@ -1477,24 +1477,195 @@ const BookmarkList: React.FC<BookmarkListProps> = ({
       })()}
 
       {/* Context menu (dismissed via document click listener — see useEffect) */}
-      {contextMenu && createPortal(
+      {contextMenu && (() => {
+        // Centralize the lat|lng key so the click handler, loading
+        // indicator, and result-conditional all use the exact same
+        // string — and so the async handler can drop stale writes
+        // that resolve after the menu was dismissed or re-targeted.
+        const openSnapshot = contextMenu;
+        const headerKey = `${contextMenu.bm.lat.toFixed(6)}|${contextMenu.bm.lng.toFixed(6)}`;
+        return createPortal(
         <>
           <div
             data-bookmark-context-menu
             style={{
               position: 'fixed',
               // Clamp to viewport so the menu never falls off-screen.
-              left: Math.min(contextMenu.x, window.innerWidth - 160),
-              top: Math.min(contextMenu.y, window.innerHeight - 200),
+              left: Math.min(contextMenu.x, window.innerWidth - 200),
+              top: Math.min(contextMenu.y, window.innerHeight - 360),
               zIndex: 9999,
-              background: '#2a2a2e',
-              border: '1px solid #444',
-              borderRadius: 6,
+              background: 'rgba(26, 29, 39, 0.95)',
+              backdropFilter: 'blur(10px)',
+              WebkitBackdropFilter: 'blur(10px)',
+              border: '1px solid rgba(108, 140, 255, 0.18)',
+              borderRadius: 10,
               padding: '4px 0',
-              boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
-              minWidth: 140,
+              boxShadow: '0 10px 32px rgba(12, 18, 40, 0.55), 0 0 0 1px rgba(255, 255, 255, 0.04) inset',
+              minWidth: 180,
+              maxWidth: 'calc(100vw - 16px)',
+              maxHeight: 'calc(100vh - 16px)',
+              overflow: 'auto',
             }}
           >
+            {/* 1. Coords header — clickable to trigger reverse-geocode. */}
+            <div
+              style={{
+                padding: '8px 16px 6px',
+                color: '#9ac0ff',
+                fontSize: 12,
+                fontFamily: 'monospace',
+                display: 'flex',
+                alignItems: 'center',
+                cursor: 'pointer',
+                gap: 4,
+              }}
+              title={t('map.whats_here_tooltip')}
+              onMouseEnter={ctxHighlight}
+              onMouseLeave={ctxUnhighlight}
+              onClick={async (e) => {
+                e.stopPropagation();
+                if (reverseGeo.loading && reverseGeo.key === headerKey) return;
+                if (reverseGeo.address && reverseGeo.key === headerKey) return;
+                setReverseGeo({ loading: true, address: null, error: null, key: headerKey });
+                try {
+                  const res = await reverseGeocode(contextMenu.bm.lat, contextMenu.bm.lng);
+                  // Menu was dismissed or re-targeted while the request was in flight —
+                  // drop the result so it doesn't leak into the next menu open.
+                  if (contextMenuRef.current !== openSnapshot) return;
+                  const name = res?.display_name || res?.address || null;
+                  if (name) {
+                    setReverseGeo({ loading: false, address: name, error: null, key: headerKey });
+                  } else {
+                    setReverseGeo({ loading: false, address: null, error: t('map.whats_here_empty'), key: headerKey });
+                  }
+                } catch (err: any) {
+                  if (contextMenuRef.current !== openSnapshot) return;
+                  setReverseGeo({ loading: false, address: null, error: err?.message || 'error', key: headerKey });
+                }
+              }}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: 4, opacity: 0.8 }}>
+                <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z" />
+                <circle cx="12" cy="10" r="3" />
+              </svg>
+              <span style={{ flex: 1 }}>{contextMenu.bm.lat.toFixed(6)}, {contextMenu.bm.lng.toFixed(6)}</span>
+              <span style={{ fontSize: 10, opacity: 0.7, fontFamily: 'inherit' }}>
+                {reverseGeo.loading && reverseGeo.key === headerKey
+                  ? t('map.whats_here_loading')
+                  : t('map.whats_here')}
+              </span>
+            </div>
+            {/* Reverse-geocode result or error, shown only after the user taps the header row. */}
+            {reverseGeo.key === headerKey &&
+             (reverseGeo.address || reverseGeo.error) && (
+              <div
+                onClick={(e) => e.stopPropagation()}
+                style={{
+                  padding: '2px 16px 8px',
+                  color: reverseGeo.error ? '#ff8a80' : '#d0d0d0',
+                  fontSize: 11.5,
+                  lineHeight: 1.5,
+                  userSelect: 'text',
+                  cursor: 'text',
+                  wordBreak: 'break-word',
+                }}
+              >
+                {reverseGeo.address ?? reverseGeo.error}
+              </div>
+            )}
+            <div style={{ height: 1, background: '#444', margin: '2px 0 4px' }} />
+
+            {/* 2 + 3. Teleport / Navigate (device-gated). */}
+            {deviceConnected ? (
+              <>
+                <div
+                  style={ctxItemStyle}
+                  onMouseEnter={ctxHighlight}
+                  onMouseLeave={ctxUnhighlight}
+                  onClick={() => {
+                    onTeleport(contextMenu.bm.lat, contextMenu.bm.lng);
+                    setContextMenu(null);
+                  }}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: 8 }}>
+                    <circle cx="12" cy="12" r="10" />
+                    <line x1="12" y1="2" x2="12" y2="6" />
+                    <line x1="12" y1="18" x2="12" y2="22" />
+                    <line x1="2" y1="12" x2="6" y2="12" />
+                    <line x1="18" y1="12" x2="22" y2="12" />
+                  </svg>
+                  {t('map.teleport_here')}
+                </div>
+                <div
+                  style={ctxItemStyle}
+                  onMouseEnter={ctxHighlight}
+                  onMouseLeave={ctxUnhighlight}
+                  onClick={() => {
+                    onNavigate(contextMenu.bm.lat, contextMenu.bm.lng);
+                    setContextMenu(null);
+                  }}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: 8 }}>
+                    <polygon points="3,11 22,2 13,21 11,13" />
+                  </svg>
+                  {t('map.navigate_here')}
+                </div>
+              </>
+            ) : (
+              <div
+                style={{ ...ctxItemStyle, color: '#ff6b6b', cursor: 'not-allowed', opacity: 0.75 }}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: 8 }}>
+                  <circle cx="12" cy="12" r="10" />
+                  <line x1="4.93" y1="4.93" x2="19.07" y2="19.07" />
+                </svg>
+                {t('map.device_disconnected')}
+              </div>
+            )}
+
+            {/* 4. Set as Gold Ditto A (always wired in practice). */}
+            {onSetAsGoldDittoA && (
+              <div
+                style={ctxItemStyle}
+                onMouseEnter={ctxHighlight}
+                onMouseLeave={ctxUnhighlight}
+                onClick={() => {
+                  onSetAsGoldDittoA(contextMenu.bm.lat, contextMenu.bm.lng);
+                  setContextMenu(null);
+                }}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: 8 }}>
+                  <path d="M12 2 L13.5 9 L21 12 L13.5 15 L12 22 L10.5 15 L3 12 L10.5 9 Z" />
+                </svg>
+                {t('goldditto.set_as_a')}
+              </div>
+            )}
+
+            {/* 5. Add as Waypoint (only in a route mode). */}
+            {showWaypointOption && onAddWaypoint && (
+              <div
+                style={ctxItemStyle}
+                onMouseEnter={ctxHighlight}
+                onMouseLeave={ctxUnhighlight}
+                onClick={() => {
+                  onAddWaypoint(contextMenu.bm.lat, contextMenu.bm.lng);
+                  setContextMenu(null);
+                }}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: 8 }}>
+                  <circle cx="12" cy="12" r="3" />
+                  <line x1="12" y1="5" x2="12" y2="1" />
+                  <line x1="12" y1="23" x2="12" y2="19" />
+                  <line x1="5" y1="12" x2="1" y2="12" />
+                  <line x1="23" y1="12" x2="19" y2="12" />
+                </svg>
+                {t('map.add_waypoint')}
+              </div>
+            )}
+
+            <div style={{ height: 1, background: '#444', margin: '4px 0' }} />
+
+            {/* 6. Edit. */}
             <div
               style={ctxItemStyle}
               onMouseEnter={ctxHighlight}
@@ -1514,6 +1685,8 @@ const BookmarkList: React.FC<BookmarkListProps> = ({
               </svg>
               {t('bm.edit')}
             </div>
+
+            {/* 7. Copy (name + lat/lng). */}
             <div
               style={ctxItemStyle}
               onMouseEnter={ctxHighlight}
@@ -1523,7 +1696,6 @@ const BookmarkList: React.FC<BookmarkListProps> = ({
                 try {
                   await navigator.clipboard.writeText(text);
                 } catch {
-                  // Fallback for environments without clipboard API
                   const ta = document.createElement('textarea');
                   ta.value = text;
                   document.body.appendChild(ta);
@@ -1531,6 +1703,7 @@ const BookmarkList: React.FC<BookmarkListProps> = ({
                   try { document.execCommand('copy'); } catch { /* ignore */ }
                   document.body.removeChild(ta);
                 }
+                if (onShowToast) onShowToast(t('map.coords_copied'));
                 setContextMenu(null);
               }}
             >
@@ -1540,6 +1713,8 @@ const BookmarkList: React.FC<BookmarkListProps> = ({
               </svg>
               {t('bm.copy')}
             </div>
+
+            {/* 8. Delete. */}
             <div
               style={ctxItemStyle}
               onMouseEnter={ctxHighlight}
@@ -1555,6 +1730,8 @@ const BookmarkList: React.FC<BookmarkListProps> = ({
               </svg>
               <span style={{ color: '#f44336' }}>{t('generic.delete')}</span>
             </div>
+
+            {/* 9. Move to category (only when more than one category exists). */}
             {categories.length > 1 && (
               <>
                 <div style={{ height: 1, background: '#444', margin: '4px 0' }} />
@@ -1593,7 +1770,8 @@ const BookmarkList: React.FC<BookmarkListProps> = ({
           </div>
         </>,
         document.body,
-      )}
+        );
+      })()}
 
       {/* Edit dialog — name + lat + lng */}
       {editDialog && createPortal(

@@ -1578,8 +1578,12 @@ const App: React.FC = () => {
           }))}
           bookmarkCategoriesFull={bm.categories.map(c => ({ id: c.id, name: c.name }))}
           bookmarkCategoryColors={Object.fromEntries(bm.categories.map(c => [c.name, c.color || '']))}
-          onBookmarkClick={(b: any) => handleTeleport(b.lat, b.lng)}
-          onBookmarkPreview={(b: any) => handleMapPanOnly(b.lat, b.lng)}
+          onBookmarkClick={(b: any) => handleMapPanOnly(b.lat, b.lng)}
+          onSetAsGoldDittoA={handleSetGoldDittoA}
+          onAddWaypoint={handleAddWaypoint}
+          deviceConnected={device.connectedDevice !== null}
+          showWaypointOption={sim.mode === SimMode.Loop || sim.mode === SimMode.MultiStop || sim.mode === SimMode.Navigate}
+          onShowToast={showToast}
           onBookmarkAdd={(b: any) => {
             const cat = bm.categories.find(c => c.name === b.category)
             // Country / timezone / city / region are resolved offline by
