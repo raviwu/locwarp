@@ -607,8 +607,6 @@ export const STRINGS = {
   'bm.sort_distance': { zh: '依距離(近到遠)', en: 'By distance (nearest first)' },
   'bm.sort_no_position': { zh: '需先有目前位置', en: 'need current position' },
   'bm.show_on_map': { zh: '在地圖上顯示所有收藏', en: 'Show all bookmarks on map' },
-  'bm.fly_gps': { zh: '點擊也要飛 GPS (取消打勾則只飛畫面)', en: 'Click also flies GPS (uncheck to only pan the map)' },
-  'bm.fly_gps_tooltip': { zh: '打勾:點座標會把 iPhone 瞬移過去 (預設)。取消打勾:只把畫面飛過去看看,不影響 iPhone 定位。', en: 'When ticked, clicking a bookmark teleports iPhone GPS (default). When unticked, only the map view pans there; iPhone GPS stays put.' },
   'bm.multi_select': { zh: '多選', en: 'Select' },
   'bm.multi_select_tooltip': { zh: '多選模式:勾選多個收藏後一次刪除', en: 'Multi-select mode: tick multiple bookmarks and delete at once' },
   'bm.exit_multi_select': { zh: '取消多選', en: 'Done' },
