@@ -42,7 +42,8 @@ interface BookmarkListProps {
   categoryColors?: Record<string, string>;
   currentPosition: Position | null;
   // Left-click on a bookmark row. Pans the map only — never moves GPS.
-  // All GPS jump actions are reached via right-click (see onTeleport etc.).
+  // When the "click also flies GPS" toggle is on, the row dispatches to
+  // onTeleport instead, so the bookmark also moves the iPhone.
   onBookmarkClick: (bm: Bookmark) => void;
   // Right-click jump actions. Mirror the map context menu so bookmark
   // right-click has parity with map / history right-click.
@@ -254,6 +255,22 @@ const BookmarkList: React.FC<BookmarkListProps> = ({
     }));
     exitMultiSelect();
   };
+  // "Click also flies GPS" toggle persisted in localStorage so the choice
+  // survives restart. Default true = legacy behavior (clicking a bookmark
+  // teleports iPhone). When false, click only pans the map view (preview).
+  // The right-click menu still exposes Teleport / Navigate / Gold A /
+  // Waypoint independently of this toggle.
+  const [flyGps, setFlyGpsRaw] = useState<boolean>(() => {
+    try {
+      const v = localStorage.getItem('locwarp.bookmark_fly_gps');
+      return v === null ? true : v === '1';
+    } catch { return true; }
+  });
+  const setFlyGps = (v: boolean) => {
+    setFlyGpsRaw(v);
+    try { localStorage.setItem('locwarp.bookmark_fly_gps', v ? '1' : '0'); } catch { /* ignore */ }
+  };
+
   // Sort mode persisted in localStorage so it survives restart.
   type SortMode = 'default' | 'name' | 'date_added' | 'last_used';
   const [sortMode, setSortModeRaw] = useState<SortMode>(() => {
@@ -456,13 +473,19 @@ const BookmarkList: React.FC<BookmarkListProps> = ({
 
   // Click handler: flash the bookmark green for 500ms as visual feedback
   // and apply a 150ms debounce so accidental double-clicks don't fire
-  // twice. Left-click is always a pan-only preview — GPS jump actions
-  // live on the right-click menu now (see the context menu below).
+  // twice. When `flyGps` is on (default), left-click teleports the iPhone
+  // via onTeleport; when off, it only pans the map via onBookmarkClick.
+  // The right-click menu's Teleport / Navigate / Gold A / Waypoint stay
+  // available regardless of the toggle.
   const handleBookmarkClick = (bm: Bookmark) => {
     const now = Date.now();
     if (now - lastClickTs.current < 150) return;
     lastClickTs.current = now;
-    onBookmarkClick(bm);
+    if (flyGps) {
+      onTeleport(bm.lat, bm.lng);
+    } else {
+      onBookmarkClick(bm);
+    }
     if (bm.id) {
       setFlashedBmId(bm.id);
       if (flashTimer.current) clearTimeout(flashTimer.current);
@@ -734,6 +757,23 @@ const BookmarkList: React.FC<BookmarkListProps> = ({
           <span className="lw-checkbox-label">{t('bm.show_on_map')}</span>
         </label>
       )}
+
+      {/* Click-also-flies-GPS toggle. When on, left-click on a bookmark
+          teleports the iPhone; when off, it only pans the map view.
+          Right-click menu actions are unaffected. */}
+      <label
+        className="lw-checkbox"
+        title={t('bm.fly_gps_tooltip')}
+        style={{ display: 'flex', marginTop: 6, fontSize: 11.5 }}
+      >
+        <input
+          type="checkbox"
+          checked={flyGps}
+          onChange={(e) => setFlyGps(e.target.checked)}
+        />
+        <span className="lw-checkbox-box"></span>
+        <span className="lw-checkbox-label">{t('bm.fly_gps')}</span>
+      </label>
 
       {/* Sort control — choose how the bookmark list is ordered. */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 8, fontSize: 11, color: '#bbb' }}>
