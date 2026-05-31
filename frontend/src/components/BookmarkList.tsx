@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { isSubmitEnter } from '../utils/keyboard';
 import { createPortal } from 'react-dom';
 import { BookmarkGeoLine } from './BookmarkGeoLine';
 import { useT, useI18n } from '../i18n';
@@ -813,7 +814,7 @@ const BookmarkList: React.FC<BookmarkListProps> = ({
             placeholder={t('bm.name_placeholder')}
             value={newName}
             onChange={(e) => setNewName(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && handleAddBookmark()}
+            onKeyDown={(e) => isSubmitEnter(e) && handleAddBookmark()}
             style={{ width: '100%', marginBottom: 8 }}
             autoFocus
           />
@@ -932,7 +933,7 @@ const BookmarkList: React.FC<BookmarkListProps> = ({
               value={newCategoryName}
               onChange={(e) => setNewCategoryName(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === 'Enter' && newCategoryName.trim()) {
+                if (isSubmitEnter(e) && newCategoryName.trim()) {
                   onCategoryAdd(newCategoryName.trim());
                   setNewCategoryName('');
                 }
@@ -1357,7 +1358,7 @@ const BookmarkList: React.FC<BookmarkListProps> = ({
                         value={editName}
                         onChange={(e) => setEditName(e.target.value)}
                         onKeyDown={(e) => {
-                          if (e.key === 'Enter' && bm.id) {
+                          if (isSubmitEnter(e) && bm.id) {
                             onBookmarkEdit(bm.id, { name: editName });
                             setEditingId(null);
                           }
@@ -1946,7 +1947,7 @@ const BookmarkList: React.FC<BookmarkListProps> = ({
               autoFocus
               onChange={(e) => setCustomName(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === 'Enter') handleAddCustom();
+                if (isSubmitEnter(e)) handleAddCustom();
                 if (e.key === 'Escape') setShowCustomDialog(false);
               }}
               style={{ width: '100%', marginBottom: 8 }}

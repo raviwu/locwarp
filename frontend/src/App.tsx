@@ -10,6 +10,7 @@ import UserAvatarPicker from './components/UserAvatarPicker'
 import { UserAvatar, avatarToHtml, loadAvatar, saveAvatar, loadCustomPng, saveCustomPng } from './userAvatars'
 import * as api from './services/api'
 import { parseCoord } from './utils/coords'
+import { isSubmitEnter } from './utils/keyboard'
 
 import MapView from './components/MapView'
 import ControlPanel from './components/ControlPanel'
@@ -2176,7 +2177,7 @@ const App: React.FC = () => {
                 value={addBmDialog.name}
                 onChange={(e) => setAddBmDialog({ ...addBmDialog, name: e.target.value })}
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter') submitAddBookmark()
+                  if (isSubmitEnter(e)) submitAddBookmark()
                   if (e.key === 'Escape') setAddBmDialog(null)
                 }}
                 style={{ width: '100%', paddingRight: addBmDialog.nameResolving ? 30 : 8 }}
