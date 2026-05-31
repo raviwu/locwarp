@@ -9,3 +9,7 @@ python-multipart>=0.0.9
 psutil>=5.9.0
 watchdog>=3.0
 timezonefinder>=8.0
+# numpy is imported directly by services/geo_offline.py (also a timezonefinder
+# dep). Declared explicitly so the offline geo resolver never relies on a
+# transitive-only install.
+numpy>=1.24
