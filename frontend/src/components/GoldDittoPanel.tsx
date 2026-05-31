@@ -2,7 +2,6 @@ import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import { useT } from '../i18n'
 import BookmarkPickerPopover from './BookmarkPickerPopover'
-import BookmarkDropdown from './BookmarkDropdown'
 
 interface Bookmark {
   id?: string
@@ -47,10 +46,9 @@ interface Props {
 }
 
 const LS_A = 'goldditto.A'
-const LS_B_LEGACY = 'goldditto.B'              // pre-2026-05-10: stored "lat, lng"
-const LS_B_BOOKMARK_ID = 'goldditto.B.bookmarkId' // new: bookmark id only
+const LS_B = 'goldditto.B'                     // "lat, lng" string (symmetric with A)
+const LS_B_BOOKMARK_ID = 'goldditto.B.bookmarkId' // legacy; read once for reverse migration
 const LS_WAIT = 'goldditto.wait_seconds'
-const COORD_MATCH_TOLERANCE = 1e-5
 
 function parseLatLng(s: string): { lat: number; lng: number } | null {
   const m = s.trim().match(/^(-?\d+\.?\d*)\s*,\s*(-?\d+\.?\d*)$/)
@@ -76,9 +74,7 @@ export const GoldDittoPanel: React.FC<Props> = ({
   const t = useT()
 
   const [aText, setAText] = useState(() => localStorage.getItem(LS_A) ?? '')
-  const [bBookmarkId, setBBookmarkId] = useState<string | null>(
-    () => localStorage.getItem(LS_B_BOOKMARK_ID),
-  )
+  const [bText, setBText] = useState(() => localStorage.getItem(LS_B) ?? '')
   const [waitText, setWaitText] = useState(
     () => localStorage.getItem(LS_WAIT) ?? '3.0',
   )
@@ -86,9 +82,13 @@ export const GoldDittoPanel: React.FC<Props> = ({
   const [pickerSide, setPickerSide] = useState<'A' | 'B' | null>(null)
   const [pickerAnchor, setPickerAnchor] = useState<DOMRect | null>(null)
   const aBtnRef = useRef<HTMLButtonElement | null>(null)
+  const bBtnRef = useRef<HTMLButtonElement | null>(null)
 
   const [pickerCatA, setPickerCatA] = useState<string | null>(
     () => localStorage.getItem('goldditto.picker.A.lastCategory'),
+  )
+  const [pickerCatB, setPickerCatB] = useState<string | null>(
+    () => localStorage.getItem('goldditto.picker.B.lastCategory'),
   )
 
   const bookmarksByCategoryId = useMemo(() => {
@@ -115,47 +115,28 @@ export const GoldDittoPanel: React.FC<Props> = ({
 
   // Persist on change.
   useEffect(() => { localStorage.setItem(LS_A, aText) }, [aText])
-  useEffect(() => {
-    if (bBookmarkId) localStorage.setItem(LS_B_BOOKMARK_ID, bBookmarkId)
-    else localStorage.removeItem(LS_B_BOOKMARK_ID)
-  }, [bBookmarkId])
+  useEffect(() => { localStorage.setItem(LS_B, bText) }, [bText])
   useEffect(() => { localStorage.setItem(LS_WAIT, waitText) }, [waitText])
 
-  // One-shot migration: if no new key but legacy "lat, lng" coord exists,
-  // try to match a bookmark within COORD_MATCH_TOLERANCE; otherwise drop it.
-  // `bookmarks` loads async (empty array until useBookmarks resolves); the
-  // guard `bookmarks.length === 0 ? return` defers the decision until at
-  // least one bookmark is visible. If the user genuinely has zero bookmarks,
-  // the migration sits idle (cheap no-op) until they add one or pick B.
+  // One-shot reverse migration (2026-05-31): B is now a coordinate like A.
+  // If B has no coord yet but a legacy bookmark-id is stored, resolve it to the
+  // bookmark's current coords and seed bText. Deferred until bookmarks load.
   const migratedRef = useRef(false)
   useEffect(() => {
     if (migratedRef.current) return
-    if (bBookmarkId) {
-      migratedRef.current = true
-      localStorage.removeItem(LS_B_LEGACY)
-      return
-    }
-    const legacy = localStorage.getItem(LS_B_LEGACY)
-    if (!legacy) {
+    if (bText.trim() !== '') {            // already have a coord — nothing to migrate
+      localStorage.removeItem(LS_B_BOOKMARK_ID)
       migratedRef.current = true
       return
     }
-    if (bookmarks.length === 0) return  // wait for async bookmarks load
-    const parsed = parseLatLng(legacy)
-    if (parsed) {
-      const matches = bookmarks.filter(
-        (bm) =>
-          Math.abs(bm.lat - parsed.lat) < COORD_MATCH_TOLERANCE &&
-          Math.abs(bm.lng - parsed.lng) < COORD_MATCH_TOLERANCE &&
-          bm.id,
-      )
-      if (matches.length === 1 && matches[0].id) {
-        setBBookmarkId(matches[0].id)
-      }
-    }
-    localStorage.removeItem(LS_B_LEGACY)
+    const legacyId = localStorage.getItem(LS_B_BOOKMARK_ID)
+    if (!legacyId) { migratedRef.current = true; return }
+    if (bookmarks.length === 0) return    // wait for async bookmarks load
+    const bm = bookmarks.find((x) => x.id === legacyId)
+    if (bm) setBText(`${bm.lat.toFixed(6)}, ${bm.lng.toFixed(6)}`)
+    localStorage.removeItem(LS_B_BOOKMARK_ID)
     migratedRef.current = true
-  }, [bBookmarkId, bookmarks])
+  }, [bText, bookmarks])
 
   // External A setter (map right-click).
   useEffect(() => {
@@ -163,11 +144,7 @@ export const GoldDittoPanel: React.FC<Props> = ({
   }, [externalAValue])
 
   const a = useMemo(() => parseLatLng(aText), [aText])
-  const b = useMemo(() => {
-    if (!bBookmarkId) return null
-    const bm = bookmarks.find((x) => x.id === bBookmarkId)
-    return bm ? { lat: bm.lat, lng: bm.lng } : null
-  }, [bBookmarkId, bookmarks])
+  const b = useMemo(() => parseLatLng(bText), [bText])
   const waitSeconds = useMemo(() => {
     const v = parseFloat(waitText)
     if (Number.isNaN(v)) return null
@@ -209,16 +186,18 @@ export const GoldDittoPanel: React.FC<Props> = ({
   }
 
   const handlePick = (bm: { lat: number; lng: number }) => {
-    // Picker is now A-side only; B uses the inline BookmarkDropdown.
-    if (pickerSide === 'A') {
-      setAText(`${bm.lat.toFixed(6)}, ${bm.lng.toFixed(6)}`)
-    }
+    const coord = `${bm.lat.toFixed(6)}, ${bm.lng.toFixed(6)}`
+    if (pickerSide === 'A') setAText(coord)
+    else if (pickerSide === 'B') setBText(coord)
   }
 
   const handleCategoryChange = (catId: string) => {
     if (pickerSide === 'A') {
       setPickerCatA(catId)
       try { localStorage.setItem('goldditto.picker.A.lastCategory', catId) } catch { /* ignore */ }
+    } else if (pickerSide === 'B') {
+      setPickerCatB(catId)
+      try { localStorage.setItem('goldditto.picker.B.lastCategory', catId) } catch { /* ignore */ }
     }
   }
 
@@ -269,15 +248,30 @@ export const GoldDittoPanel: React.FC<Props> = ({
 
       <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
         <span style={{ fontSize: 12, color: '#9ca3af' }}>{t('goldditto.b_label')}</span>
-        <BookmarkDropdown
-          bookmarks={bookmarks}
-          categories={categories.map((c) => ({ id: c.id, name: c.name }))}
-          value={bBookmarkId}
-          onChange={(bm) => setBBookmarkId(bm?.id ?? null)}
-          placeholderText={t('goldditto.b_picker_placeholder')}
-          emptyText={t('goldditto.b_picker_empty')}
-          ariaLabel={t('goldditto.b_label')}
-        />
+        <div style={{ display: 'flex', gap: 4 }}>
+          <input
+            type="text"
+            value={bText}
+            onChange={(e) => setBText(e.target.value)}
+            placeholder="lat, lng"
+            style={{
+              flex: 1,
+              padding: '6px 8px',
+              border: bValid || bText === '' ? '1px solid #4b5563' : '1px solid #f87171',
+              borderRadius: 4,
+              background: '#1f2937',
+              color: '#fff',
+            }}
+          />
+          <button
+            ref={bBtnRef}
+            type="button"
+            className="action-btn"
+            title={t('goldditto.pick_from_bookmarks_tooltip_b')}
+            onClick={() => openPicker('B', bBtnRef.current)}
+            style={{ padding: '6px 8px', fontSize: 12 }}
+          >📚</button>
+        </div>
       </label>
 
       <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
@@ -330,7 +324,7 @@ export const GoldDittoPanel: React.FC<Props> = ({
         categories={categories}
         bookmarksByCategoryId={bookmarksByCategoryId}
         categoryDates={categoryDatesById}
-        initialCategoryId={pickerCatA}
+        initialCategoryId={pickerSide === 'B' ? pickerCatB : pickerCatA}
         isCycling={isCycling}
         onClose={() => setPickerSide(null)}
         onPickCoord={handlePick}
