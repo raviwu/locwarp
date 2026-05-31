@@ -4,6 +4,7 @@ import { createPortal } from 'react-dom';
 import { BookmarkGeoLine } from './BookmarkGeoLine';
 import { useT, useI18n } from '../i18n';
 import { getBookmarkUiState, setBookmarkUiState, reverseGeocode } from '../services/api';
+import { sortBookmarks, sortCategoryEntries, type SortMode } from '../utils/bookmarkSort';
 import {
   getCategoryStatus,
   todayLocal,
@@ -273,7 +274,6 @@ const BookmarkList: React.FC<BookmarkListProps> = ({
   };
 
   // Sort mode persisted in localStorage so it survives restart.
-  type SortMode = 'default' | 'name' | 'date_added' | 'last_used';
   const [sortMode, setSortModeRaw] = useState<SortMode>(() => {
     try {
       const v = localStorage.getItem('locwarp.bookmark_sort') as SortMode | null;
@@ -284,19 +284,6 @@ const BookmarkList: React.FC<BookmarkListProps> = ({
   const setSortMode = (m: SortMode) => {
     setSortModeRaw(m);
     try { localStorage.setItem('locwarp.bookmark_sort', m); } catch { /* ignore */ }
-  };
-
-  const sortBookmarks = (list: Bookmark[]): Bookmark[] => {
-    if (sortMode === 'default') return list;
-    const copy = [...list];
-    if (sortMode === 'name') {
-      copy.sort((a, b) => a.name.localeCompare(b.name, 'zh-Hant'));
-    } else if (sortMode === 'date_added') {
-      copy.sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));
-    } else if (sortMode === 'last_used') {
-      copy.sort((a, b) => (b.last_used_at || '').localeCompare(a.last_used_at || ''));
-    }
-    return copy;
   };
 
   // Close the context menu on ESC, or on any click / right-click that
@@ -1105,7 +1092,7 @@ const BookmarkList: React.FC<BookmarkListProps> = ({
           const name = (bm.name ?? '').toLowerCase();
           const coord = `${bm.lat.toFixed(5)}, ${bm.lng.toFixed(5)}`;
           return name.includes(q) || coord.includes(q);
-        }));
+        }), sortMode);
         if (matches.length === 0) {
           return (
             <div style={{ fontSize: 12, opacity: 0.5, padding: '10px 0', textAlign: 'center' }}>
@@ -1179,8 +1166,10 @@ const BookmarkList: React.FC<BookmarkListProps> = ({
       })()}
 
       {/* Bookmark groups — only when NOT searching */}
-      {search.trim() === '' && Object.entries(bookmarksByCategory)
-        .filter(([cat]) => !hidden.has(cat))
+      {search.trim() === '' && sortCategoryEntries(
+        Object.entries(bookmarksByCategory).filter(([cat]) => !hidden.has(cat)),
+        sortMode,
+      )
         .map(([cat, bms]) => {
         const catIds = bms.map((b) => b.id).filter((x): x is string => !!x);
         const selectedInCat = catIds.filter((id) => selectedIds.has(id)).length;
@@ -1295,7 +1284,7 @@ const BookmarkList: React.FC<BookmarkListProps> = ({
               {bms.length === 0 && (
                 <div style={{ fontSize: 11, opacity: 0.4, padding: '4px 0' }}>{t('bm.blank')}</div>
               )}
-              {sortBookmarks(bms).map((bm) => {
+              {sortBookmarks(bms, sortMode).map((bm) => {
                 const isSelected = bm.id ? selectedIds.has(bm.id) : false;
                 return (
                   <div
