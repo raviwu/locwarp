@@ -8,6 +8,7 @@ import '@maplibre/maplibre-gl-leaflet';
 import { cellsInBounds, approxCellSizeMeters } from '../services/s2grid';
 import type { S2CellPolygon } from '../services/s2grid';
 import { parseCoord } from '../utils/coords';
+import { isSubmitEnter } from '../utils/keyboard';
 import { BookmarkGeoLine } from './BookmarkGeoLine';
 
 // MapLibre's Leaflet binding looks up `window.maplibregl` rather than
@@ -1966,7 +1967,7 @@ const MapView: React.FC<MapViewProps> = ({
             type="text"
             value={coordInput}
             onChange={(e) => setCoordInput(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') submitCoordGo('teleport'); }}
+            onKeyDown={(e) => { if (isSubmitEnter(e)) submitCoordGo('teleport'); }}
             placeholder={tRef.current('panel.coord_placeholder')}
             style={{
               width: 210, background: 'transparent', border: 'none',

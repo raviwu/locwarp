@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { isSubmitEnter } from '../utils/keyboard';
 import { createPortal } from 'react-dom';
 import { useT } from '../i18n';
 
@@ -267,7 +268,7 @@ const RouteList: React.FC<RouteListProps> = ({
           placeholder={t('panel.route_name')}
           value={routeName}
           onChange={(e) => setRouteName(e.target.value)}
-          onKeyDown={(e) => { if (e.key === 'Enter') triggerSave(); }}
+          onKeyDown={(e) => { if (isSubmitEnter(e)) triggerSave(); }}
           style={{ flex: 1 }}
         />
         <select
@@ -584,7 +585,7 @@ const RouteList: React.FC<RouteListProps> = ({
                   value={editCategoryName}
                   onChange={(e) => setEditCategoryName(e.target.value)}
                   onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
+                    if (isSubmitEnter(e)) {
                       const next = editCategoryName.trim();
                       if (next && next !== cat.name && onCategoryRename) onCategoryRename(cat.id, next);
                       setEditingCategory(null);
@@ -638,7 +639,7 @@ const RouteList: React.FC<RouteListProps> = ({
                 value={newCategoryName}
                 onChange={(e) => setNewCategoryName(e.target.value)}
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter' && newCategoryName.trim()) {
+                  if (isSubmitEnter(e) && newCategoryName.trim()) {
                     onCategoryAdd(newCategoryName.trim());
                     setNewCategoryName('');
                   }
@@ -1075,7 +1076,7 @@ const RouteList: React.FC<RouteListProps> = ({
             onClick={(e) => e.stopPropagation()}
             onBlur={commitRename}
             onKeyDown={(e) => {
-              if (e.key === 'Enter') commitRename();
+              if (isSubmitEnter(e)) commitRename();
               if (e.key === 'Escape') setEditingRouteId(null);
             }}
             style={{ flex: 1, padding: '2px 4px', fontSize: 12 }}

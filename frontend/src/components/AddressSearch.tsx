@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { isSubmitEnter } from '../utils/keyboard';
 import { createPortal } from 'react-dom';
 import { searchAddress } from '../services/api';
 import { useT } from '../i18n';
@@ -359,7 +360,7 @@ const AddressSearch: React.FC<AddressSearchProps> = ({ onSelect }) => {
                     value={keyInput}
                     onChange={(e) => setKeyInput(e.target.value)}
                     onKeyDown={(e) => {
-                      if (e.key === 'Enter') { e.preventDefault(); saveGoogleKey(); }
+                      if (isSubmitEnter(e)) { e.preventDefault(); saveGoogleKey(); }
                     }}
                     placeholder="AIza..."
                     spellCheck={false}

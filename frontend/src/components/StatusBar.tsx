@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { isSubmitEnter } from '../utils/keyboard';
 import { createPortal } from 'react-dom';
 import { SimMode } from '../hooks/useSimulation';
 import type { RuntimesMap } from '../hooks/useSimulation';
@@ -947,7 +948,7 @@ const StatusBar: React.FC<StatusBarProps> = ({
               value={initialDialogValue}
               onChange={(e) => { setInitialDialogValue(e.target.value); setInitialDialogError(null); }}
               onKeyDown={(e) => {
-                if (e.key === 'Enter' && !initialDialogBusy) handleInitialDialogSave();
+                if (isSubmitEnter(e) && !initialDialogBusy) handleInitialDialogSave();
                 if (e.key === 'Escape' && !initialDialogBusy) setInitialDialogOpen(false);
               }}
               autoFocus
