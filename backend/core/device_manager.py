@@ -270,19 +270,44 @@ class DeviceManager:
             return devices
 
         for raw in raw_devices:
-            try:
-                conn_type = getattr(raw, "connection_type", "USB")
-                # If we already saw this device via USB, skip the Network duplicate
-                if raw.serial in seen_udids:
-                    # But upgrade to USB if this entry is USB (prefer USB info)
-                    if conn_type == "USB":
-                        for d in devices:
-                            if d.udid == raw.serial:
-                                d.connection_type = "USB"
-                    continue
-                seen_udids.add(raw.serial)
+            conn_type = getattr(raw, "connection_type", "USB")
+            # If we already saw this device via USB, skip the Network duplicate
+            if raw.serial in seen_udids:
+                # But upgrade to USB if this entry is USB (prefer USB info)
+                if conn_type == "USB":
+                    for d in devices:
+                        if d.udid == raw.serial:
+                            d.connection_type = "USB"
+                continue
+            seen_udids.add(raw.serial)
 
+            try:
                 lockdown = await create_using_usbmux(serial=raw.serial)
+            except Exception as exc:
+                # Pair handshake failed. Don't drop the device — surface a stub
+                # so the UI can render a "needs trust" chip + per-row repair
+                # button instead of silently hiding the iPhone the user just
+                # plugged in. Use the cached DeviceName so the row names the
+                # physical phone (else generic "iPhone" fallback).
+                pair_status, pair_error = _classify_pair_error(exc)
+                cached_name = _load_device_name_cache().get(raw.serial, "iPhone")
+                info = DeviceInfo(
+                    udid=raw.serial,
+                    name=cached_name,
+                    ios_version="0.0",
+                    connection_type=conn_type,
+                    is_connected=False,
+                    pair_status=pair_status,
+                    pair_error=pair_error,
+                )
+                devices.append(info)
+                logger.warning(
+                    "Pair failure for %s: %s — surfacing as %s",
+                    raw.serial, exc, pair_status,
+                )
+                continue
+
+            try:
                 all_values = lockdown.all_values
                 # If device is already connected, report the active connection type
                 active_conn = self._connections.get(raw.serial)
@@ -309,7 +334,22 @@ class DeviceManager:
                 logger.debug("Discovered device %s (%s) running iOS %s via %s (connected=%s)",
                              info.name, info.udid, info.ios_version, conn_type, info.is_connected)
             except Exception:
-                logger.exception("Failed to query device %s", getattr(raw, "serial", "?"))
+                # Lockdown opened but a later property/method blew up — still
+                # surface the device so the user knows it's there.
+                pair_status, pair_error = _classify_pair_error(
+                    RuntimeError("lockdown query failed after handshake")
+                )
+                cached_name = _load_device_name_cache().get(raw.serial, "iPhone")
+                devices.append(DeviceInfo(
+                    udid=raw.serial,
+                    name=cached_name,
+                    ios_version="0.0",
+                    connection_type=conn_type,
+                    is_connected=False,
+                    pair_status=pair_status,
+                    pair_error=pair_error,
+                ))
+                logger.exception("Failed to query device %s after lockdown opened", raw.serial)
 
         # Surface devices that are in our connection table but did not get
         # added from usbmuxd above. Happens for the dual-device A-WiFi +
