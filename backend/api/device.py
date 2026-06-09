@@ -187,7 +187,6 @@ async def wifi_repair(req: WifiRepairRequest | None = None):
          pymobiledevice3 persists the RemotePairing record to
          ~/.pymobiledevice3/ as a side effect of the RSD handshake.
     """
-    from pymobiledevice3.lockdown import create_using_usbmux
     from pymobiledevice3.usbmux import list_devices as mux_list_devices
     from main import helper_client
     from services.tunnel_helper_client import HelperError
@@ -237,16 +236,45 @@ async def wifi_repair(req: WifiRepairRequest | None = None):
     udid = usb_dev.serial
     _tunnel_logger.info("Re-pair requested for USB device %s", udid)
 
-    # Step 1: USB lockdown autopair — pops Trust prompt if USB record missing.
+    # Clear any sticky "user denied" flag from the watchdog — explicit user
+    # intent (they clicked Re-trust) overrides the watchdog's auto-skip.
+    # The attribute lands in Task 8; defensive getattr keeps test ordering
+    # independent.
+    dm = _dm()
+    getattr(dm, "sticky_user_denied", set()).discard(udid)
+
+    # Step 1: USB lockdown autopair via the shared recovery helper. If the
+    # host has a stale pair record (iPhone has forgotten this Mac), the
+    # helper clears it and retries exactly once — that's the only way to
+    # coax the iPhone into showing the "Trust This Computer" prompt again
+    # under macOS 11+ SIP rules (sudo rm of /var/db/lockdown/ does not work).
+    from services.usbmux_pair_records import (
+        autopair_with_recovery,
+        _is_stale_cert_error,
+    )
     try:
-        lockdown = await create_using_usbmux(serial=udid, autopair=True)
-    except Exception as e:
+        lockdown, stale_cleared = await autopair_with_recovery(udid, autopair=True)
+    except Exception as exc:
+        # Distinguish "we already cleared, but iPhone still won't prompt"
+        # from "first attempt failed, never cleared" — the former gets a
+        # different code so the UI can show a stronger guidance string.
+        if _is_stale_cert_error(exc):
+            raise HTTPException(
+                status_code=500,
+                detail={
+                    "code": "trust_prompt_unavailable",
+                    "message": _humanize_pair_error(exc, stale_cleared=True),
+                    "udid": udid,
+                    "stale_cleared": True,
+                },
+            )
         raise HTTPException(
             status_code=500,
             detail={
                 "code": "trust_failed",
-                "message": f"USB 信任失敗 — 請在 iPhone 解鎖畫面上點「信任」後再試:{e}",
+                "message": _humanize_pair_error(exc, stale_cleared=False),
                 "udid": udid,
+                "stale_cleared": False,
             },
         )
 
@@ -326,6 +354,7 @@ async def wifi_repair(req: WifiRepairRequest | None = None):
         "name": name,
         "ios_version": ios_version,
         "remote_record_regenerated": remote_record_regenerated,
+        "stale_cleared": stale_cleared,
     }
 
 

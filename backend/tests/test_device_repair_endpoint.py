@@ -53,6 +53,7 @@ def _patch_usb_world(*, ios_version="17.5", helper_connected=True, helper_side_e
 
     return (
         patch("pymobiledevice3.lockdown.create_using_usbmux", side_effect=fake_create_using_usbmux),
+        patch("services.usbmux_pair_records.create_using_usbmux", side_effect=fake_create_using_usbmux),
         patch("pymobiledevice3.usbmux.list_devices", side_effect=fake_list_devices),
         patch("main.helper_client", helper_mock),
     ), helper_mock
@@ -60,7 +61,7 @@ def _patch_usb_world(*, ios_version="17.5", helper_connected=True, helper_side_e
 
 def test_repair_success_uses_helper(client):
     ctxs, helper_mock = _patch_usb_world()
-    with ctxs[0], ctxs[1], ctxs[2]:
+    with ctxs[0], ctxs[1], ctxs[2], ctxs[3]:
         resp = client.post("/api/device/wifi/repair")
     assert resp.status_code == 200, resp.text
     body = resp.json()
@@ -72,7 +73,7 @@ def test_repair_success_uses_helper(client):
 
 def test_repair_helper_disconnected_returns_503(client):
     ctxs, _ = _patch_usb_world(helper_connected=False)
-    with ctxs[0], ctxs[1], ctxs[2]:
+    with ctxs[0], ctxs[1], ctxs[2], ctxs[3]:
         resp = client.post("/api/device/wifi/repair")
     assert resp.status_code == 503
     detail = resp.json()["detail"]
@@ -85,7 +86,7 @@ def test_repair_utun_error_classified(client):
     ctxs, _ = _patch_usb_world(
         helper_side_effect=HelperError(-32002, "repair_remote_record failed: [Errno 0] Failed to create any utun interface"),
     )
-    with ctxs[0], ctxs[1], ctxs[2]:
+    with ctxs[0], ctxs[1], ctxs[2], ctxs[3]:
         resp = client.post("/api/device/wifi/repair")
     assert resp.status_code == 500
     detail = resp.json()["detail"]
@@ -99,7 +100,7 @@ def test_repair_trust_error_classified(client):
     ctxs, _ = _patch_usb_world(
         helper_side_effect=HelperError(-32002, "PairingDialogResponsePending"),
     )
-    with ctxs[0], ctxs[1], ctxs[2]:
+    with ctxs[0], ctxs[1], ctxs[2], ctxs[3]:
         resp = client.post("/api/device/wifi/repair")
     assert resp.status_code == 500
     detail = resp.json()["detail"]
@@ -111,7 +112,7 @@ def test_repair_generic_error_preserves_message(client):
     ctxs, _ = _patch_usb_world(
         helper_side_effect=HelperError(-32002, "something weird"),
     )
-    with ctxs[0], ctxs[1], ctxs[2]:
+    with ctxs[0], ctxs[1], ctxs[2], ctxs[3]:
         resp = client.post("/api/device/wifi/repair")
     assert resp.status_code == 500
     detail = resp.json()["detail"]
@@ -144,6 +145,7 @@ def test_wifi_repair_targets_requested_udid(client):
 
     with (
         patch("pymobiledevice3.lockdown.create_using_usbmux", side_effect=fake_create_using_usbmux),
+        patch("services.usbmux_pair_records.create_using_usbmux", side_effect=fake_create_using_usbmux),
         patch("pymobiledevice3.usbmux.list_devices", side_effect=fake_list_devices),
         patch("main.helper_client", helper_mock),
     ):
@@ -180,6 +182,7 @@ def test_wifi_repair_without_udid_keeps_legacy_first_usb(client):
 
     with (
         patch("pymobiledevice3.lockdown.create_using_usbmux", side_effect=fake_create_using_usbmux),
+        patch("services.usbmux_pair_records.create_using_usbmux", side_effect=fake_create_using_usbmux),
         patch("pymobiledevice3.usbmux.list_devices", side_effect=fake_list_devices),
         patch("main.helper_client", helper_mock),
     ):
@@ -247,3 +250,164 @@ def test_humanize_pair_error_table(exc, stale_cleared, expected_substring):
     from api.device import _humanize_pair_error
     msg = _humanize_pair_error(exc, stale_cleared=stale_cleared)
     assert expected_substring in msg
+
+
+# ── Task 7: autopair_with_recovery wiring tests ──
+
+
+def test_wifi_repair_clears_stale_cert_and_retries(monkeypatch):
+    """A stale-cert exception on first autopair triggers cleanup + retry;
+    successful retry returns 200 with stale_cleared=True in the response."""
+    from fastapi.testclient import TestClient
+    from main import app
+
+    raw_dev = MagicMock(serial="UDID-STALE", connection_type="USB")
+
+    async def fake_mux_list():
+        return [raw_dev]
+
+    attempts = {"n": 0}
+    fake_lockdown = MagicMock()
+    fake_lockdown.all_values = {"ProductVersion": "16.5", "DeviceName": "Stale iPhone"}
+
+    async def fake_create(serial=None, autopair=True):
+        attempts["n"] += 1
+        if attempts["n"] == 1:
+            raise ConnectionResetError("Connection terminated")
+        return fake_lockdown
+
+    deletes: list[str] = []
+
+    async def fake_delete_sys(udid):
+        deletes.append(f"sys:{udid}")
+        return True
+
+    def fake_delete_local(udid):
+        deletes.append(f"local:{udid}")
+        return True
+
+    monkeypatch.setattr("pymobiledevice3.usbmux.list_devices", fake_mux_list, raising=False)
+    monkeypatch.setattr("pymobiledevice3.lockdown.create_using_usbmux", fake_create, raising=False)
+    monkeypatch.setattr("services.usbmux_pair_records.create_using_usbmux", fake_create, raising=False)
+    monkeypatch.setattr("services.usbmux_pair_records.delete_system_pair_record", fake_delete_sys, raising=False)
+    monkeypatch.setattr("services.usbmux_pair_records.delete_local_pair_record", fake_delete_local, raising=False)
+
+    client = TestClient(app)
+    resp = client.post("/api/device/wifi/repair", json={"udid": "UDID-STALE"})
+
+    # Body of the response varies slightly depending on the iOS-17+ branch;
+    # we only assert what's relevant to recovery.
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["udid"] == "UDID-STALE"
+    assert body.get("stale_cleared") is True
+    # Both clear paths fired exactly once during recovery.
+    assert "sys:UDID-STALE" in deletes
+    assert "local:UDID-STALE" in deletes
+    # Exactly two autopair attempts.
+    assert attempts["n"] == 2
+
+
+def test_wifi_repair_does_not_clear_on_pairing_pending(monkeypatch):
+    """A PairingDialogResponsePendingError must NOT trigger pair record
+    deletion. Response is 500 with `trust_failed` code and the specific
+    'tap Trust' message."""
+    from fastapi.testclient import TestClient
+    from main import app
+
+    raw_dev = MagicMock(serial="UDID-PEND", connection_type="USB")
+
+    async def fake_mux_list():
+        return [raw_dev]
+
+    async def fake_create(serial=None, autopair=True):
+        raise PairingDialogResponsePendingError()
+
+    deletes: list[str] = []
+
+    async def fake_delete_sys(udid):
+        deletes.append(udid)
+        return True
+
+    def fake_delete_local(udid):
+        deletes.append(udid)
+        return True
+
+    monkeypatch.setattr("pymobiledevice3.usbmux.list_devices", fake_mux_list, raising=False)
+    monkeypatch.setattr("pymobiledevice3.lockdown.create_using_usbmux", fake_create, raising=False)
+    monkeypatch.setattr("services.usbmux_pair_records.create_using_usbmux", fake_create, raising=False)
+    monkeypatch.setattr("services.usbmux_pair_records.delete_system_pair_record", fake_delete_sys, raising=False)
+    monkeypatch.setattr("services.usbmux_pair_records.delete_local_pair_record", fake_delete_local, raising=False)
+
+    client = TestClient(app)
+    resp = client.post("/api/device/wifi/repair", json={"udid": "UDID-PEND"})
+
+    assert resp.status_code == 500
+    detail = resp.json()["detail"]
+    assert detail["code"] == "trust_failed"
+    assert detail["stale_cleared"] is False
+    assert "請在 iPhone 解鎖畫面" in detail["message"]
+    # Critically: NO deletion fired.
+    assert deletes == []
+
+
+def test_wifi_repair_user_denied_message_mentions_reset(monkeypatch):
+    """UserDeniedPairingError produces the 'Reset Location & Privacy' message."""
+    from fastapi.testclient import TestClient
+    from main import app
+
+    raw_dev = MagicMock(serial="UDID-DENY", connection_type="USB")
+
+    async def fake_mux_list():
+        return [raw_dev]
+
+    async def fake_create(serial=None, autopair=True):
+        raise UserDeniedPairingError()
+
+    monkeypatch.setattr("pymobiledevice3.usbmux.list_devices", fake_mux_list, raising=False)
+    monkeypatch.setattr("pymobiledevice3.lockdown.create_using_usbmux", fake_create, raising=False)
+    monkeypatch.setattr("services.usbmux_pair_records.create_using_usbmux", fake_create, raising=False)
+
+    client = TestClient(app)
+    resp = client.post("/api/device/wifi/repair", json={"udid": "UDID-DENY"})
+
+    assert resp.status_code == 500
+    detail = resp.json()["detail"]
+    assert detail["code"] == "trust_failed"
+    assert "重置位置與隱私權" in detail["message"]
+
+
+def test_wifi_repair_retry_failure_uses_clearer_message(monkeypatch):
+    """When clearing + retry both fail, response uses
+    `trust_prompt_unavailable` code with the post-retry humanized message."""
+    from fastapi.testclient import TestClient
+    from main import app
+
+    raw_dev = MagicMock(serial="UDID-DEAD", connection_type="USB")
+
+    async def fake_mux_list():
+        return [raw_dev]
+
+    async def fake_create(serial=None, autopair=True):
+        raise ConnectionResetError("still stale")
+
+    async def fake_delete_sys(udid):
+        return True
+
+    def fake_delete_local(udid):
+        return True
+
+    monkeypatch.setattr("pymobiledevice3.usbmux.list_devices", fake_mux_list, raising=False)
+    monkeypatch.setattr("pymobiledevice3.lockdown.create_using_usbmux", fake_create, raising=False)
+    monkeypatch.setattr("services.usbmux_pair_records.create_using_usbmux", fake_create, raising=False)
+    monkeypatch.setattr("services.usbmux_pair_records.delete_system_pair_record", fake_delete_sys, raising=False)
+    monkeypatch.setattr("services.usbmux_pair_records.delete_local_pair_record", fake_delete_local, raising=False)
+
+    client = TestClient(app)
+    resp = client.post("/api/device/wifi/repair", json={"udid": "UDID-DEAD"})
+
+    assert resp.status_code == 500
+    detail = resp.json()["detail"]
+    assert detail["code"] == "trust_prompt_unavailable"
+    assert detail["stale_cleared"] is True
+    assert "已重置配對紀錄" in detail["message"]
