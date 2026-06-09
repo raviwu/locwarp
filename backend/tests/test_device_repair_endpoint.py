@@ -189,3 +189,35 @@ def test_wifi_repair_without_udid_keeps_legacy_first_usb(client):
     body = resp.json()
     assert body["udid"] == "UDID-FIRST"
     assert seen_serial["serial"] == "UDID-FIRST"
+
+
+def test_wifi_repair_unknown_udid_returns_404(client):
+    """When the body names a udid that doesn't appear among USB devices,
+    wifi_repair must return 404 with code=device_not_found and echo the
+    udid in detail — not silently fall back to the first USB device."""
+    from types import SimpleNamespace
+
+    fake_lockdown = MagicMock()
+
+    async def fake_create_using_usbmux(serial, autopair=False):
+        # Should NOT be called — we expect to bail before reaching lockdown.
+        raise AssertionError(f"unexpected lockdown call for {serial}")
+
+    async def fake_list_devices():
+        return [SimpleNamespace(serial="UDID-FIRST", connection_type="USB")]
+
+    helper_mock = MagicMock()
+    helper_mock.is_connected = True
+
+    with (
+        patch("pymobiledevice3.lockdown.create_using_usbmux", side_effect=fake_create_using_usbmux),
+        patch("pymobiledevice3.usbmux.list_devices", side_effect=fake_list_devices),
+        patch("main.helper_client", helper_mock),
+    ):
+        resp = client.post("/api/device/wifi/repair", json={"udid": "DOES-NOT-EXIST"})
+
+    assert resp.status_code == 404
+    detail = resp.json()["detail"]
+    assert detail["code"] == "device_not_found"
+    assert detail["udid"] == "DOES-NOT-EXIST"
+    assert "DOES-NOT-EXIST" in detail["message"]
