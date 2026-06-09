@@ -54,6 +54,39 @@ Never assume "the item appears in `self.store.<list>` after my mutation, so it'l
 
 ---
 
+## USB pair records under SIP
+
+`/var/db/lockdown/<udid>.plist` is SIP-protected on macOS 11+. Even
+`sudo rm` fails with "Operation not permitted". The only user-mode
+path to clear that file is to send a `DeletePairRecord` plist message
+to `usbmuxd` (which is SIP-exempt, being a system daemon that owns
+the directory).
+
+`pymobiledevice3` does not wrap this in a high-level API. The wrapper
+lives at `backend/services/usbmux_pair_records.py`:
+
+- `delete_system_pair_record(udid)` — sends the raw plist to usbmuxd.
+- `delete_local_pair_record(udid)` — removes `~/.pymobiledevice3/<udid>.plist`
+  (iOS 17+ RemotePairing cache; not SIP-protected).
+- `autopair_with_recovery(udid)` — the shared "try autopair → on stale-cert
+  clear records → retry once" dance used by both `wifi/repair` and
+  `DeviceManager.connect()`.
+
+The stale-cert classifier (`_is_stale_cert_error`) whitelists
+`ConnectionResetError`, `BrokenPipeError`, `EOFError`, `ssl.SSLError`,
+and `pymobiledevice3.exceptions.ConnectionTerminatedError`.
+`ConnectionAbortedError` (USB cable unplugged) is deliberately excluded
+— that's a transient hardware event, not a stale cert.
+
+**Do NOT auto-clear on `UserDeniedPairingError`** — that's the user
+deliberately tapping "Don't Trust"; resetting that choice without
+asking would be silently overriding user intent. `DeviceManager.connect()`
+adds the udid to `dm.sticky_user_denied` and the watchdog refuses to
+auto-connect it until the user explicitly triggers re-pair via the
+in-app Re-trust button (which clears the flag).
+
+---
+
 ## Personal repo conventions
 
 This is a personal single-developer repo under `~/personal/`. Per `~/personal/dotfiles/personal-claude/AGENTS.md`:
