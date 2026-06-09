@@ -14,6 +14,7 @@ upgrades touch one place.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import ssl
 from pathlib import Path
@@ -131,3 +132,26 @@ def _is_stale_cert_error(exc: BaseException) -> bool:
         return True
     name = type(exc).__name__
     return any(s in name for s in _STALE_CERT_NAME_SIGNALS)
+
+
+# Per-udid asyncio.Lock so concurrent autopair-with-recovery flows (watchdog +
+# user-triggered wifi/repair) don't both delete + re-autopair the same device.
+# Grows by one entry per udid the process ever sees; bounded by physical
+# device cardinality (typically 1-3). Process restart clears it.
+_pair_locks: dict[str, asyncio.Lock] = {}
+_pair_locks_guard = asyncio.Lock()
+
+
+async def acquire_pair_lock(udid: str) -> asyncio.Lock:
+    """Return the per-udid asyncio.Lock for this udid, creating it on first
+    use. Callers must `async with` the returned lock to actually hold it.
+
+    The guard lock around the dict ensures two concurrent acquires for the
+    same new udid don't race and create two different Lock instances.
+    """
+    async with _pair_locks_guard:
+        lock = _pair_locks.get(udid)
+        if lock is None:
+            lock = asyncio.Lock()
+            _pair_locks[udid] = lock
+        return lock

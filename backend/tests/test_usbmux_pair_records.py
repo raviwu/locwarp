@@ -278,3 +278,61 @@ def test_is_stale_cert_error_name_based_fallback():
 
     assert _is_stale_cert_error(_SomeWrappedConnectionTerminatedError()) is True
     assert _is_stale_cert_error(_CustomSSLError()) is True
+
+
+@pytest.mark.asyncio
+async def test_acquire_pair_lock_same_udid_returns_same_lock():
+    """Two acquires for the same udid must return the SAME Lock instance —
+    otherwise concurrent callers won't serialize."""
+    from services.usbmux_pair_records import acquire_pair_lock, _pair_locks
+
+    # Isolate test from any module-level state set by earlier tests.
+    _pair_locks.clear()
+
+    lock1 = await acquire_pair_lock("UDID-A")
+    lock2 = await acquire_pair_lock("UDID-A")
+    assert lock1 is lock2
+
+
+@pytest.mark.asyncio
+async def test_acquire_pair_lock_different_udids_return_distinct_locks():
+    """Locks must be per-udid — A's lock must not block B."""
+    from services.usbmux_pair_records import acquire_pair_lock, _pair_locks
+    _pair_locks.clear()
+
+    lock_a = await acquire_pair_lock("UDID-A")
+    lock_b = await acquire_pair_lock("UDID-B")
+    assert lock_a is not lock_b
+
+
+@pytest.mark.asyncio
+async def test_pair_lock_serializes_concurrent_acquires_for_same_udid():
+    """When two coroutines hold the same udid's lock, the second waits."""
+    from services.usbmux_pair_records import acquire_pair_lock, _pair_locks
+    _pair_locks.clear()
+
+    order: list[str] = []
+    release_first = asyncio.Event()
+
+    async def first():
+        lock = await acquire_pair_lock("UDID-S")
+        async with lock:
+            order.append("first-in")
+            await release_first.wait()
+            order.append("first-out")
+
+    async def second():
+        # Yield once so `first` enters its lock first.
+        await asyncio.sleep(0)
+        lock = await acquire_pair_lock("UDID-S")
+        async with lock:
+            order.append("second-in")
+
+    task_first = asyncio.create_task(first())
+    task_second = asyncio.create_task(second())
+    await asyncio.sleep(0.05)  # let both reach steady state
+    # At this point first is in, second is waiting
+    assert order == ["first-in"]
+    release_first.set()
+    await asyncio.gather(task_first, task_second)
+    assert order == ["first-in", "first-out", "second-in"]
