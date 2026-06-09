@@ -1480,9 +1480,11 @@ const App: React.FC = () => {
             }
           }}
         />
+        {/* `device` is the currently-connected device (lockdown succeeded), so pair_status is always "ok"; omit it. */}
         <DeviceStatus
           device={device.connectedDevice ? {
             id: device.connectedDevice.udid,
+            udid: device.connectedDevice.udid,
             name: device.connectedDevice.name,
             iosVersion: device.connectedDevice.ios_version,
             connectionType: device.connectedDevice.connection_type,

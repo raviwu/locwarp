@@ -173,7 +173,10 @@ export const wifiTunnelStop = (udid?: string) =>
   request<{ status: string; udid?: string; udids?: string[] }>(
     'POST', '/api/device/wifi/tunnel/stop', udid ? { udid } : {},
   )
-export const wifiRepair = (udid?: string | null) => request<{ status: string; udid: string; name: string; ios_version: string; remote_record_regenerated: boolean }>('POST', '/api/device/wifi/repair', udid ? { udid } : {})
+export const wifiRepair = (udid?: string | null) =>
+  request<{ status: string; udid: string; name: string; ios_version: string; remote_record_regenerated: boolean }>(
+    'POST', '/api/device/wifi/repair', udid ? { udid } : {},
+  )
 export const amfiRevealDeveloperMode = (udid: string) =>
   request<{ status: string }>('POST', `/api/device/${encodeURIComponent(udid)}/amfi/reveal-developer-mode`)
 

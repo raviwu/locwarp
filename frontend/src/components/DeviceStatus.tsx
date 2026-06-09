@@ -7,7 +7,7 @@ const MAX_TUNNEL_DEVICES = 3;
 
 interface Device {
   id: string;
-  udid?: string;
+  udid: string;
   name: string;
   iosVersion: string;
   connectionType?: string;
@@ -428,8 +428,9 @@ const DeviceStatus: React.FC<DeviceStatusProps> = ({
                         <button
                           type="button"
                           onClick={(e) => {
+                            // Prevent the row's onClick from selecting this device while the modal opens.
                             e.stopPropagation();
-                            setRepairTargetUdid(d.udid ?? d.id);
+                            setRepairTargetUdid(d.udid);
                             setRepairState('idle');
                             setRepairMessage('');
                             setShowRepairConfirm(true);
