@@ -238,10 +238,8 @@ async def wifi_repair(req: WifiRepairRequest | None = None):
 
     # Clear any sticky "user denied" flag from the watchdog — explicit user
     # intent (they clicked Re-trust) overrides the watchdog's auto-skip.
-    # The attribute lands in Task 8; defensive getattr keeps test ordering
-    # independent.
     dm = _dm()
-    getattr(dm, "sticky_user_denied", set()).discard(udid)
+    dm.sticky_user_denied.discard(udid)
 
     # Step 1: USB lockdown autopair via the shared recovery helper. If the
     # host has a stale pair record (iPhone has forgotten this Mac), the
@@ -258,6 +256,7 @@ async def wifi_repair(req: WifiRepairRequest | None = None):
         # Distinguish "we already cleared, but iPhone still won't prompt"
         # from "first attempt failed, never cleared" — the former gets a
         # different code so the UI can show a stronger guidance string.
+        cleared = getattr(exc, "_locwarp_stale_cleared", False)
         if _is_stale_cert_error(exc):
             raise HTTPException(
                 status_code=500,
@@ -272,9 +271,9 @@ async def wifi_repair(req: WifiRepairRequest | None = None):
             status_code=500,
             detail={
                 "code": "trust_failed",
-                "message": _humanize_pair_error(exc, stale_cleared=False),
+                "message": _humanize_pair_error(exc, stale_cleared=cleared),
                 "udid": udid,
-                "stale_cleared": False,
+                "stale_cleared": cleared,
             },
         )
 

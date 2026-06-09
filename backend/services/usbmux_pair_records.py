@@ -188,5 +188,11 @@ async def autopair_with_recovery(udid: str, autopair: bool = True):
             # Retry exactly once. If THIS attempt fails, propagate whatever
             # exception came out — the caller decides what to surface to
             # the user.
-            lockdown = await create_using_usbmux(serial=udid, autopair=autopair)
+            try:
+                lockdown = await create_using_usbmux(serial=udid, autopair=autopair)
+            except Exception as retry_exc:
+                # Tag the retry exception so callers can tell stale-cleared from
+                # never-cleared paths in their error response logging.
+                retry_exc._locwarp_stale_cleared = True
+                raise
             return lockdown, True

@@ -411,3 +411,86 @@ def test_wifi_repair_retry_failure_uses_clearer_message(monkeypatch):
     assert detail["code"] == "trust_prompt_unavailable"
     assert detail["stale_cleared"] is True
     assert "已重置配對紀錄" in detail["message"]
+
+
+def test_wifi_repair_clears_sticky_user_denied_flag(monkeypatch):
+    """When the user clicks Re-trust on a previously-denied device, wifi/repair
+    must discard the udid from dm.sticky_user_denied BEFORE attempting the
+    autopair. Otherwise the watchdog would keep skipping the device even
+    after a successful re-pair."""
+    from fastapi.testclient import TestClient
+    from main import app, app_state
+
+    udid = "UDID-STICKY"
+    # Pre-populate the sticky set as if the user had previously tapped Don't Trust.
+    app_state.device_manager.sticky_user_denied.add(udid)
+    assert udid in app_state.device_manager.sticky_user_denied
+
+    raw_dev = MagicMock(serial=udid, connection_type="USB")
+
+    async def fake_mux_list():
+        return [raw_dev]
+
+    fake_lockdown = MagicMock()
+    fake_lockdown.all_values = {"ProductVersion": "16.5", "DeviceName": "Re-trusted iPhone"}
+
+    async def fake_create(serial=None, autopair=True):
+        return fake_lockdown
+
+    monkeypatch.setattr("pymobiledevice3.usbmux.list_devices", fake_mux_list, raising=False)
+    monkeypatch.setattr("pymobiledevice3.lockdown.create_using_usbmux", fake_create, raising=False)
+    monkeypatch.setattr("services.usbmux_pair_records.create_using_usbmux", fake_create, raising=False)
+
+    client = TestClient(app)
+    resp = client.post("/api/device/wifi/repair", json={"udid": udid})
+
+    assert resp.status_code == 200
+    # Most important: the sticky flag is gone, so watchdog will resume normal behavior.
+    assert udid not in app_state.device_manager.sticky_user_denied
+
+
+def test_wifi_repair_trust_failed_reports_stale_cleared_when_retry_raised_non_stale(monkeypatch):
+    """If the first autopair raised stale-cert (records cleared) but the
+    retry raised UserDeniedPairing (non-stale), the response code is
+    trust_failed (correct) and stale_cleared in the detail must be True
+    (records WERE cleared, even though the final error is non-stale)."""
+    from fastapi.testclient import TestClient
+    from main import app
+
+    raw_dev = MagicMock(serial="UDID-CLEARED-THEN-DENIED", connection_type="USB")
+
+    async def fake_mux_list():
+        return [raw_dev]
+
+    attempts = {"n": 0}
+
+    async def fake_create(serial=None, autopair=True):
+        attempts["n"] += 1
+        if attempts["n"] == 1:
+            raise ConnectionResetError("Connection terminated")
+        raise UserDeniedPairingError()
+
+    async def fake_delete_sys(udid):
+        return True
+
+    def fake_delete_local(udid):
+        return True
+
+    monkeypatch.setattr("pymobiledevice3.usbmux.list_devices", fake_mux_list, raising=False)
+    monkeypatch.setattr("pymobiledevice3.lockdown.create_using_usbmux", fake_create, raising=False)
+    monkeypatch.setattr("services.usbmux_pair_records.create_using_usbmux", fake_create, raising=False)
+    monkeypatch.setattr("services.usbmux_pair_records.delete_system_pair_record", fake_delete_sys, raising=False)
+    monkeypatch.setattr("services.usbmux_pair_records.delete_local_pair_record", fake_delete_local, raising=False)
+
+    client = TestClient(app)
+    resp = client.post("/api/device/wifi/repair", json={"udid": "UDID-CLEARED-THEN-DENIED"})
+
+    assert resp.status_code == 500
+    detail = resp.json()["detail"]
+    # User-denied → trust_failed (not trust_prompt_unavailable, because it's not a stale-cert retry)
+    assert detail["code"] == "trust_failed"
+    # But records WERE cleared on the first attempt — telemetry should reflect that
+    assert detail["stale_cleared"] is True
+    # Message should be the UserDenied one
+    assert "重置位置與隱私權" in detail["message"]
+    assert attempts["n"] == 2

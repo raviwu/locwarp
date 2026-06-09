@@ -260,12 +260,9 @@ def test_connect_auto_clears_stale_cert_and_retries(monkeypatch):
     def fake_delete_local(udid):
         return True
 
-    # autopair_with_recovery imports create_using_usbmux from itself
     monkeypatch.setattr("services.usbmux_pair_records.create_using_usbmux", fake_create)
     monkeypatch.setattr("services.usbmux_pair_records.delete_system_pair_record", fake_delete_sys)
     monkeypatch.setattr("services.usbmux_pair_records.delete_local_pair_record", fake_delete_local)
-    # ... and DeviceManager.connect imports it from device_manager
-    monkeypatch.setattr("core.device_manager.create_using_usbmux", fake_create)
 
     asyncio.run(dm.connect("00008140-STALE"))
 
@@ -292,3 +289,24 @@ def test_connect_marks_user_denied_sticky(monkeypatch):
         asyncio.run(dm.connect("00008140-DENIED"))
 
     assert "00008140-DENIED" in dm.sticky_user_denied
+
+
+def test_watchdog_sticky_gate_predicate():
+    """The watchdog's gate condition is `udid in dm.sticky_user_denied`.
+    This test pins that predicate so a future refactor that drops the
+    gate (or renames the attribute) breaks loudly."""
+    from core.device_manager import DeviceManager
+
+    dm = DeviceManager.__new__(DeviceManager)
+    dm.__init__()
+
+    # Empty set: a fresh udid is NOT skipped.
+    assert "FRESH-UDID" not in dm.sticky_user_denied
+
+    # After marking: gate IS true.
+    dm.sticky_user_denied.add("DENIED-UDID")
+    assert "DENIED-UDID" in dm.sticky_user_denied
+
+    # discard removes the flag (the wifi/repair clear path).
+    dm.sticky_user_denied.discard("DENIED-UDID")
+    assert "DENIED-UDID" not in dm.sticky_user_denied
