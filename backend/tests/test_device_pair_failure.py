@@ -158,3 +158,40 @@ def test_discover_uses_cached_name_for_failed_device(monkeypatch, tmp_path):
 
     assert len(devices) == 1
     assert devices[0].name == "Ravi's iPhone"
+
+
+def test_discover_surfaces_failure_after_lockdown_open(monkeypatch):
+    """When create_using_usbmux succeeds but a follow-up call raises, the
+    device should still surface — and pair_error should reflect the REAL
+    exception, not a synthetic placeholder string."""
+    raw = _raw_mux("00008140-LATE-FAIL")
+
+    async def _fake_list_devices():
+        return [raw]
+
+    # all_values is a property that throws when read — simulates a lockdown
+    # that opened but is now half-dead.
+    class _BadLockdown:
+        @property
+        def all_values(self):
+            raise ConnectionResetError("Connection terminated after handshake")
+
+        async def close(self):
+            pass
+
+    async def _open_lockdown(serial):
+        return _BadLockdown()
+
+    monkeypatch.setattr("core.device_manager.list_devices", _fake_list_devices)
+    monkeypatch.setattr("core.device_manager.create_using_usbmux", _open_lockdown)
+
+    dm = _make_dm()
+    devices = asyncio.run(dm.discover_devices())
+
+    assert len(devices) == 1
+    info = devices[0]
+    assert info.udid == "00008140-LATE-FAIL"
+    # Real ConnectionResetError reached the classifier → trust_required.
+    # If the synthetic RuntimeError path were still in play this would be "error".
+    assert info.pair_status == "trust_required"
+    assert "重新信任" in info.pair_error

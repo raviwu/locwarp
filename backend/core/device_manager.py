@@ -333,12 +333,20 @@ class DeviceManager:
                 devices.append(info)
                 logger.debug("Discovered device %s (%s) running iOS %s via %s (connected=%s)",
                              info.name, info.udid, info.ios_version, conn_type, info.is_connected)
-            except Exception:
+            except Exception as exc:
                 # Lockdown opened but a later property/method blew up — still
                 # surface the device so the user knows it's there.
-                pair_status, pair_error = _classify_pair_error(
-                    RuntimeError("lockdown query failed after handshake")
-                )
+                # Best-effort close so we don't leak the usbmuxd socket every poll
+                # cycle. Some lockdown variants expose async close(); some don't.
+                try:
+                    close_coro = getattr(lockdown, "close", None)
+                    if close_coro is not None:
+                        result = close_coro()
+                        if hasattr(result, "__await__"):
+                            await result
+                except Exception:
+                    logger.debug("close failed on lockdown for %s", raw.serial, exc_info=True)
+                pair_status, pair_error = _classify_pair_error(exc)
                 cached_name = _load_device_name_cache().get(raw.serial, "iPhone")
                 devices.append(DeviceInfo(
                     udid=raw.serial,
