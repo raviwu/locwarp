@@ -357,7 +357,15 @@ const DeviceStatus: React.FC<DeviceStatusProps> = ({
                 boxShadow: '0 4px 8px rgba(0,0,0,0.3)',
               }}
             >
-              {devices.map((d) => {
+              {(() => {
+                // Pair-failed devices sink to the bottom so healthy devices
+                // aren't crowded out. Preserve enumeration order within each group.
+                const orderedDevices = [...devices].sort((a, b) => {
+                  const rank = (d: Device) => (d.pair_status && d.pair_status !== 'ok' ? 1 : 0);
+                  return rank(a) - rank(b);
+                });
+                return orderedDevices;
+              })().map((d) => {
                 // iOS 16 is supported again. Keep only truly older devices
                 // disabled so users don't waste a click waiting for the
                 // backend to reject the connect.
@@ -368,12 +376,13 @@ const DeviceStatus: React.FC<DeviceStatusProps> = ({
                   key={d.id}
                   onClick={() => {
                     if (unsupported) return;
+                    if (d.pair_status && d.pair_status !== 'ok') return;
                     onSelect(d.id);
                     setShowDropdown(false);
                   }}
                   style={{
                     padding: '8px 12px',
-                    cursor: unsupported ? 'not-allowed' : 'pointer',
+                    cursor: (unsupported || (d.pair_status && d.pair_status !== 'ok')) ? 'default' : 'pointer',
                     fontSize: 12,
                     display: 'flex',
                     alignItems: 'center',
@@ -383,11 +392,11 @@ const DeviceStatus: React.FC<DeviceStatusProps> = ({
                     opacity: unsupported ? 0.55 : 1,
                   }}
                   onMouseEnter={(e) => {
-                    if (unsupported) return;
+                    if (unsupported || (d.pair_status && d.pair_status !== 'ok')) return;
                     (e.currentTarget as HTMLDivElement).style.background = '#3a3a3e';
                   }}
                   onMouseLeave={(e) => {
-                    if (unsupported) return;
+                    if (unsupported || (d.pair_status && d.pair_status !== 'ok')) return;
                     (e.currentTarget as HTMLDivElement).style.background = device?.id === d.id ? '#3a3a4e' : 'transparent';
                   }}
                   title={unsupported ? t('device.ios_unsupported_label', { version: d.iosVersion }) : undefined}
@@ -445,7 +454,9 @@ const DeviceStatus: React.FC<DeviceStatusProps> = ({
                     <div style={{ opacity: 0.5, fontSize: 10, display: 'flex', alignItems: 'center', gap: 4 }}>
                       {unsupported
                         ? <span style={{ color: '#f44336' }}>{t('device.ios_unsupported_label', { version: d.iosVersion })}</span>
-                        : <>iOS {d.iosVersion}</>}
+                        : (d.iosVersion !== '0.0' && !(d.pair_status && d.pair_status !== 'ok'))
+                          ? <>iOS {d.iosVersion}</>
+                          : null}
                       {d.connectionType && !unsupported && (
                         <span style={{
                           fontSize: 9,
@@ -988,7 +999,7 @@ const DeviceStatus: React.FC<DeviceStatusProps> = ({
                 )}
                 <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 20 }}>
                   <button
-                    onClick={() => { setShowRepairConfirm(false); setRepairTargetUdid(null); }}
+                    onClick={() => { setShowRepairConfirm(false); setRepairTargetUdid(null); onScan(); }}
                     style={{ padding: '7px 16px', fontSize: 12, borderRadius: 5,
                       background: '#6c8cff', color: '#fff', border: 'none', cursor: 'pointer', fontWeight: 600 }}
                   >{t('wifi.warning_ok')}</button>
