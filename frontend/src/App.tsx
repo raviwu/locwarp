@@ -1490,10 +1490,13 @@ const App: React.FC = () => {
           } : null}
           devices={device.devices.map(d => ({
             id: d.udid,
+            udid: d.udid,
             name: d.name,
             iosVersion: d.ios_version,
             connectionType: d.connection_type,
             developerModeEnabled: d.developer_mode_enabled,
+            pair_status: d.pair_status,
+            pair_error: d.pair_error,
           }))}
           isConnected={device.connectedDevice !== null}
           onScan={() => { device.scan() }}
