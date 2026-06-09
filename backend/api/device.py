@@ -134,6 +134,36 @@ def _classify_repair_error(msg: str) -> str:
     return f"RemotePairing 握手失敗:{msg}"
 
 
+def _humanize_pair_error(exc: BaseException, *, stale_cleared: bool) -> str:
+    """Map a USB pair failure to a specific, actionable user-facing message.
+
+    The branches are ordered so a "user hasn't tapped Trust yet" case wins
+    over the post-stale-clear fallback — if both could apply, the more
+    specific message helps the user more.
+    """
+    name = type(exc).__name__
+    msg = str(exc)
+    lower = msg.lower()
+
+    if "PairingDialogResponsePending" in name or "consent" in lower:
+        return "請在 iPhone 解鎖畫面上按「信任」"
+
+    if "UserDeniedPairing" in name or "denied" in lower:
+        return (
+            "之前在 iPhone 上點了「不信任」。請到 iPhone Settings → 一般 → "
+            "移轉或重置 iPhone → 重置 → 重置位置與隱私權，然後重插 USB"
+        )
+
+    if stale_cleared:
+        return (
+            "已重置配對紀錄但 iPhone 仍未跳信任提示。請確認 iPhone 已解鎖、"
+            "USB 線可傳輸資料；如仍不出現，請走 Settings → 一般 → 移轉或重置 "
+            "iPhone → 重置 → 重置位置與隱私權"
+        )
+
+    return f"USB 配對失敗:{exc}"
+
+
 class WifiRepairRequest(BaseModel):
     """Optional body for /wifi/repair. When ``udid`` is set, repair that
     specific device; when None, fall back to the legacy "first USB device

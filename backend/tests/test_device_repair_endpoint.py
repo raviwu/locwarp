@@ -221,3 +221,29 @@ def test_wifi_repair_unknown_udid_returns_404(client):
     assert detail["code"] == "device_not_found"
     assert detail["udid"] == "DOES-NOT-EXIST"
     assert "DOES-NOT-EXIST" in detail["message"]
+
+
+# ── _humanize_pair_error tests ──
+
+import pytest as _pytest
+
+from pymobiledevice3.exceptions import (
+    PairingDialogResponsePendingError,
+    UserDeniedPairingError,
+    ConnectionTerminatedError,
+)
+
+
+@_pytest.mark.parametrize(
+    "exc, stale_cleared, expected_substring",
+    [
+        (PairingDialogResponsePendingError(), False, "請在 iPhone 解鎖畫面"),
+        (UserDeniedPairingError(), False, "重置位置與隱私權"),
+        (ConnectionTerminatedError(), True, "已重置配對紀錄"),
+        (RuntimeError("某種未知錯誤"), False, "USB 配對失敗"),
+    ],
+)
+def test_humanize_pair_error_table(exc, stale_cleared, expected_substring):
+    from api.device import _humanize_pair_error
+    msg = _humanize_pair_error(exc, stale_cleared=stale_cleared)
+    assert expected_substring in msg
