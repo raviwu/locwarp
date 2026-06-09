@@ -254,7 +254,7 @@ export const STRINGS = {
   'device.pair_chip_trust': { zh: '需要信任', en: 'Trust required' },
   'device.pair_chip_error': { zh: '無法連線', en: 'Cannot connect' },
   'device.pair_repair_button': { zh: '重新信任', en: 'Re-trust' },
-  'device.pair_repair_tooltip': { zh: '重新觸發「信任這台電腦」提示。請先用 USB 線連接 iPhone', en: 'Re-trigger the "Trust This Computer" prompt. Connect the iPhone via USB first.' },
+  'device.pair_repair_tooltip': { zh: '重新觸發「信任這台電腦」提示。請用 USB 連接 iPhone，並在跳出時按「信任」', en: 'Re-trigger the "Trust This Computer" prompt. Connect the iPhone via USB and tap Trust when prompted.' },
   'wifi.tab_ios17plus': { zh: 'iOS 17+', en: 'iOS 17+' },
   'wifi.tab_ios17minus': { zh: 'iOS 17 以下', en: 'iOS 17 and below' },
   'wifi.help_ip': { zh: '如何找 IP?', en: 'How to find IP?' },
