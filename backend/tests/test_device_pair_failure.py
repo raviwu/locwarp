@@ -213,3 +213,82 @@ def test_discover_surfaces_failure_after_lockdown_open(monkeypatch):
     # If the synthetic RuntimeError path were still in play this would be "error".
     assert info.pair_status == "trust_required"
     assert "重新信任" in info.pair_error
+
+
+# ---------------------------------------------------------------------------
+# Task 8: sticky_user_denied + connect() recovery + watchdog gate
+# ---------------------------------------------------------------------------
+
+from pymobiledevice3.exceptions import UserDeniedPairingError
+
+
+def test_device_manager_has_empty_sticky_user_denied_set():
+    """DeviceManager must expose an instance-level set for sticky 'don't trust' udids."""
+    from core.device_manager import DeviceManager
+    dm = DeviceManager.__new__(DeviceManager)
+    dm.__init__()
+    assert hasattr(dm, "sticky_user_denied")
+    assert dm.sticky_user_denied == set()
+
+
+def test_connect_auto_clears_stale_cert_and_retries(monkeypatch):
+    """DeviceManager.connect() should use autopair_with_recovery; on a
+    stale-cert first failure, the recovery helper clears and retries, and
+    connect() proceeds as if the first attempt had succeeded."""
+    from core.device_manager import DeviceManager
+
+    dm = DeviceManager.__new__(DeviceManager)
+    dm.__init__()
+
+    attempts = {"n": 0}
+    fake_lockdown = MagicMock()
+    fake_lockdown.all_values = {
+        "DeviceName": "Stale iPhone",
+        "ProductVersion": "16.5",
+    }
+    fake_lockdown.get_developer_mode_status = AsyncMock(return_value=False)
+
+    async def fake_create(serial=None, autopair=True):
+        attempts["n"] += 1
+        if attempts["n"] == 1:
+            raise ConnectionResetError("Connection terminated")
+        return fake_lockdown
+
+    async def fake_delete_sys(udid):
+        return True
+
+    def fake_delete_local(udid):
+        return True
+
+    # autopair_with_recovery imports create_using_usbmux from itself
+    monkeypatch.setattr("services.usbmux_pair_records.create_using_usbmux", fake_create)
+    monkeypatch.setattr("services.usbmux_pair_records.delete_system_pair_record", fake_delete_sys)
+    monkeypatch.setattr("services.usbmux_pair_records.delete_local_pair_record", fake_delete_local)
+    # ... and DeviceManager.connect imports it from device_manager
+    monkeypatch.setattr("core.device_manager.create_using_usbmux", fake_create)
+
+    asyncio.run(dm.connect("00008140-STALE"))
+
+    assert attempts["n"] == 2
+    assert "00008140-STALE" in dm._connections
+
+
+def test_connect_marks_user_denied_sticky(monkeypatch):
+    """When create_using_usbmux raises UserDeniedPairingError, connect() must
+    add the udid to dm.sticky_user_denied and re-raise."""
+    from core.device_manager import DeviceManager
+    from pymobiledevice3.exceptions import UserDeniedPairingError
+
+    dm = DeviceManager.__new__(DeviceManager)
+    dm.__init__()
+
+    async def fake_create(serial=None, autopair=True):
+        raise UserDeniedPairingError()
+
+    monkeypatch.setattr("services.usbmux_pair_records.create_using_usbmux", fake_create)
+    monkeypatch.setattr("core.device_manager.create_using_usbmux", fake_create)
+
+    with pytest.raises(UserDeniedPairingError):
+        asyncio.run(dm.connect("00008140-DENIED"))
+
+    assert "00008140-DENIED" in dm.sticky_user_denied

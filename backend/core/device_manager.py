@@ -248,6 +248,11 @@ class DeviceManager:
     def __init__(self) -> None:
         self._connections: Dict[str, _ActiveConnection] = {}
         self._lock = asyncio.Lock()
+        # Udids the user has explicitly tapped "Don't Trust" on the iPhone for.
+        # The watchdog refuses to auto-connect these (would just trigger another
+        # ignored prompt cycle). User clicking the in-app Re-trust button clears
+        # the flag for that udid (see api/device.py wifi_repair handler).
+        self.sticky_user_denied: set[str] = set()
 
     # ------------------------------------------------------------------
     # Discovery
@@ -430,9 +435,25 @@ class DeviceManager:
 
         logger.info("Connecting to %s via %s", udid, connection_type)
 
-        # Create a fresh lockdown client to read the iOS version.
+        # Use the shared autopair-with-recovery helper. If the host has a stale
+        # pair record (iPhone has forgotten this Mac), the helper transparently
+        # clears the host-side records and retries — which lets the iPhone show
+        # its "Trust This Computer" prompt without any user-side action other
+        # than tapping Trust when it appears.
+        from services.usbmux_pair_records import autopair_with_recovery
+        from pymobiledevice3.exceptions import UserDeniedPairingError as _UserDenied
+
         try:
-            lockdown = await create_using_usbmux(serial=udid)
+            lockdown, _stale_cleared = await autopair_with_recovery(udid, autopair=True)
+        except _UserDenied:
+            # User tapped "Don't Trust". Don't auto-retry forever — mark sticky so
+            # the watchdog stops re-prompting. The in-app Re-trust button clears
+            # this flag (api/device.py wifi_repair).
+            self.sticky_user_denied.add(udid)
+            logger.warning(
+                "User denied pairing for %s — marked sticky_user_denied", udid,
+            )
+            raise
         except Exception:
             logger.exception("Cannot create lockdown client for %s via %s", udid, connection_type)
             raise
