@@ -15,6 +15,7 @@ upgrades touch one place.
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 
 from pymobiledevice3.usbmux import PlistMuxConnection
 
@@ -66,3 +67,29 @@ async def delete_system_pair_record(udid: str) -> bool:
         udid, resp,
     )
     return False
+
+
+def _local_pair_record_dir() -> Path:
+    """Return `~/.pymobiledevice3` (override target for tests)."""
+    return Path.home() / ".pymobiledevice3"
+
+
+def delete_local_pair_record(udid: str) -> bool:
+    """Delete `~/.pymobiledevice3/<udid>.plist` if present.
+
+    Covers the iOS 17+ RemotePairing local cache (not SIP-protected, plain
+    file). Returns True on success or already-absent. Returns False on any
+    OSError (e.g. read-only mount). Never raises.
+    """
+    target = _local_pair_record_dir() / f"{udid}.plist"
+    if not target.exists():
+        return True
+    try:
+        target.unlink()
+        logger.info("delete_local_pair_record: removed %s", target)
+        return True
+    except OSError as exc:
+        logger.warning(
+            "delete_local_pair_record: could not remove %s: %s", target, exc,
+        )
+        return False

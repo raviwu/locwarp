@@ -169,3 +169,64 @@ async def test_delete_system_pair_record_swallows_close_failure(monkeypatch):
 
     ok = await delete_system_pair_record("UDID-CLOSE-FAIL")
     assert ok is True  # send/receive succeeded; close failure shouldn't override
+
+
+from pathlib import Path
+
+
+def test_delete_local_pair_record_removes_existing_file(tmp_path, monkeypatch):
+    """If the local file exists, delete it and return True."""
+    from services.usbmux_pair_records import delete_local_pair_record
+
+    fake_home = tmp_path / "pmd3"
+    fake_home.mkdir()
+    target = fake_home / "00008140-DEADBEEF.plist"
+    target.write_bytes(b"<plist><dict/></plist>")
+
+    monkeypatch.setattr(
+        "services.usbmux_pair_records._local_pair_record_dir",
+        lambda: fake_home,
+    )
+
+    ok = delete_local_pair_record("00008140-DEADBEEF")
+    assert ok is True
+    assert not target.exists()
+
+
+def test_delete_local_pair_record_idempotent_on_missing(tmp_path, monkeypatch):
+    """If the file does not exist, still return True (idempotent)."""
+    from services.usbmux_pair_records import delete_local_pair_record
+
+    fake_home = tmp_path / "pmd3"
+    fake_home.mkdir()
+
+    monkeypatch.setattr(
+        "services.usbmux_pair_records._local_pair_record_dir",
+        lambda: fake_home,
+    )
+
+    ok = delete_local_pair_record("UDID-NEVER-EXISTED")
+    assert ok is True
+
+
+def test_delete_local_pair_record_does_not_raise_on_permission_error(tmp_path, monkeypatch):
+    """Permission error during unlink is logged and returns False, never raises."""
+    from services.usbmux_pair_records import delete_local_pair_record
+
+    fake_home = tmp_path / "pmd3"
+    fake_home.mkdir()
+    target = fake_home / "UDID-LOCKED.plist"
+    target.write_bytes(b"data")
+
+    monkeypatch.setattr(
+        "services.usbmux_pair_records._local_pair_record_dir",
+        lambda: fake_home,
+    )
+
+    def boom(self, *args, **kwargs):
+        raise PermissionError("denied")
+
+    monkeypatch.setattr(Path, "unlink", boom)
+
+    ok = delete_local_pair_record("UDID-LOCKED")
+    assert ok is False
