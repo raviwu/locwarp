@@ -134,8 +134,16 @@ def _classify_repair_error(msg: str) -> str:
     return f"RemotePairing 握手失敗:{msg}"
 
 
+class WifiRepairRequest(BaseModel):
+    """Optional body for /wifi/repair. When ``udid`` is set, repair that
+    specific device; when None, fall back to the legacy "first USB device
+    in the mux list" behavior so the existing global Repair button keeps
+    working unchanged."""
+    udid: str | None = None
+
+
 @router.post("/wifi/repair")
-async def wifi_repair():
+async def wifi_repair(req: WifiRepairRequest | None = None):
     """Regenerate the RemotePairing pair record (~/.pymobiledevice3/) using a
     currently-attached USB device. The iPhone will show a 'Trust This Computer'
     prompt the first time; after the user taps 信任, a fresh RemotePairing
@@ -164,15 +172,37 @@ async def wifi_repair():
 
     # Prefer a USB-attached device (Network entries won't help us regenerate
     # the RemotePairing record).
-    usb_dev = next((d for d in raw_devices if getattr(d, "connection_type", "USB") == "USB"), None)
-    if usb_dev is None:
-        raise HTTPException(
-            status_code=400,
-            detail={
-                "code": "repair_needs_usb",
-                "message": "請先用 USB 線連接 iPhone。重新配對需要 USB 觸發『信任這台電腦』提示。",
-            },
+    requested_udid = req.udid if req else None
+    if requested_udid:
+        usb_dev = next(
+            (d for d in raw_devices
+             if d.serial == requested_udid
+             and getattr(d, "connection_type", "USB") == "USB"),
+            None,
         )
+        if usb_dev is None:
+            raise HTTPException(
+                status_code=404,
+                detail={
+                    "code": "device_not_found",
+                    "message": f"找不到 USB 裝置 {requested_udid}。請確認 USB 線已接好。",
+                    "udid": requested_udid,
+                },
+            )
+    else:
+        # Legacy behavior: pick the first USB-attached device.
+        usb_dev = next(
+            (d for d in raw_devices if getattr(d, "connection_type", "USB") == "USB"),
+            None,
+        )
+        if usb_dev is None:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "code": "repair_needs_usb",
+                    "message": "請先用 USB 線連接 iPhone。重新配對需要 USB 觸發『信任這台電腦』提示。",
+                },
+            )
 
     udid = usb_dev.serial
     _tunnel_logger.info("Re-pair requested for USB device %s", udid)

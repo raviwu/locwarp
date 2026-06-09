@@ -117,3 +117,75 @@ def test_repair_generic_error_preserves_message(client):
     detail = resp.json()["detail"]
     assert "RemotePairing 握手失敗" in detail["message"]
     assert "something weird" in detail["message"]
+
+
+def test_wifi_repair_targets_requested_udid(client):
+    """When the request body carries a udid, wifi_repair must use that
+    specific device instead of defaulting to the first USB entry."""
+    from types import SimpleNamespace
+
+    fake_lockdown = MagicMock()
+    fake_lockdown.all_values = {"ProductVersion": "16.5", "DeviceName": "Target"}
+
+    seen_serial = {}
+
+    async def fake_create_using_usbmux(serial, autopair=False):
+        seen_serial["serial"] = serial
+        return fake_lockdown
+
+    async def fake_list_devices():
+        return [
+            SimpleNamespace(serial="UDID-FIRST", connection_type="USB"),
+            SimpleNamespace(serial="UDID-TARGET", connection_type="USB"),
+        ]
+
+    helper_mock = MagicMock()
+    helper_mock.is_connected = True
+
+    with (
+        patch("pymobiledevice3.lockdown.create_using_usbmux", side_effect=fake_create_using_usbmux),
+        patch("pymobiledevice3.usbmux.list_devices", side_effect=fake_list_devices),
+        patch("main.helper_client", helper_mock),
+    ):
+        resp = client.post("/api/device/wifi/repair", json={"udid": "UDID-TARGET"})
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["udid"] == "UDID-TARGET"
+    assert seen_serial["serial"] == "UDID-TARGET"
+
+
+def test_wifi_repair_without_udid_keeps_legacy_first_usb(client):
+    """Omitting udid (or sending an empty body) preserves legacy behavior:
+    pick the first USB device. Existing UI button must keep working."""
+    from types import SimpleNamespace
+
+    fake_lockdown = MagicMock()
+    fake_lockdown.all_values = {"ProductVersion": "16.5", "DeviceName": "First"}
+
+    seen_serial = {}
+
+    async def fake_create_using_usbmux(serial, autopair=False):
+        seen_serial["serial"] = serial
+        return fake_lockdown
+
+    async def fake_list_devices():
+        return [
+            SimpleNamespace(serial="UDID-FIRST", connection_type="USB"),
+            SimpleNamespace(serial="UDID-OTHER", connection_type="USB"),
+        ]
+
+    helper_mock = MagicMock()
+    helper_mock.is_connected = True
+
+    with (
+        patch("pymobiledevice3.lockdown.create_using_usbmux", side_effect=fake_create_using_usbmux),
+        patch("pymobiledevice3.usbmux.list_devices", side_effect=fake_list_devices),
+        patch("main.helper_client", helper_mock),
+    ):
+        resp = client.post("/api/device/wifi/repair")
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["udid"] == "UDID-FIRST"
+    assert seen_serial["serial"] == "UDID-FIRST"
