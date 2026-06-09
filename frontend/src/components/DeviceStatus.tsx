@@ -7,10 +7,13 @@ const MAX_TUNNEL_DEVICES = 3;
 
 interface Device {
   id: string;
+  udid?: string;
   name: string;
   iosVersion: string;
   connectionType?: string;
   developerModeEnabled?: boolean | null;
+  pair_status?: 'ok' | 'trust_required' | 'error';
+  pair_error?: string | null;
 }
 
 interface TunnelStatus {
@@ -76,12 +79,13 @@ const DeviceStatus: React.FC<DeviceStatusProps> = ({
   const [showRepairConfirm, setShowRepairConfirm] = useState(false);
   const [repairState, setRepairState] = useState<'idle' | 'running' | 'success' | 'failed'>('idle');
   const [repairMessage, setRepairMessage] = useState<string>('');
+  const [repairTargetUdid, setRepairTargetUdid] = useState<string | null>(null);
 
   const handleRepair = async () => {
     setRepairState('running');
     setRepairMessage('');
     try {
-      const res = await wifiRepair();
+      const res = await wifiRepair(repairTargetUdid);
       setRepairState('success');
       setRepairMessage(`${res.name || 'iPhone'} (iOS ${res.ios_version})`);
     } catch (err: any) {
@@ -402,7 +406,41 @@ const DeviceStatus: React.FC<DeviceStatusProps> = ({
                     )}
                   </svg>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontWeight: device?.id === d.id ? 600 : 400 }}>{d.name}</div>
+                    <div style={{ fontWeight: device?.id === d.id ? 600 : 400, display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 4 }}>
+                      {d.name}
+                      {d.pair_status && d.pair_status !== 'ok' && (
+                        <span
+                          style={{
+                            padding: '2px 6px',
+                            borderRadius: 4,
+                            fontSize: 11,
+                            background: d.pair_status === 'trust_required' ? '#fff3cd' : '#f8d7da',
+                            color: d.pair_status === 'trust_required' ? '#856404' : '#721c24',
+                          }}
+                          title={d.pair_error || ''}
+                        >
+                          {d.pair_status === 'trust_required'
+                            ? t('device.pair_chip_trust')
+                            : t('device.pair_chip_error')}
+                        </span>
+                      )}
+                      {d.pair_status === 'trust_required' && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setRepairTargetUdid(d.udid ?? d.id);
+                            setRepairState('idle');
+                            setRepairMessage('');
+                            setShowRepairConfirm(true);
+                          }}
+                          title={t('device.pair_repair_tooltip')}
+                          style={{ fontSize: 11, padding: '2px 6px', cursor: 'pointer' }}
+                        >
+                          {t('device.pair_repair_button')}
+                        </button>
+                      )}
+                    </div>
                     <div style={{ opacity: 0.5, fontSize: 10, display: 'flex', alignItems: 'center', gap: 4 }}>
                       {unsupported
                         ? <span style={{ color: '#f44336' }}>{t('device.ios_unsupported_label', { version: d.iosVersion })}</span>
@@ -489,7 +527,7 @@ const DeviceStatus: React.FC<DeviceStatusProps> = ({
           {wifiExpanded && (
             <div style={{ marginTop: 8 }}>
               <button
-                onClick={() => { setRepairState('idle'); setRepairMessage(''); setShowRepairConfirm(true); }}
+                onClick={() => { setRepairTargetUdid(null); setRepairState('idle'); setRepairMessage(''); setShowRepairConfirm(true); }}
                 title={t('wifi.repair_tooltip')}
                 style={{
                   width: '100%', padding: '5px 8px', fontSize: 11, marginBottom: 8,
@@ -873,7 +911,7 @@ const DeviceStatus: React.FC<DeviceStatusProps> = ({
 
       {showRepairConfirm && createPortal(
         <div
-          onClick={() => { if (repairState !== 'running') setShowRepairConfirm(false); }}
+          onClick={() => { if (repairState !== 'running') { setShowRepairConfirm(false); setRepairTargetUdid(null); } }}
           className="anim-fade-in"
           style={{
             position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
@@ -913,7 +951,7 @@ const DeviceStatus: React.FC<DeviceStatusProps> = ({
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 20 }}>
                   <button
-                    onClick={() => setShowRepairConfirm(false)}
+                    onClick={() => { setShowRepairConfirm(false); setRepairTargetUdid(null); }}
                     style={{ padding: '7px 16px', fontSize: 12, borderRadius: 5,
                       background: 'transparent', color: '#bbb', border: '1px solid #444', cursor: 'pointer' }}
                   >{t('wifi.repair_cancel')}</button>
@@ -949,7 +987,7 @@ const DeviceStatus: React.FC<DeviceStatusProps> = ({
                 )}
                 <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 20 }}>
                   <button
-                    onClick={() => setShowRepairConfirm(false)}
+                    onClick={() => { setShowRepairConfirm(false); setRepairTargetUdid(null); }}
                     style={{ padding: '7px 16px', fontSize: 12, borderRadius: 5,
                       background: '#6c8cff', color: '#fff', border: 'none', cursor: 'pointer', fontWeight: 600 }}
                   >{t('wifi.warning_ok')}</button>
@@ -969,7 +1007,7 @@ const DeviceStatus: React.FC<DeviceStatusProps> = ({
                 )}
                 <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 20 }}>
                   <button
-                    onClick={() => setShowRepairConfirm(false)}
+                    onClick={() => { setShowRepairConfirm(false); setRepairTargetUdid(null); }}
                     style={{ padding: '7px 16px', fontSize: 12, borderRadius: 5,
                       background: 'transparent', color: '#bbb', border: '1px solid #444', cursor: 'pointer' }}
                   >{t('wifi.repair_cancel')}</button>
