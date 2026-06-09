@@ -15,8 +15,10 @@ upgrades touch one place.
 from __future__ import annotations
 
 import logging
+import ssl
 from pathlib import Path
 
+from pymobiledevice3.exceptions import ConnectionTerminatedError
 from pymobiledevice3.usbmux import PlistMuxConnection
 
 logger = logging.getLogger(__name__)
@@ -93,3 +95,39 @@ def delete_local_pair_record(udid: str) -> bool:
             "delete_local_pair_record: could not remove %s: %s", target, exc,
         )
         return False
+
+
+# Exceptions that mean "iPhone rejected the host cert during SSL handshake" —
+# the iPhone has forgotten this Mac. Clearing host pair records and retrying
+# autopair lets the next attempt fall through to _pair() (the trust prompt path).
+#
+# ConnectionAbortedError is deliberately EXCLUDED: ECONNABORTED typically means
+# the USB cable was unplugged mid-handshake. Clearing pair records on a transient
+# cable hiccup would be destructive.
+_STALE_CERT_TYPES: tuple[type[BaseException], ...] = (
+    ConnectionResetError,
+    BrokenPipeError,
+    EOFError,
+    ssl.SSLError,
+    ConnectionTerminatedError,
+)
+
+_STALE_CERT_NAME_SIGNALS: tuple[str, ...] = (
+    "ConnectionTerminated",
+    "SSLError",
+    "SSLEOFError",
+)
+
+
+def _is_stale_cert_error(exc: BaseException) -> bool:
+    """Return True if the exception signals a stale host pair record.
+
+    Checks the exception type whitelist first, then falls back to class-name
+    matching so a re-wrapped exception (e.g. an internal pymobiledevice3
+    refactor that subclasses ConnectionTerminatedError differently) still
+    routes correctly.
+    """
+    if isinstance(exc, _STALE_CERT_TYPES):
+        return True
+    name = type(exc).__name__
+    return any(s in name for s in _STALE_CERT_NAME_SIGNALS)

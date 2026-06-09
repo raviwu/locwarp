@@ -230,3 +230,51 @@ def test_delete_local_pair_record_does_not_raise_on_permission_error(tmp_path, m
 
     ok = delete_local_pair_record("UDID-LOCKED")
     assert ok is False
+
+
+import ssl
+
+from pymobiledevice3.exceptions import (
+    ConnectionTerminatedError,
+    PairingDialogResponsePendingError,
+    UserDeniedPairingError,
+)
+
+
+@pytest.mark.parametrize(
+    "exc, expected",
+    [
+        # Stale-cert whitelist — these signal "host has a record but iPhone
+        # has forgotten this Mac" so we should clear and retry.
+        (ConnectionTerminatedError(), True),
+        (ConnectionResetError("Connection reset by peer"), True),
+        (BrokenPipeError(), True),
+        (EOFError(), True),
+        (ssl.SSLError("handshake failed"), True),
+        (ssl.SSLEOFError("EOF during handshake"), True),
+        # Deliberately excluded — these are NOT stale cert.
+        (ConnectionAbortedError("ECONNABORTED"), False),  # USB unplug mid-flow
+        (PairingDialogResponsePendingError(), False),     # user hasn't tapped Trust yet
+        (UserDeniedPairingError(), False),                # user tapped Don't Trust
+        (RuntimeError("something else"), False),
+        (ValueError("nope"), False),
+    ],
+)
+def test_is_stale_cert_error_table(exc, expected):
+    from services.usbmux_pair_records import _is_stale_cert_error
+    assert _is_stale_cert_error(exc) is expected
+
+
+def test_is_stale_cert_error_name_based_fallback():
+    """A re-wrapped exception whose class name contains a known signal
+    must still classify as stale-cert."""
+    from services.usbmux_pair_records import _is_stale_cert_error
+
+    class _SomeWrappedConnectionTerminatedError(Exception):
+        pass
+
+    class _CustomSSLError(Exception):
+        pass
+
+    assert _is_stale_cert_error(_SomeWrappedConnectionTerminatedError()) is True
+    assert _is_stale_cert_error(_CustomSSLError()) is True
