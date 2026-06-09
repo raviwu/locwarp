@@ -15,7 +15,6 @@ upgrades touch one place.
 from __future__ import annotations
 
 import logging
-from pathlib import Path
 
 from pymobiledevice3.usbmux import PlistMuxConnection
 
