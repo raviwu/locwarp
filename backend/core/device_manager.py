@@ -200,8 +200,12 @@ def _classify_pair_error(exc: BaseException) -> tuple[str, str]:
     if "PairingDialogResponsePending" in msg or "consent" in lower:
         return "trust_required", "請在 iPhone 解鎖畫面上按「信任」"
 
-    # PairingError / "not paired" text variants.
-    if "not paired" in lower or "pairingerror" in lower:
+    # PairingError / NotPairedError / UserDeniedPairingError / InvalidHostIDError.
+    # pymobiledevice3 sometimes raises these with empty messages, so match by
+    # class name too — otherwise an empty-message NotPairedError lands in the
+    # generic "error" bucket and the UI hides the Re-trust button.
+    pair_class_signals = ("NotPaired", "UserDeniedPairing", "InvalidHostID", "PairingError")
+    if any(s in name for s in pair_class_signals) or "not paired" in lower or "pairingerror" in lower:
         return "trust_required", "USB 配對失效，請重插 USB 並按信任"
 
     # Fallback: surface the raw message (trimmed) under the generic "error" bucket.

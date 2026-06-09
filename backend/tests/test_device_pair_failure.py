@@ -13,6 +13,18 @@ class _FakeNotPaired(Exception):
     """Stand-in for pymobiledevice3.exceptions.PairingError ('not paired')."""
 
 
+class _FakeNotPairedNoMsg(Exception):
+    """Stand-in for pymobiledevice3.exceptions.NotPairedError() raised with no args."""
+
+
+class _FakeUserDeniedPairing(Exception):
+    """Stand-in for pymobiledevice3.exceptions.UserDeniedPairingError."""
+
+
+class _FakeInvalidHostID(Exception):
+    """Stand-in for pymobiledevice3.exceptions.InvalidHostIDError."""
+
+
 @pytest.mark.parametrize(
     "exc,expected_status,expected_substring",
     [
@@ -25,6 +37,12 @@ class _FakeNotPaired(Exception):
         (_FakeNotPaired("device is not paired with this host"), "trust_required", "USB"),
         # Anything else falls through to "error" with the raw message.
         (RuntimeError("unexpected backend explosion"), "error", "unexpected backend explosion"),
+        # Empty-message NotPairedError — must match by class name, not text
+        (_FakeNotPairedNoMsg(), "trust_required", "配對"),
+        # User explicitly tapped "Don't Trust" — re-trust will re-prompt them
+        (_FakeUserDeniedPairing(), "trust_required", "配對"),
+        # Host ID mismatch — pair record on device side doesn't recognize this Mac
+        (_FakeInvalidHostID(), "trust_required", "配對"),
     ],
 )
 def test_classify_pair_error_maps_known_signals(exc, expected_status, expected_substring):
