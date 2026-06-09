@@ -47,6 +47,12 @@ class DeviceInfo(BaseModel):
     # (not connected, iOS <16, or service call failed). Frontend uses this
     # to decide whether to show the "Reveal Developer Mode option" button.
     developer_mode_enabled: bool | None = None
+    # Pair-handshake state. "ok" = lockdown query succeeded; "trust_required"
+    # = device is muxed but iPhone has forgotten this host (re-trust needed);
+    # "error" = some other failure (text in pair_error). Default keeps legacy
+    # callers green — existing happy paths leave both fields untouched.
+    pair_status: Literal["ok", "trust_required", "error"] = "ok"
+    pair_error: str | None = None
 
 
 # ── Location requests ────────────────────────────────────
