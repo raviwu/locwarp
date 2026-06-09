@@ -172,6 +172,43 @@ def _remember_wifi_alias(bonjour_id: str, udid: str, name: str) -> None:
     safe_write_json(WIFI_ALIASES_FILE, cache)
 
 
+# ---------------------------------------------------------------------------
+# Pair-failure classifier
+# ---------------------------------------------------------------------------
+#
+# Maps a create_using_usbmux() exception into a (pair_status, pair_error)
+# pair the API surfaces on DeviceInfo. Mirrors _classify_repair_error() in
+# api/device.py so the user sees consistent wording across the discover
+# path and the explicit repair path. Kept in a small pure function so it
+# can be unit-tested without touching pymobiledevice3 internals.
+
+_PAIR_ERROR_MAX_LEN = 200
+
+
+def _classify_pair_error(exc: BaseException) -> tuple[str, str]:
+    """Return ``(pair_status, pair_error_message)`` for a USB pair failure."""
+    name = type(exc).__name__
+    msg = str(exc)
+    lower = msg.lower()
+
+    # ConnectionTerminatedError / ConnectionResetError during validate_pairing
+    # means the iPhone rejected the existing host record — re-trust needed.
+    if "ConnectionTerminated" in name or "ConnectionReset" in name or "connection terminated" in lower:
+        return "trust_required", "iPhone 端已不認得此電腦，請重新信任"
+
+    # User hasn't tapped Trust on the device yet.
+    if "PairingDialogResponsePending" in msg or "consent" in lower:
+        return "trust_required", "請在 iPhone 解鎖畫面上按「信任」"
+
+    # PairingError / "not paired" text variants.
+    if "not paired" in lower or "pairingerror" in lower:
+        return "trust_required", "USB 配對失效，請重插 USB 並按信任"
+
+    # Fallback: surface the raw message (trimmed) under the generic "error" bucket.
+    trimmed = msg[:_PAIR_ERROR_MAX_LEN] if msg else f"{name}"
+    return "error", trimmed
+
+
 @dataclass
 class _ActiveConnection:
     """Internal bookkeeping for a single connected device."""
