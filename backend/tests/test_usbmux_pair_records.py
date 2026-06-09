@@ -336,3 +336,174 @@ async def test_pair_lock_serializes_concurrent_acquires_for_same_udid():
     release_first.set()
     await asyncio.gather(task_first, task_second)
     assert order == ["first-in", "first-out", "second-in"]
+
+
+@pytest.mark.asyncio
+async def test_autopair_with_recovery_passes_through_on_success(monkeypatch):
+    """When autopair succeeds first try, no clearing happens, stale_cleared=False."""
+    from services.usbmux_pair_records import autopair_with_recovery, _pair_locks
+    _pair_locks.clear()
+
+    fake_lockdown = MagicMock(name="lockdown")
+    calls: list[str] = []
+
+    async def fake_create(serial=None, autopair=True):
+        calls.append(f"create({serial}, autopair={autopair})")
+        return fake_lockdown
+
+    async def fake_delete_sys(udid):
+        calls.append(f"delete_sys({udid})")
+        return True
+
+    def fake_delete_local(udid):
+        calls.append(f"delete_local({udid})")
+        return True
+
+    monkeypatch.setattr("services.usbmux_pair_records.create_using_usbmux", fake_create)
+    monkeypatch.setattr("services.usbmux_pair_records.delete_system_pair_record", fake_delete_sys)
+    monkeypatch.setattr("services.usbmux_pair_records.delete_local_pair_record", fake_delete_local)
+
+    lockdown, stale_cleared = await autopair_with_recovery("UDID-OK")
+    assert lockdown is fake_lockdown
+    assert stale_cleared is False
+    assert calls == ["create(UDID-OK, autopair=True)"]  # no deletes ran
+
+
+@pytest.mark.asyncio
+async def test_autopair_with_recovery_clears_then_retries_on_stale_cert(monkeypatch):
+    """Stale-cert exception triggers delete_system + delete_local + retry.
+    Returns (lockdown, stale_cleared=True) when the retry succeeds."""
+    from services.usbmux_pair_records import autopair_with_recovery, _pair_locks
+    _pair_locks.clear()
+
+    fake_lockdown = MagicMock(name="lockdown")
+    attempts = {"n": 0}
+    calls: list[str] = []
+
+    async def fake_create(serial=None, autopair=True):
+        attempts["n"] += 1
+        calls.append(f"create#{attempts['n']}({serial})")
+        if attempts["n"] == 1:
+            raise ConnectionResetError("Connection terminated")
+        return fake_lockdown
+
+    async def fake_delete_sys(udid):
+        calls.append(f"delete_sys({udid})")
+        return True
+
+    def fake_delete_local(udid):
+        calls.append(f"delete_local({udid})")
+        return True
+
+    monkeypatch.setattr("services.usbmux_pair_records.create_using_usbmux", fake_create)
+    monkeypatch.setattr("services.usbmux_pair_records.delete_system_pair_record", fake_delete_sys)
+    monkeypatch.setattr("services.usbmux_pair_records.delete_local_pair_record", fake_delete_local)
+
+    lockdown, stale_cleared = await autopair_with_recovery("UDID-STALE")
+    assert lockdown is fake_lockdown
+    assert stale_cleared is True
+    assert calls == [
+        "create#1(UDID-STALE)",
+        "delete_sys(UDID-STALE)",
+        "delete_local(UDID-STALE)",
+        "create#2(UDID-STALE)",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_autopair_with_recovery_does_not_clear_on_non_stale_exception(monkeypatch):
+    """A non-stale exception (e.g. user hasn't tapped Trust yet) must NOT
+    trigger pair record deletion. It propagates unchanged."""
+    from services.usbmux_pair_records import autopair_with_recovery, _pair_locks
+    from pymobiledevice3.exceptions import PairingDialogResponsePendingError
+    _pair_locks.clear()
+
+    calls: list[str] = []
+
+    async def fake_create(serial=None, autopair=True):
+        calls.append("create")
+        raise PairingDialogResponsePendingError()
+
+    async def fake_delete_sys(udid):
+        calls.append("delete_sys")
+        return True
+
+    def fake_delete_local(udid):
+        calls.append("delete_local")
+        return True
+
+    monkeypatch.setattr("services.usbmux_pair_records.create_using_usbmux", fake_create)
+    monkeypatch.setattr("services.usbmux_pair_records.delete_system_pair_record", fake_delete_sys)
+    monkeypatch.setattr("services.usbmux_pair_records.delete_local_pair_record", fake_delete_local)
+
+    with pytest.raises(PairingDialogResponsePendingError):
+        await autopair_with_recovery("UDID-PENDING")
+    assert calls == ["create"]
+
+
+@pytest.mark.asyncio
+async def test_autopair_with_recovery_propagates_retry_failure(monkeypatch):
+    """If both attempts fail (still stale-cert), propagate the LATEST exception."""
+    from services.usbmux_pair_records import autopair_with_recovery, _pair_locks
+    _pair_locks.clear()
+
+    attempts = {"n": 0}
+
+    async def fake_create(serial=None, autopair=True):
+        attempts["n"] += 1
+        if attempts["n"] == 1:
+            raise ConnectionResetError("first fail")
+        raise EOFError("second fail (different exception type, still stale)")
+
+    async def fake_delete_sys(udid):
+        return True
+
+    def fake_delete_local(udid):
+        return True
+
+    monkeypatch.setattr("services.usbmux_pair_records.create_using_usbmux", fake_create)
+    monkeypatch.setattr("services.usbmux_pair_records.delete_system_pair_record", fake_delete_sys)
+    monkeypatch.setattr("services.usbmux_pair_records.delete_local_pair_record", fake_delete_local)
+
+    with pytest.raises(EOFError, match="second fail"):
+        await autopair_with_recovery("UDID-DEAD")
+
+
+@pytest.mark.asyncio
+async def test_autopair_with_recovery_serializes_concurrent_calls_for_same_udid(monkeypatch):
+    """Two concurrent autopair_with_recovery calls for the same udid must
+    serialize via the per-udid lock — at most one create() is in flight
+    at a time."""
+    from services.usbmux_pair_records import autopair_with_recovery, _pair_locks
+    _pair_locks.clear()
+
+    fake_lockdown = MagicMock()
+    in_flight = {"n": 0}
+    max_seen = {"n": 0}
+
+    async def fake_create_serial(serial=None, autopair=True):
+        in_flight["n"] += 1
+        max_seen["n"] = max(max_seen["n"], in_flight["n"])
+        await asyncio.sleep(0.02)  # let any concurrent call try to enter
+        in_flight["n"] -= 1
+        return fake_lockdown
+
+    async def fake_delete_sys(udid):
+        return True
+
+    def fake_delete_local(udid):
+        return True
+
+    monkeypatch.setattr("services.usbmux_pair_records.create_using_usbmux", fake_create_serial)
+    monkeypatch.setattr("services.usbmux_pair_records.delete_system_pair_record", fake_delete_sys)
+    monkeypatch.setattr("services.usbmux_pair_records.delete_local_pair_record", fake_delete_local)
+
+    async def call_one():
+        await autopair_with_recovery("UDID-RACE")
+
+    async def call_two():
+        await asyncio.sleep(0)  # ensure call1 enters lock first
+        await autopair_with_recovery("UDID-RACE")
+
+    await asyncio.gather(call_one(), call_two())
+    assert max_seen["n"] == 1, "lock did not serialize — both calls ran concurrently"

@@ -20,6 +20,7 @@ import ssl
 from pathlib import Path
 
 from pymobiledevice3.exceptions import ConnectionTerminatedError
+from pymobiledevice3.lockdown import create_using_usbmux
 from pymobiledevice3.usbmux import PlistMuxConnection
 
 logger = logging.getLogger(__name__)
@@ -155,3 +156,37 @@ async def acquire_pair_lock(udid: str) -> asyncio.Lock:
             lock = asyncio.Lock()
             _pair_locks[udid] = lock
         return lock
+
+
+async def autopair_with_recovery(udid: str, autopair: bool = True):
+    """Try `create_using_usbmux(serial=udid, autopair=autopair)`. If a
+    stale-cert exception fires, clear host pair records (system + local)
+    once and retry. Returns `(lockdown_client, stale_cleared)`.
+
+    Acquires the per-udid pair lock for the entire flow so concurrent
+    callers (watchdog + user-triggered wifi/repair) don't double-clear.
+
+    Non-stale exceptions propagate unchanged — in particular,
+    `PairingDialogResponsePendingError` and `UserDeniedPairingError` are
+    NOT treated as stale-cert and never trigger record deletion.
+    """
+    lock = await acquire_pair_lock(udid)
+    async with lock:
+        try:
+            lockdown = await create_using_usbmux(serial=udid, autopair=autopair)
+            return lockdown, False
+        except Exception as exc:
+            if not _is_stale_cert_error(exc):
+                raise
+            logger.info(
+                "autopair_with_recovery: stale-cert detected for %s (%s: %s); "
+                "clearing host pair records and retrying once",
+                udid, type(exc).__name__, exc,
+            )
+            await delete_system_pair_record(udid)
+            delete_local_pair_record(udid)
+            # Retry exactly once. If THIS attempt fails, propagate whatever
+            # exception came out — the caller decides what to surface to
+            # the user.
+            lockdown = await create_using_usbmux(serial=udid, autopair=autopair)
+            return lockdown, True
