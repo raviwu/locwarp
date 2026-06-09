@@ -710,13 +710,13 @@ async def _usbmux_presence_watchdog():
 
             now = time.monotonic()
             for udid in new_udids:
-                if len(dm._connections) >= MAX_DEVICES:
-                    break
                 # Stop trying to auto-connect a device the user has tapped "Don't Trust" on.
                 # The user can break the spell by hitting the in-app Re-trust button,
                 # which clears this set entry (see api/device.py wifi_repair handler).
                 if udid in dm.sticky_user_denied:
                     continue
+                if len(dm._connections) >= MAX_DEVICES:
+                    break
                 fail_count = reconnect_failure_count.get(udid, 0)
                 # 5s, 10s, 20s, 40s, 80s, 160s, 300s, 300s ...
                 cooldown = min(
