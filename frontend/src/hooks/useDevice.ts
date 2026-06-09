@@ -17,6 +17,12 @@ export interface DeviceInfo {
   // failed, or device not yet connected). Used to decide whether to show
   // the "Reveal Developer Mode option" button.
   developer_mode_enabled?: boolean | null
+  // Pair-handshake state from the backend. "ok" = device is healthy;
+  // "trust_required" = iPhone forgot this host, needs re-trust;
+  // "error" = some other lockdown failure (text in pair_error).
+  // Older backends omit this field; treat undefined as "ok".
+  pair_status?: 'ok' | 'trust_required' | 'error'
+  pair_error?: string | null
 }
 
 export interface WifiScanResult {
