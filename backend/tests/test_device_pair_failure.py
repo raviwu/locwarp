@@ -81,10 +81,13 @@ def _raw_mux(serial: str, connection_type: str = "USB"):
 
 @pytest.fixture(autouse=True)
 def isolated_device_cache(tmp_path, monkeypatch):
-    """device_manager._load_device_name_cache reads DEVICE_NAMES_FILE — keep
-    that file isolated per test so no host state leaks in."""
+    """device_manager reads DEVICE_NAMES_FILE and STICKY_DENIED_FILE — keep
+    both isolated per test so no host state leaks in or out."""
     fake = tmp_path / "device_names.json"
     monkeypatch.setattr("core.device_manager.DEVICE_NAMES_FILE", fake)
+    monkeypatch.setattr(
+        "core.device_manager.STICKY_DENIED_FILE", tmp_path / "sticky_denied.json"
+    )
     yield
 
 
@@ -310,3 +313,83 @@ def test_watchdog_sticky_gate_predicate():
     # discard removes the flag (the wifi/repair clear path).
     dm.sticky_user_denied.discard("DENIED-UDID")
     assert "DENIED-UDID" not in dm.sticky_user_denied
+
+
+def test_sticky_persists_across_manager_instances(tmp_path):
+    """mark_user_denied writes the file; a fresh DeviceManager loads it;
+    clear_user_denied updates the file."""
+    from core.device_manager import DeviceManager
+
+    dm1 = DeviceManager.__new__(DeviceManager)
+    dm1.__init__()
+    dm1.mark_user_denied("UDID-PERSIST")
+
+    sticky_file = tmp_path / "sticky_denied.json"
+    assert sticky_file.exists()
+    import json
+    assert json.loads(sticky_file.read_text()) == ["UDID-PERSIST"]
+
+    dm2 = DeviceManager.__new__(DeviceManager)
+    dm2.__init__()
+    assert "UDID-PERSIST" in dm2.sticky_user_denied
+
+    dm2.clear_user_denied("UDID-PERSIST")
+    assert json.loads(sticky_file.read_text()) == []
+
+    dm3 = DeviceManager.__new__(DeviceManager)
+    dm3.__init__()
+    assert dm3.sticky_user_denied == set()
+
+
+def test_sticky_load_tolerates_missing_or_corrupt_file(tmp_path):
+    """No file → empty set. Garbage JSON → empty set. Wrong shape → empty
+    set (or string-filtered). Never raises."""
+    from core.device_manager import DeviceManager
+
+    # Missing file
+    dm = DeviceManager.__new__(DeviceManager)
+    dm.__init__()
+    assert dm.sticky_user_denied == set()
+
+    sticky_file = tmp_path / "sticky_denied.json"
+
+    # Corrupt JSON
+    sticky_file.write_text("{not json[")
+    dm = DeviceManager.__new__(DeviceManager)
+    dm.__init__()
+    assert dm.sticky_user_denied == set()
+
+    # Wrong shape (dict instead of list)
+    sticky_file.write_text('{"udid": true}')
+    dm = DeviceManager.__new__(DeviceManager)
+    dm.__init__()
+    assert dm.sticky_user_denied == set()
+
+    # Mixed list — non-strings dropped
+    sticky_file.write_text('["GOOD-UDID", 42, null]')
+    dm = DeviceManager.__new__(DeviceManager)
+    dm.__init__()
+    assert dm.sticky_user_denied == {"GOOD-UDID"}
+
+
+def test_connect_user_denied_persists_to_file(monkeypatch, tmp_path):
+    """connect()'s UserDenied branch must go through mark_user_denied so
+    the sticky flag survives a restart."""
+    from core.device_manager import DeviceManager
+    from pymobiledevice3.exceptions import UserDeniedPairingError
+
+    dm = DeviceManager.__new__(DeviceManager)
+    dm.__init__()
+
+    async def fake_create(serial=None, autopair=True):
+        raise UserDeniedPairingError()
+
+    monkeypatch.setattr("services.usbmux_pair_records.create_using_usbmux", fake_create)
+
+    with pytest.raises(UserDeniedPairingError):
+        asyncio.run(dm.connect("UDID-DENY-PERSIST"))
+
+    import json
+    sticky_file = tmp_path / "sticky_denied.json"
+    assert sticky_file.exists()
+    assert "UDID-DENY-PERSIST" in json.loads(sticky_file.read_text())

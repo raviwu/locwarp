@@ -32,7 +32,7 @@ from pymobiledevice3.services.dvt.instruments.location_simulation import Locatio
 from pymobiledevice3.services.simulate_location import DtSimulateLocation
 from pymobiledevice3.usbmux import list_devices
 
-from config import DEVICE_NAMES_FILE, WIFI_ALIASES_FILE
+from config import DEVICE_NAMES_FILE, STICKY_DENIED_FILE, WIFI_ALIASES_FILE
 from models.schemas import DeviceInfo
 from services.json_safe import safe_load_json, safe_write_json
 from services.location_service import (
@@ -248,11 +248,32 @@ class DeviceManager:
     def __init__(self) -> None:
         self._connections: Dict[str, _ActiveConnection] = {}
         self._lock = asyncio.Lock()
-        # Udids the user has explicitly tapped "Don't Trust" on the iPhone for.
-        # The watchdog refuses to auto-connect these (would just trigger another
-        # ignored prompt cycle). User clicking the in-app Re-trust button clears
-        # the flag for that udid (see api/device.py wifi_repair handler).
-        self.sticky_user_denied: set[str] = set()
+        # Udids the user has explicitly tapped "Don't Trust" on the iPhone
+        # for, or forgotten via the in-app Forget action. The watchdog
+        # refuses to auto-connect these (would just trigger another ignored
+        # prompt cycle). The in-app Re-trust button clears the flag per udid
+        # (see api/device.py wifi_repair handler). Persisted so the user's
+        # choice survives a LocWarp restart; corrupt/missing file degrades
+        # to an empty set (fail-open: watchdog resumes auto-pair).
+        raw_sticky = safe_load_json(STICKY_DENIED_FILE)
+        self.sticky_user_denied: set[str] = (
+            {u for u in raw_sticky if isinstance(u, str)}
+            if isinstance(raw_sticky, list) else set()
+        )
+
+    def mark_user_denied(self, udid: str) -> None:
+        """Add *udid* to the sticky no-auto-re-pair set and persist."""
+        self.sticky_user_denied.add(udid)
+        self._persist_sticky()
+
+    def clear_user_denied(self, udid: str) -> None:
+        """Remove *udid* from the sticky set (user explicitly re-trusts)
+        and persist."""
+        self.sticky_user_denied.discard(udid)
+        self._persist_sticky()
+
+    def _persist_sticky(self) -> None:
+        safe_write_json(STICKY_DENIED_FILE, sorted(self.sticky_user_denied))
 
     # ------------------------------------------------------------------
     # Discovery
@@ -449,7 +470,7 @@ class DeviceManager:
             # User tapped "Don't Trust". Don't auto-retry forever — mark sticky so
             # the watchdog stops re-prompting. The in-app Re-trust button clears
             # this flag (api/device.py wifi_repair).
-            self.sticky_user_denied.add(udid)
+            self.mark_user_denied(udid)
             logger.warning(
                 "User denied pairing for %s — marked sticky_user_denied", udid,
             )

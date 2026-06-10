@@ -78,6 +78,13 @@ DEVICE_NAMES_FILE = DATA_DIR / "device_names.json"
 # RemotePairing identifier or an IPv6 link-local address.
 WIFI_ALIASES_FILE = DATA_DIR / "wifi_aliases.json"
 
+# Persisted set of udids the user has explicitly refused to pair with
+# ("Don't Trust" on the iPhone, or the in-app Forget action). The usbmux
+# watchdog skips these so it never re-pops the Trust dialog uninvited;
+# the in-app Re-trust button (wifi/repair) clears the entry.
+# Shape: JSON list of udid strings.
+STICKY_DENIED_FILE = DATA_DIR / "sticky_denied.json"
+
 # OSRM
 OSRM_BASE_URL = "https://router.project-osrm.org"
 
