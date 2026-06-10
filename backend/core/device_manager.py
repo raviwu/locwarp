@@ -312,7 +312,12 @@ class DeviceManager:
             seen_udids.add(raw.serial)
 
             try:
-                lockdown = await create_using_usbmux(serial=raw.serial)
+                # autopair=False: discovery is a read-only poll — it must
+                # never pop the iOS Trust dialog. Pairing prompts belong to
+                # connect() (autopair_with_recovery), which respects
+                # sticky_user_denied. Unpaired devices raise NotPairedError
+                # here, which the classifier routes to "trust_required".
+                lockdown = await create_using_usbmux(serial=raw.serial, autopair=False)
             except Exception as exc:
                 # Pair handshake failed. Don't drop the device — surface a stub
                 # so the UI can render a "needs trust" chip + per-row repair

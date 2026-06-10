@@ -99,7 +99,7 @@ def test_discover_surfaces_pair_failed_device(monkeypatch):
     async def _fake_list_devices():
         return [raw]
 
-    async def _exploding_lockdown(serial):
+    async def _exploding_lockdown(serial, autopair=True):
         raise ConnectionResetError("Connection terminated")
 
     monkeypatch.setattr("core.device_manager.list_devices", _fake_list_devices)
@@ -131,7 +131,7 @@ def test_discover_mixes_healthy_and_failed(monkeypatch):
     }
     healthy_lockdown.get_developer_mode_status = AsyncMock(return_value=True)
 
-    async def _conditional_lockdown(serial):
+    async def _conditional_lockdown(serial, autopair=True):
         if serial == "00008110-GOOD":
             return healthy_lockdown
         raise ConnectionResetError("Connection terminated")
@@ -168,7 +168,7 @@ def test_discover_uses_cached_name_for_failed_device(monkeypatch, tmp_path):
     async def _fake_list_devices():
         return [raw]
 
-    async def _exploding_lockdown(serial):
+    async def _exploding_lockdown(serial, autopair=True):
         raise ConnectionResetError("Connection terminated")
 
     monkeypatch.setattr("core.device_manager.list_devices", _fake_list_devices)
@@ -200,7 +200,7 @@ def test_discover_surfaces_failure_after_lockdown_open(monkeypatch):
         async def close(self):
             pass
 
-    async def _open_lockdown(serial):
+    async def _open_lockdown(serial, autopair=True):
         return _BadLockdown()
 
     monkeypatch.setattr("core.device_manager.list_devices", _fake_list_devices)
@@ -393,3 +393,32 @@ def test_connect_user_denied_persists_to_file(monkeypatch, tmp_path):
     sticky_file = tmp_path / "sticky_denied.json"
     assert sticky_file.exists()
     assert "UDID-DENY-PERSIST" in json.loads(sticky_file.read_text())
+
+
+def test_discover_passes_autopair_false(monkeypatch):
+    """The device-list poll must NEVER trigger the iOS Trust dialog.
+    autopair=True here would re-pop the dialog every few seconds for any
+    unpaired device — defeating sticky_user_denied (the watchdog gate
+    doesn't cover the discovery path). Pin the kwarg."""
+    captured = {}
+
+    raw = _raw_mux("00008140-PIN")
+
+    async def _fake_list_devices():
+        return [raw]
+
+    fake_lockdown = MagicMock()
+    fake_lockdown.all_values = {"DeviceName": "Pin", "ProductVersion": "17.0"}
+    fake_lockdown.get_developer_mode_status = AsyncMock(return_value=False)
+
+    async def _capturing_lockdown(serial, autopair=True):
+        captured["autopair"] = autopair
+        return fake_lockdown
+
+    monkeypatch.setattr("core.device_manager.list_devices", _fake_list_devices)
+    monkeypatch.setattr("core.device_manager.create_using_usbmux", _capturing_lockdown)
+
+    dm = _make_dm()
+    asyncio.run(dm.discover_devices())
+
+    assert captured["autopair"] is False
