@@ -71,6 +71,10 @@ lives at `backend/services/usbmux_pair_records.py`:
 - `autopair_with_recovery(udid)` — the shared "try autopair → on stale-cert
   clear records → retry once" dance used by both `wifi/repair` and
   `DeviceManager.connect()`.
+- `POST /api/device/{udid}/forget` — the user-facing entry point: iPhone-side
+  unpair (best-effort) → session teardown → both record deletes →
+  `mark_user_denied`. Discovery polls use `autopair=False` so they never pop
+  the Trust dialog.
 
 The stale-cert classifier (`_is_stale_cert_error`) whitelists
 `ConnectionResetError`, `BrokenPipeError`, `EOFError`, `ssl.SSLError`,
@@ -83,7 +87,9 @@ deliberately tapping "Don't Trust"; resetting that choice without
 asking would be silently overriding user intent. `DeviceManager.connect()`
 adds the udid to `dm.sticky_user_denied` and the watchdog refuses to
 auto-connect it until the user explicitly triggers re-pair via the
-in-app Re-trust button (which clears the flag).
+in-app Re-trust button (which clears the flag). The sticky set persists to
+`~/.locwarp/sticky_denied.json` (`STICKY_DENIED_FILE`) so the choice — and
+any in-app Forget — survives a LocWarp restart.
 
 ---
 
