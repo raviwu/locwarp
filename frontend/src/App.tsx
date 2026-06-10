@@ -1471,6 +1471,14 @@ const App: React.FC = () => {
             device.scan()
           }}
           onDisconnect={(udid) => { device.disconnect(udid) }}
+          onForget={async (udid) => {
+            try {
+              await api.forgetDevice(udid)
+            } catch (e) {
+              console.error('forget failed', e)
+            }
+            device.disconnect(udid)
+          }}
           onRestoreOne={async (udid) => {
             try {
               await api.restoreSim(udid)

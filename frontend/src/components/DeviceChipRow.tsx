@@ -11,11 +11,12 @@ interface Props {
   runtimes: RuntimesMap
   onAdd: () => void               // opens add-device picker
   onDisconnect: (udid: string) => void
+  onForget: (udid: string) => void
   onRestoreOne: (udid: string) => void
   onEnableDev?: (udid: string) => void
 }
 
-export function DeviceChipRow({ devices, runtimes, onAdd, onDisconnect, onRestoreOne, onEnableDev }: Props) {
+export function DeviceChipRow({ devices, runtimes, onAdd, onDisconnect, onForget, onRestoreOne, onEnableDev }: Props) {
   const t = useT()
   const atMax = devices.length >= MAX_DEVICES
 
@@ -34,6 +35,7 @@ export function DeviceChipRow({ devices, runtimes, onAdd, onDisconnect, onRestor
             device={d}
             runtime={runtimes[d.udid]}
             onDisconnect={() => onDisconnect(d.udid)}
+            onForget={() => onForget(d.udid)}
             onRestoreOne={() => onRestoreOne(d.udid)}
             onEnableDev={onEnableDev ? () => onEnableDev(d.udid) : undefined}
           />

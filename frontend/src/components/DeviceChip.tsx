@@ -17,6 +17,7 @@ interface Props {
   device: DeviceInfo
   runtime?: DeviceRuntime
   onDisconnect: () => void
+  onForget: () => void
   onRestoreOne: () => void
   onEnableDev?: () => void
 }
@@ -29,9 +30,10 @@ function stateKind(state?: string): 'idle' | 'running' | 'paused' | 'error' | 'd
   return 'running'
 }
 
-export function DeviceChip({ letter, device, runtime, onDisconnect, onRestoreOne, onEnableDev }: Props) {
+export function DeviceChip({ letter, device, runtime, onDisconnect, onForget, onRestoreOne, onEnableDev }: Props) {
   const t = useT()
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null)
+  const [confirmForget, setConfirmForget] = useState(false)
   const ref = useRef<HTMLDivElement | null>(null)
   const kind = stateKind(runtime?.state)
 
@@ -120,6 +122,48 @@ export function DeviceChip({ letter, device, runtime, onDisconnect, onRestoreOne
           <MenuItem onClick={() => { setMenu(null); onRestoreOne() }}>{t('device.chip_restore')}</MenuItem>
           {onEnableDev && <MenuItem onClick={() => { setMenu(null); onEnableDev() }}>{t('device.chip_enable_dev')}</MenuItem>}
           <MenuItem onClick={() => { setMenu(null); onDisconnect() }}>{t('device.chip_disconnect')}</MenuItem>
+          <MenuItem onClick={() => { setMenu(null); setConfirmForget(true) }}>{t('device.chip_forget')}</MenuItem>
+        </div>,
+        document.body,
+      )}
+      {confirmForget && createPortal(
+        <div
+          onClick={() => setConfirmForget(false)}
+          style={{
+            position: 'fixed', inset: 0, zIndex: 10000,
+            background: 'rgba(0,0,0,0.5)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{
+              background: 'rgba(20,22,28,0.96)',
+              backdropFilter: 'blur(18px) saturate(160%)',
+              border: '1px solid rgba(255,255,255,0.08)',
+              borderRadius: 10, padding: 16, maxWidth: 320,
+              color: '#eaeaea', fontSize: 13,
+            }}
+          >
+            <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 8 }}>
+              {t('device.forget_confirm_title')}
+            </div>
+            <div style={{ opacity: 0.8, lineHeight: 1.5, marginBottom: 14 }}>
+              {t('device.forget_confirm_body')}
+            </div>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button type="button" onClick={() => setConfirmForget(false)}>
+                {t('device.forget_cancel')}
+              </button>
+              <button
+                type="button"
+                onClick={() => { setConfirmForget(false); onForget() }}
+                style={{ background: '#c0392b', color: '#fff' }}
+              >
+                {t('device.forget_ok')}
+              </button>
+            </div>
+          </div>
         </div>,
         document.body,
       )}

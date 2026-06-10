@@ -126,6 +126,7 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
 export const listDevices = () => request<any[]>('GET', '/api/device/list')
 export const connectDevice = (udid: string) => request<any>('POST', `/api/device/${udid}/connect`)
 export const disconnectDevice = (udid: string) => request<any>('DELETE', `/api/device/${udid}/connect`)
+export const forgetDevice = (udid: string) => request<any>('POST', `/api/device/${udid}/forget`)
 export const wifiConnect = (ip: string) => request<any>('POST', '/api/device/wifi/connect', { ip })
 export const wifiScan = () => request<any[]>('GET', '/api/device/wifi/scan')
 // bonjour_id: stable id stripped from the RemotePairing PTR by the
