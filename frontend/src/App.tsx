@@ -1477,6 +1477,10 @@ const App: React.FC = () => {
             } catch (e) {
               console.error('forget failed', e)
             }
+            // disconnect() is a safe no-op on an already-forgotten udid;
+            // reused here for its listDevices() + setConnectedDevice(null)
+            // refresh. NOT device.scan() — scan auto-connects when exactly
+            // one device remains, which is wrong right after a forget.
             device.disconnect(udid)
           }}
           onRestoreOne={async (udid) => {
