@@ -25,6 +25,11 @@ def clean_dm_state():
     dm.sticky_user_denied.clear()
     app_state.simulation_engines.clear()
     app_state._primary_udid = None
+    # The WiFi test inserts a fake TunnelRunner; clear it even when the
+    # test fails before the endpoint pops it, so the cap-check in later
+    # tests doesn't count a leaked fake runner.
+    import api.device as device_mod
+    device_mod._tunnels.clear()
 
 
 def _patch_record_deletes(monkeypatch, deletes: list):
