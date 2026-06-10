@@ -1529,6 +1529,81 @@ async def disconnect_device(udid: str):
     return {"status": "disconnected", "udid": udid}
 
 
+@router.post("/{udid}/forget")
+async def forget_device(udid: str):
+    """Forget a device — Bluetooth-style. iPhone-side unpair (best-effort),
+    session teardown, host pair-record removal, and persistent watchdog
+    suppression via sticky_user_denied.
+
+    Idempotent: forgetting an unknown or already-forgotten udid still
+    returns 200 (record deletes are idempotent; set-add is idempotent).
+    The user's path back is the Re-trust button (wifi/repair), which
+    clears the sticky flag and re-triggers the iPhone Trust prompt.
+    """
+    from main import app_state
+    from services.usbmux_pair_records import (
+        acquire_pair_lock,
+        delete_local_pair_record,
+        delete_system_pair_record,
+    )
+
+    dm = _dm()
+    lock = await acquire_pair_lock(udid)
+    async with lock:
+        # 1. iPhone-side unpair (best-effort) — needs the live session.
+        #    Failure is fine: host-side cleanup below is sufficient for
+        #    LocWarp's own behavior; the iPhone merely keeps a dangling
+        #    host entry (today's status quo for every stale record).
+        conn = dm._connections.get(udid)
+        if conn is not None:
+            unpair_lockdown = getattr(conn, "usbmux_lockdown", None) or conn.lockdown
+            try:
+                await unpair_lockdown.unpair()
+                _tunnel_logger.info("Forget: iPhone-side unpair OK for %s", udid)
+            except Exception:
+                _tunnel_logger.debug(
+                    "Forget: iPhone-side unpair failed for %s (continuing)",
+                    udid, exc_info=True,
+                )
+
+        # 2. Session teardown. WiFi path mirrors wifi_tunnel_stop's
+        #    per-udid sequence; USB path mirrors disconnect_device.
+        async with _tunnels_lock:
+            await _cleanup_wifi_connection_for(udid, caller="forget_device")
+            await _tear_down_tunnel(udid, caller="forget_device")
+        if udid in dm._connections:
+            try:
+                await dm.disconnect(udid)
+            except Exception:
+                _tunnel_logger.exception("Forget: disconnect failed for %s", udid)
+        app_state.simulation_engines.pop(udid, None)
+        if app_state._primary_udid == udid:
+            app_state._primary_udid = next(iter(app_state.simulation_engines), None)
+
+        # 3. Clear host pair records (both idempotent, never raise).
+        system_cleared = await delete_system_pair_record(udid)
+        local_cleared = delete_local_pair_record(udid)
+
+        # 4. Suppress the watchdog's auto-re-pair (persisted across restarts).
+        dm.mark_user_denied(udid)
+
+    # 5. Notify the frontend.
+    try:
+        from api.websocket import broadcast
+        await broadcast("device_disconnected", {
+            "udid": udid, "udids": [udid], "reason": "forgotten",
+        })
+    except Exception:
+        pass
+
+    return {
+        "status": "forgotten",
+        "udid": udid,
+        "system_cleared": system_cleared,
+        "local_cleared": local_cleared,
+    }
+
+
 @router.get("/{udid}/info", response_model=DeviceInfo | None)
 async def device_info(udid: str):
     dm = _dm()
