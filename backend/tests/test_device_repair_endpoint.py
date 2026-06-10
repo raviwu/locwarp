@@ -19,6 +19,15 @@ import pytest
 from fastapi.testclient import TestClient
 
 
+@pytest.fixture(autouse=True)
+def isolated_sticky_file(tmp_path, monkeypatch):
+    """wifi_repair → dm.clear_user_denied persists; keep the file in tmp."""
+    monkeypatch.setattr(
+        "core.device_manager.STICKY_DENIED_FILE", tmp_path / "sticky_denied.json"
+    )
+    yield
+
+
 @pytest.fixture
 def client():
     from main import app
@@ -494,3 +503,39 @@ def test_wifi_repair_trust_failed_reports_stale_cleared_when_retry_raised_non_st
     # Message should be the UserDenied one
     assert "重置位置與隱私權" in detail["message"]
     assert attempts["n"] == 2
+
+
+def test_wifi_repair_clear_persists_to_file(monkeypatch, tmp_path):
+    """wifi_repair's sticky clear must go through clear_user_denied so the
+    removal survives a restart (file updated, not just in-memory set)."""
+    from fastapi.testclient import TestClient
+    from main import app, app_state
+
+    udid = "UDID-STICKY-PERSIST"
+    dm = app_state.device_manager
+    dm.mark_user_denied(udid)  # writes tmp file via the autouse fixture
+    import json
+    sticky_file = tmp_path / "sticky_denied.json"
+    assert udid in json.loads(sticky_file.read_text())
+
+    raw_dev = MagicMock(serial=udid, connection_type="USB")
+
+    async def fake_mux_list():
+        return [raw_dev]
+
+    fake_lockdown = MagicMock()
+    fake_lockdown.all_values = {"ProductVersion": "16.5", "DeviceName": "P"}
+
+    async def fake_create(serial=None, autopair=True):
+        return fake_lockdown
+
+    monkeypatch.setattr("pymobiledevice3.usbmux.list_devices", fake_mux_list, raising=False)
+    monkeypatch.setattr("pymobiledevice3.lockdown.create_using_usbmux", fake_create, raising=False)
+    monkeypatch.setattr("services.usbmux_pair_records.create_using_usbmux", fake_create, raising=False)
+
+    client = TestClient(app)
+    resp = client.post("/api/device/wifi/repair", json={"udid": udid})
+
+    assert resp.status_code == 200
+    assert udid not in dm.sticky_user_denied
+    assert udid not in json.loads(sticky_file.read_text())

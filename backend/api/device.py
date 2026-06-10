@@ -239,7 +239,7 @@ async def wifi_repair(req: WifiRepairRequest | None = None):
     # Clear any sticky "user denied" flag from the watchdog — explicit user
     # intent (they clicked Re-trust) overrides the watchdog's auto-skip.
     dm = _dm()
-    dm.sticky_user_denied.discard(udid)
+    dm.clear_user_denied(udid)
 
     # Step 1: USB lockdown autopair via the shared recovery helper. If the
     # host has a stale pair record (iPhone has forgotten this Mac), the
