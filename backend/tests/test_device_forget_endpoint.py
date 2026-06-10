@@ -187,3 +187,51 @@ def test_forget_unpair_failure_does_not_block(monkeypatch, tmp_path):
     assert resp.status_code == 200
     assert f"sys:{udid}" in deletes
     assert udid in dm.sticky_user_denied
+
+
+def test_forget_broadcast_includes_remaining_count(monkeypatch, tmp_path):
+    """The forget broadcast must carry remaining_count so the frontend
+    doesn't mis-render the 'device lost' banner (it defaults a missing
+    field to 0)."""
+    from main import app, app_state
+
+    udid = "UDID-BCAST"
+    dm = app_state.device_manager
+
+    conn = MagicMock()
+    conn.connection_type = "USB"
+    conn.usbmux_lockdown = MagicMock()
+    conn.usbmux_lockdown.unpair = AsyncMock()
+    conn.lockdown = MagicMock()
+    dm._connections[udid] = conn
+
+    # A second, surviving device — remaining_count must reflect it.
+    other = MagicMock()
+    other.connection_type = "USB"
+    dm._connections["UDID-SURVIVOR"] = other
+
+    async def fake_disconnect(u):
+        dm._connections.pop(u, None)
+
+    monkeypatch.setattr(dm, "disconnect", fake_disconnect)
+
+    deletes: list = []
+    _patch_record_deletes(monkeypatch, deletes)
+
+    captured: list = []
+
+    async def fake_broadcast(event, payload):
+        captured.append((event, payload))
+
+    monkeypatch.setattr("api.websocket.broadcast", fake_broadcast)
+
+    client = TestClient(app)
+    resp = client.post(f"/api/device/{udid}/forget")
+
+    assert resp.status_code == 200
+    forget_events = [
+        p for (e, p) in captured
+        if e == "device_disconnected" and p.get("reason") == "forgotten"
+    ]
+    assert len(forget_events) == 1
+    assert forget_events[0]["remaining_count"] == 1  # the survivor

@@ -307,11 +307,11 @@ def test_watchdog_sticky_gate_predicate():
     assert "FRESH-UDID" not in dm.sticky_user_denied
 
     # After marking: gate IS true.
-    dm.sticky_user_denied.add("DENIED-UDID")
+    dm.mark_user_denied("DENIED-UDID")
     assert "DENIED-UDID" in dm.sticky_user_denied
 
-    # discard removes the flag (the wifi/repair clear path).
-    dm.sticky_user_denied.discard("DENIED-UDID")
+    # clear_user_denied removes the flag (the wifi/repair clear path).
+    dm.clear_user_denied("DENIED-UDID")
     assert "DENIED-UDID" not in dm.sticky_user_denied
 
 

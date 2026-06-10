@@ -1244,6 +1244,14 @@ async def wifi_tunnel_stop(req: WifiTunnelStopRequest | None = None):
         from main import app_state
         devices = await dm.discover_devices()
         for udid in was_network_udids:
+            # Never resurrect a Trust prompt for a device the user has
+            # forgotten / tapped Don't Trust on. The Re-trust button is
+            # the only path back (it clears this flag).
+            if udid in dm.sticky_user_denied:
+                _tunnel_logger.info(
+                    "USB fallback: skipping %s (sticky_user_denied)", udid,
+                )
+                continue
             usb_dev = next(
                 (d for d in devices if d.udid == udid and d.connection_type == "USB"),
                 None,
@@ -1592,6 +1600,7 @@ async def forget_device(udid: str):
         from api.websocket import broadcast
         await broadcast("device_disconnected", {
             "udid": udid, "udids": [udid], "reason": "forgotten",
+            "remaining_count": len(dm._connections),
         })
     except Exception:
         pass
