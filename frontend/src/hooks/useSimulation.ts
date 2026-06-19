@@ -281,10 +281,10 @@ export function useSimulation(ws?: WsRouter, primaryUdid?: string | null) {
       if (udid) {
         updateRuntime(udid, {
           currentPos: (typeof e.lat === 'number' && typeof e.lng === 'number') ? { lat: e.lat as number, lng: e.lng as number } : undefined as any,
-          progress: e.progress as any,
-          eta: (e.eta_seconds ?? e.eta) as any,
-          distanceRemaining: e.distance_remaining as any,
-          distanceTraveled: e.distance_traveled as any,
+          progress: (e.progress ?? undefined) as any,
+          eta: ((e.eta_seconds ?? e.eta) ?? undefined) as any,
+          distanceRemaining: (e.distance_remaining ?? undefined) as any,
+          distanceTraveled: (e.distance_traveled ?? undefined) as any,
           currentSpeedKmh: e.speed_mps != null ? (e.speed_mps as number) * 3.6 : undefined as any,
         })
       }
