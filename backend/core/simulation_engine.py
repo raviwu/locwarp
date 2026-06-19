@@ -119,6 +119,7 @@ class SimulationEngine:
         else:
             _ls = location_service
 
+            # _DefaultDevicePort is a test-only fallback; production always injects LocationServiceDevicePort (see main.py).
             class _DefaultDevicePort:
                 async def set_location(self, udid: str, lat: float, lng: float) -> None:
                     await _ls.set(lat, lng)
