@@ -7,15 +7,18 @@ import { createWsRouter } from '../adapters/ws/router'
 // ── useServices provider tests ──────────────────────────────────────────────
 
 describe('useServices', () => {
-  it('exposes the injected api and ws', () => {
+  it('exposes the injected api, ws, sendMessage, and connected', () => {
     const ws = createWsRouter()
     const api = { listDevices: vi.fn() }
+    const sendMessage = vi.fn()
     const wrapper = ({ children }: { children: React.ReactNode }) => (
-      <ServicesProvider value={{ api: api as any, ws }}>{children}</ServicesProvider>
+      <ServicesProvider value={{ api: api as any, ws, sendMessage, connected: true }}>{children}</ServicesProvider>
     )
     const { result } = renderHook(() => useServices(), { wrapper })
     expect(result.current.api).toBe(api)
     expect(result.current.ws).toBe(ws)
+    expect(result.current.sendMessage).toBe(sendMessage)
+    expect(result.current.connected).toBe(true)
   })
 
   it('throws if used outside the provider', () => {

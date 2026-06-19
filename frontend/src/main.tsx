@@ -12,9 +12,9 @@ import * as api from './services/api'
 // provides it app-wide via ServicesProvider. Keeps main.tsx free of hooks
 // while ensuring ServicesProvider wraps the entire tree including App.
 function ServicesRoot({ children }: { children: React.ReactNode }) {
-  const { router } = useWsRouter()
+  const { router, sendMessage, connected } = useWsRouter()
   return (
-    <ServicesProvider value={{ api, ws: router }}>
+    <ServicesProvider value={{ api, ws: router, sendMessage, connected }}>
       {children}
     </ServicesProvider>
   )

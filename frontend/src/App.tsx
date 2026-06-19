@@ -1,14 +1,13 @@
 import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { useT } from './i18n'
-import { useWsRouter } from './adapters/ws/useWsRouter'
 import { useDevice } from './hooks/useDevice'
 import { useSimulation } from './hooks/useSimulation'
 import { useJoystick } from './hooks/useJoystick'
 import { useBookmarks } from './hooks/useBookmarks'
 import { useExternalChangeSubscriptions } from './hooks/useExternalChangeSubscriptions'
 import { useGoldDittoSubscription } from './hooks/useGoldDittoSubscription'
-import { ServicesProvider } from './contexts/ServicesContext'
+import { useServices } from './contexts/ServicesContext'
 import UserAvatarPicker from './components/UserAvatarPicker'
 import { UserAvatar, avatarToHtml, loadAvatar, saveAvatar, loadCustomPng, saveCustomPng } from './userAvatars'
 import * as api from './services/api'
@@ -83,7 +82,7 @@ const SPEED_MAP: Record<MoveMode, number> = {
 const App: React.FC = () => {
   const t = useT()
   useCloudSyncDiscovery()
-  const { router, sendMessage, connected } = useWsRouter()
+  const { ws: router, sendMessage, connected } = useServices()
   const device = useDevice(router)
   // Pass primary-device udid into useSimulation so its legacy single-device
   // setters only react to the primary's WS events in dual-device mode,
@@ -1388,7 +1387,6 @@ const App: React.FC = () => {
   )
 
   return (
-    <ServicesProvider value={{ api: api as any, ws: router }}>
     <div className="app-layout">
       <div className="noise-overlay" aria-hidden />
       <div className="sidebar">
@@ -2605,7 +2603,6 @@ const App: React.FC = () => {
         )}
       </div>
     </div>
-    </ServicesProvider>
   )
 }
 

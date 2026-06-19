@@ -5,6 +5,8 @@ import type { WsRouter } from '../ports/WsRouter'
 export interface Services {
   api: ApiGateway
   ws: WsRouter
+  sendMessage: (msg: any) => void
+  connected: boolean
 }
 
 const ServicesContext = createContext<Services | null>(null)
