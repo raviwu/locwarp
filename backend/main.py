@@ -24,6 +24,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from config import API_HOST, API_PORT, SETTINGS_FILE, DEFAULT_LOCATION, CORS_ORIGINS, CSP_MODE
 from core.device_manager import DeviceManager
+from infra.device.wifi_tunnel import WifiTunnelRegistry
 from infra.events.ws_event_publisher import WsEventPublisher
 from services.cooldown import CooldownTimer
 from services.bookmarks import BookmarkManager
@@ -81,7 +82,8 @@ class AppState:
     def __init__(self):
         from api.websocket import broadcast as _ws_broadcast
         self.device_manager = DeviceManager(
-            event_publisher=WsEventPublisher(broadcast=_ws_broadcast)
+            event_publisher=WsEventPublisher(broadcast=_ws_broadcast),
+            tunnel_registry=WifiTunnelRegistry(),
         )
         # Per-udid simulation engines (group mode, max 3). The legacy
         # `simulation_engine` attribute still returns the most-recently-
