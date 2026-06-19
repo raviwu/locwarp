@@ -26,6 +26,13 @@ else
     # shellcheck disable=SC1091
     source "$ROOT/backend/.venv/bin/activate"
 fi
+# Ensure build deps are present even on a pre-existing venv (e.g. one created
+# for running tests, which only installs requirements.txt/-dev.txt). Without
+# this the build fails with "No module named PyInstaller".
+if ! python3 -c "import PyInstaller" >/dev/null 2>&1; then
+    echo "==> PyInstaller missing in venv; installing build deps"
+    pip install -r "$ROOT/backend/requirements-build.txt"
+fi
 python3 -m PyInstaller locwarp-backend.spec --noconfirm \
     --distpath "$ROOT/dist-py" \
     --workpath "$ROOT/build-py/backend"
