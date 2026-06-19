@@ -1,12 +1,17 @@
 """
-Import-linter report-only test.
+Import-linter enforcement test — ENFORCED (Phase 1).
 
-Runs lint-imports against backend/.importlinter and PRINTS the full
-violation report so it is visible in `pytest -s` output. The test is
-GREEN regardless of violations — we expect the core→api contract to be
-BROKEN in Phase 0.
+Runs lint-imports against backend/.importlinter and asserts the
+"Core must not import API" contract is KEPT (exit 0, 0 broken).
 
-Phase 1 flips this to enforced (assert returncode == 0).
+Tasks 3-4 broke the core->api cycle in device_manager.py.
+This test is the regression gate: any future import of `api.*`
+from within the `core` package will make lint-imports exit non-zero
+and this test will FAIL.
+
+No infra->api contract is enforced here because infra/device/wifi_tunnel.py
+still contains a lazy import of api.device._tunnels (Task-7-deferred
+intermediate). That contract remains deferred to Phase 2.
 """
 
 import os
@@ -27,17 +32,16 @@ if not LINT_IMPORTS.exists():
     LINT_IMPORTS = shutil.which("lint-imports") or str(LINT_IMPORTS)
 
 
-def test_import_linter_report_only():
+def test_import_linter_enforced():
     """
-    Run lint-imports in report-only mode.
+    ENFORCED: the no-core->api contract must be KEPT (exit 0, 0 broken).
 
-    Asserts only that:
-    1. The linter executed (process didn't crash unexpectedly).
-    2. The output mentions the contract by name, confirming the graph
-       was built and the contract was evaluated.
+    Asserts:
+    1. The linter executed and evaluated the contract (name appears in output).
+    2. lint-imports exits with returncode == 0 (0 broken contracts).
 
-    Violations are expected and intentionally NOT asserted against.
-    # Phase 1 flips this to enforced (assert returncode == 0).
+    Any `from api.*` or `import api.*` introduced into the `core` package
+    will break this test. The full report is printed on failure for diagnostics.
     """
     result = subprocess.run(
         [str(LINT_IMPORTS), "--config", str(IMPORTLINTER_CFG)],
@@ -51,14 +55,14 @@ def test_import_linter_report_only():
     print(report)
     print("--- end report (exit code:", result.returncode, ") ---\n")
 
-    # The linter must have run and evaluated at least one contract.
+    # The linter must have run and evaluated the contract.
     assert "Core must not import API" in report, (
         "Expected the contract name 'Core must not import API' in lint-imports output. "
         f"Got:\n{report}"
     )
-    # We do NOT assert "BROKEN" here: if a future change satisfies the contract
-    # this test must stay green (the contract was still evaluated, which is what
-    # we care about). Phase 0 note: the contract is currently broken due to
-    # deferred imports of api.* in core.device_manager — but that is documented
-    # in the report output above, not enforced here.
-    # Phase 1 flips this to enforced (assert returncode == 0).
+
+    # ENFORCED: exit 0 means all contracts kept, 0 broken.
+    assert result.returncode == 0, (
+        "lint-imports reported broken contracts — the no-core->api cycle has been "
+        "re-introduced. See the report above for the offending import chain."
+    )
