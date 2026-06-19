@@ -184,3 +184,7 @@ DEFAULT_LOCATION = {"lat": 25.0375, "lng": 121.5637}
 # Server
 API_HOST = "0.0.0.0"
 API_PORT = 8777
+
+# External API keys — read from environment; never hardcoded in source.
+import os as _os
+TIMEZONEDB_API_KEY: str = _os.getenv("TIMEZONEDB_API_KEY", "")

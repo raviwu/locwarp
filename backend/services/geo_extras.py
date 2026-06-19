@@ -28,12 +28,14 @@ _TIMEOUT = httpx.Timeout(10.0, connect=5.0)
 
 # ── TimezoneDB ────────────────────────────────────────────
 
-TIMEZONEDB_KEY = "7JDL6A118RWJ"
 TIMEZONEDB_URL = "https://api.timezonedb.com/v2.1/get-time-zone"
 
 
-async def get_timezone(lat: float, lng: float) -> TimezoneInfo | None:
-    params = {"key": TIMEZONEDB_KEY, "format": "json", "by": "position", "lat": lat, "lng": lng}
+async def get_timezone(lat: float, lng: float, *, api_key: str = "") -> TimezoneInfo | None:
+    if not api_key:
+        logger.info("TimezoneDB key not configured; skipping timezone lookup")
+        return None
+    params = {"key": api_key, "format": "json", "by": "position", "lat": lat, "lng": lng}
     try:
         async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
             resp = await client.get(TIMEZONEDB_URL, params=params)

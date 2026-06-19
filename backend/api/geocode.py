@@ -77,7 +77,8 @@ async def reverse_geocode(lat: float, lng: float):
 @router.get("/timezone", response_model=TimezoneInfo | None)
 async def timezone_lookup(lat: float, lng: float):
     """Return IANA timezone + UTC offset for a coordinate (TimezoneDB)."""
-    return await get_timezone(lat, lng)
+    from config import TIMEZONEDB_API_KEY
+    return await get_timezone(lat, lng, api_key=TIMEZONEDB_API_KEY)
 
 
 @router.get("/real-location")
