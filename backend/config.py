@@ -204,3 +204,8 @@ CORS_ORIGINS: list[str] = [
 _lan_origin = _os.getenv("LOCWARP_LAN_ORIGIN", "").strip()
 if _lan_origin:
     CORS_ORIGINS.append(_lan_origin)
+
+# CSP — "dev" allows Vite HMR + unsafe-inline for dev convenience; "strict"
+# drops unsafe-inline for scripts (requires externalized JS, see boot-splash.ts).
+# Set LOCWARP_CSP_MODE=strict in the packaged/production build.
+CSP_MODE: str = _os.getenv("LOCWARP_CSP_MODE", "dev")

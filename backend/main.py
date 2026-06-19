@@ -22,7 +22,7 @@ import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from config import API_HOST, API_PORT, SETTINGS_FILE, DEFAULT_LOCATION, CORS_ORIGINS
+from config import API_HOST, API_PORT, SETTINGS_FILE, DEFAULT_LOCATION, CORS_ORIGINS, CSP_MODE
 from core.device_manager import DeviceManager
 from services.cooldown import CooldownTimer
 from services.bookmarks import BookmarkManager
@@ -954,6 +954,35 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# ── CSP middleware ────────────────────────────────────────
+
+_CSP_STRICT = (
+    "default-src 'self'; "
+    "script-src 'self'; "
+    "style-src 'self' 'unsafe-inline'; "
+    "img-src 'self' data: blob:; "
+    "connect-src 'self'; "
+    "object-src 'none'; base-uri 'self'"
+)
+_CSP_DEV = (
+    "default-src 'self'; "
+    "script-src 'self' 'unsafe-inline' http://localhost:5173 http://127.0.0.1:5173; "
+    "style-src 'self' 'unsafe-inline'; "
+    "img-src 'self' data: blob:; "
+    "connect-src 'self' ws: http://localhost:5173 http://127.0.0.1:5173; "
+    "object-src 'none'; base-uri 'self'"
+)
+
+
+@app.middleware("http")
+async def _csp_middleware(request, call_next):
+    response = await call_next(request)
+    response.headers["Content-Security-Policy"] = (
+        _CSP_STRICT if CSP_MODE == "strict" else _CSP_DEV
+    )
+    return response
+
 
 # Register routers
 from api.device import router as device_router
