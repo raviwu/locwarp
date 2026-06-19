@@ -1,6 +1,7 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from api.deps import get_device_service
 from models.schemas import DeviceInfo
 
 router = APIRouter(prefix="/api/device", tags=["device"])
@@ -173,7 +174,7 @@ class WifiRepairRequest(BaseModel):
 
 
 @router.post("/wifi/repair")
-async def wifi_repair(req: WifiRepairRequest | None = None):
+async def wifi_repair(req: WifiRepairRequest | None = None, device_service=Depends(get_device_service)):
     """Regenerate the RemotePairing pair record (~/.pymobiledevice3/) using a
     currently-attached USB device. The iPhone will show a 'Trust This Computer'
     prompt the first time; after the user taps 信任, a fresh RemotePairing
@@ -238,8 +239,7 @@ async def wifi_repair(req: WifiRepairRequest | None = None):
 
     # Clear any sticky "user denied" flag from the watchdog — explicit user
     # intent (they clicked Re-trust) overrides the watchdog's auto-skip.
-    dm = _dm()
-    dm.clear_user_denied(udid)
+    await device_service.repair(udid)
 
     # Step 1: USB lockdown autopair via the shared recovery helper. If the
     # host has a stale pair record (iPhone has forgotten this Mac), the
@@ -1476,10 +1476,9 @@ async def amfi_reveal_developer_mode(udid: str):
 
 
 @router.post("/{udid}/connect")
-async def connect_device(udid: str):
-    from main import app_state
+async def connect_device(udid: str, device_service=Depends(get_device_service)):
     from core.device_manager import UnsupportedIosVersionError
-    dm = _dm()
+    dm = device_service._dm
     # Group-mode device cap. Allow re-connect of an already-connected udid.
     if udid not in dm._connections and len(dm._connections) >= MAX_DEVICES:
         raise HTTPException(
@@ -1487,8 +1486,7 @@ async def connect_device(udid: str):
             detail={"code": "max_devices_reached", "message": f"已連接最多 {MAX_DEVICES} 台裝置"},
         )
     try:
-        await dm.connect(udid)
-        await app_state.create_engine_for_device(udid)
+        await device_service.connect(udid)
         try:
             from api.websocket import broadcast
             devs = await dm.discover_devices()
@@ -1521,14 +1519,9 @@ async def connect_device(udid: str):
 
 
 @router.delete("/{udid}/connect")
-async def disconnect_device(udid: str):
-    from main import app_state
-    dm = _dm()
-    await dm.disconnect(udid)
-    # Drop the per-udid engine (if any) so _engine() won't route to a dead service.
-    app_state.simulation_engines.pop(udid, None)
-    if app_state._primary_udid == udid:
-        app_state._primary_udid = next(iter(app_state.simulation_engines), None)
+async def disconnect_device(udid: str, device_service=Depends(get_device_service)):
+    # Drop the per-udid engine + dm connection via the service.
+    await device_service.disconnect(udid)
     try:
         from api.websocket import broadcast
         await broadcast("device_disconnected", {"udid": udid, "udids": [udid], "reason": "user"})

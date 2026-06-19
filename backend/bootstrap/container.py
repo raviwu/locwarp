@@ -37,6 +37,16 @@ class Container:
         # watchdog pop/promote — one lock, shared by reference.
         self._engines_lock = engines_lock
 
-    @property
-    def device_service(self):
-        raise NotImplementedError("DeviceService wired in Task 7")
+        # DeviceService is constructed here, after device_manager is available.
+        # The engine_registry is app_state (AppState), which holds
+        # create_engine_for_device, simulation_engines, and _primary_udid.
+        # We import lazily inside __init__ (same pattern as the rest of the
+        # codebase) so Container's module-level import does not pull main.py
+        # before the app is wired.
+        from services.device_service import DeviceService
+        from main import app_state  # engine_registry = AppState
+        self.device_service = DeviceService(
+            device_manager=self.device_manager,
+            tunnel_registry=self.tunnel_registry,
+            engine_registry=app_state,
+        )

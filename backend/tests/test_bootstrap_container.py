@@ -90,18 +90,12 @@ def test_container_tunnel_registry_identity():
     assert main.app.state.container.tunnel_registry is main.app_state.device_manager._tunnels
 
 
-def test_container_device_service_not_yet_wired():
-    """device_service raises NotImplementedError until Task 7."""
-    lock = asyncio.Lock()
+def test_container_device_service_is_wired():
+    """device_service is a DeviceService instance wired to the real app_state (Task 7)."""
+    from services.device_service import DeviceService
+    import main
 
-    class _Stub:
-        pass
-
-    c = Container(
-        device_manager=_Stub(),
-        event_publisher=_Stub(),
-        tunnel_registry=_Stub(),
-        engines_lock=lock,
-    )
-    with pytest.raises(NotImplementedError):
-        _ = c.device_service
+    svc = main.app.state.container.device_service
+    assert isinstance(svc, DeviceService)
+    # Identity invariant: the service's dm is the same singleton DeviceManager.
+    assert svc._dm is main.app_state.device_manager
