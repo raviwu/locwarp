@@ -4,6 +4,7 @@ const { spawn } = require('child_process')
 const http = require('http')
 const os = require('os')
 const fs = require('fs')
+const { escapeAppleScriptString } = require('./applescript.js')
 
 // macOS: pymobiledevice3 needs root to create the utun interface for iOS
 // 17+ USB tunnelling. We keep Electron (and the renderer) running as the
@@ -323,8 +324,6 @@ function startBackend() {
       app.quit()
     }
   })
-
-  const { escapeAppleScriptString } = require('./applescript.js')
 
   const escaped = exe.replace(/'/g, "'\\''")        // shell layer (unchanged)
   const cwd = path.dirname(exe).replace(/'/g, "'\\''")

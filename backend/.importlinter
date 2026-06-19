@@ -5,6 +5,9 @@ root_packages =
     services
     models
 
+# Phase 1 will add service-layer contracts and flip these to enforced
+# (assert returncode == 0 in test_import_linter.py). For now, violations
+# are expected and the test runs in report-only mode.
 [importlinter:contract:no-core-imports-api]
 name = Core must not import API
 type = forbidden

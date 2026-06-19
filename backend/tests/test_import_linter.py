@@ -9,11 +9,22 @@ BROKEN in Phase 0.
 Phase 1 flips this to enforced (assert returncode == 0).
 """
 
+import os
+import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 BACKEND_DIR = Path(__file__).parent.parent
 IMPORTLINTER_CFG = BACKEND_DIR / ".importlinter"
+
+# Resolve lint-imports relative to the running interpreter so this works on
+# both Unix (.venv/bin/lint-imports) and Windows (.venv/Scripts/lint-imports.exe).
+_bindir = Path(sys.executable).parent
+_name = "lint-imports.exe" if os.name == "nt" else "lint-imports"
+LINT_IMPORTS = _bindir / _name
+if not LINT_IMPORTS.exists():
+    LINT_IMPORTS = shutil.which("lint-imports") or str(LINT_IMPORTS)
 
 
 def test_import_linter_report_only():
@@ -28,9 +39,8 @@ def test_import_linter_report_only():
     Violations are expected and intentionally NOT asserted against.
     # Phase 1 flips this to enforced (assert returncode == 0).
     """
-    lint_imports = BACKEND_DIR / ".venv" / "bin" / "lint-imports"
     result = subprocess.run(
-        [str(lint_imports), "--config", str(IMPORTLINTER_CFG)],
+        [str(LINT_IMPORTS), "--config", str(IMPORTLINTER_CFG)],
         capture_output=True,
         text=True,
         cwd=str(BACKEND_DIR),
