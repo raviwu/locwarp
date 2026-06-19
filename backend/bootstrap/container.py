@@ -28,6 +28,7 @@ class Container:
         event_publisher,
         tunnel_registry,
         engines_lock: asyncio.Lock,
+        engine_registry,
     ) -> None:
         self.clock = MonotonicClock()
         self.device_manager = device_manager
@@ -38,15 +39,10 @@ class Container:
         self._engines_lock = engines_lock
 
         # DeviceService is constructed here, after device_manager is available.
-        # The engine_registry is app_state (AppState), which holds
-        # create_engine_for_device, simulation_engines, and _primary_udid.
-        # We import lazily inside __init__ (same pattern as the rest of the
-        # codebase) so Container's module-level import does not pull main.py
-        # before the app is wired.
+        # engine_registry (AppState) is injected by main.py — no self-import.
         from services.device_service import DeviceService
-        from main import app_state  # engine_registry = AppState
         self.device_service = DeviceService(
             device_manager=self.device_manager,
             tunnel_registry=self.tunnel_registry,
-            engine_registry=app_state,
+            engine_registry=engine_registry,
         )

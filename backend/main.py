@@ -978,6 +978,7 @@ app.state.container = _Container(
     event_publisher=app_state.device_manager._events,
     tunnel_registry=app_state.device_manager._tunnels,
     engines_lock=app_state._engines_lock,
+    engine_registry=app_state,
 )
 
 app.add_middleware(

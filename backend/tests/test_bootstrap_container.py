@@ -36,15 +36,20 @@ def test_container_accepts_injected_singletons():
     class _FakeReg:
         pass
 
+    class _FakeEngineReg:
+        pass
+
     dm = _FakeDM()
     pub = _FakePub()
     reg = _FakeReg()
+    eng_reg = _FakeEngineReg()
 
     c = Container(
         device_manager=dm,
         event_publisher=pub,
         tunnel_registry=reg,
         engines_lock=lock,
+        engine_registry=eng_reg,
     )
 
     assert c.device_manager is dm
