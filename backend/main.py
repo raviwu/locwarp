@@ -22,7 +22,7 @@ import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from config import API_HOST, API_PORT, SETTINGS_FILE, DEFAULT_LOCATION
+from config import API_HOST, API_PORT, SETTINGS_FILE, DEFAULT_LOCATION, CORS_ORIGINS
 from core.device_manager import DeviceManager
 from services.cooldown import CooldownTimer
 from services.bookmarks import BookmarkManager
@@ -949,7 +949,7 @@ app = FastAPI(title="LocWarp", version="0.1.0", description="iOS Virtual Locatio
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

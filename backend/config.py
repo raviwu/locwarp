@@ -188,3 +188,16 @@ API_PORT = 8777
 # External API keys — read from environment; never hardcoded in source.
 import os as _os
 TIMEZONEDB_API_KEY: str = _os.getenv("TIMEZONEDB_API_KEY", "")
+
+# CORS — explicit allowlist: Electron/loopback UI, Vite dev server, optional LAN origin.
+# phone.html is served same-origin from :8777 over LAN, so the LAN host:port must be
+# covered. Set LOCWARP_LAN_ORIGIN=http://<LAN-IP>:8777 to add it at runtime.
+CORS_ORIGINS: list[str] = [
+    "http://127.0.0.1:8777",
+    "http://localhost:8777",
+    "http://127.0.0.1:5173",
+    "http://localhost:5173",
+]
+_lan_origin = _os.getenv("LOCWARP_LAN_ORIGIN", "").strip()
+if _lan_origin:
+    CORS_ORIGINS.append(_lan_origin)
