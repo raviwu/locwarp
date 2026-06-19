@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
 import * as api from '../services/api'
-import type { WsMessage } from './useWebSocket'
+import type { WsRouter } from '../ports/WsRouter'
+import type { WsEvent } from '../contract/wsEvents'
 import { playCompletionAlert } from '../services/alertSound'
 
 export enum SimMode {
@@ -32,8 +33,6 @@ export interface SimulationStatus {
   distance_remaining?: number
   distance_traveled?: number
 }
-
-export type WsSubscribe = (fn: (m: WsMessage) => void) => () => void
 
 // Mode → preset km/h. Kept in sync with ControlPanel's preset buttons
 // so the status bar shows the correct "mode default" when the user
@@ -104,7 +103,7 @@ export function summarizeResults<T>(
   return { ok, failed }
 }
 
-export function useSimulation(subscribe?: WsSubscribe, primaryUdid?: string | null) {
+export function useSimulation(ws?: WsRouter, primaryUdid?: string | null) {
   // In dual-device mode every position_update carries a udid. Without a
   // filter, the legacy single-device setters below run for BOTH devices
   // and the global currentPosition ping-pongs between each device's
@@ -270,262 +269,318 @@ export function useSimulation(subscribe?: WsSubscribe, primaryUdid?: string | nu
     return () => clearInterval(id)
   }, [pauseEndAt])
 
-  // Process incoming WS messages via subscribe callback. The old
+  // Process incoming WS messages via typed WsRouter subscriptions. The old
   // useState-based approach dropped messages when two arrived in the
   // same React tick; see useWebSocket.ts for details.
   useEffect(() => {
-    if (!subscribe) return
-    return subscribe((wsMessage) => {
-    // ── Group mode: mirror per-device state into `runtimes` map ────────
-    const udid: string | undefined = wsMessage.data?.udid
-    if (udid) {
-      const d = wsMessage.data
-      switch (wsMessage.type) {
-        case 'position_update':
-          updateRuntime(udid, {
-            currentPos: (typeof d.lat === 'number' && typeof d.lng === 'number') ? { lat: d.lat, lng: d.lng } : undefined as any,
-            progress: d.progress ?? undefined as any,
-            eta: d.eta_seconds ?? d.eta ?? undefined as any,
-            distanceRemaining: d.distance_remaining ?? undefined as any,
-            distanceTraveled: d.distance_traveled ?? undefined as any,
-            currentSpeedKmh: d.speed_mps != null ? d.speed_mps * 3.6 : undefined as any,
-          })
-          break
-        case 'route_path':
-          if (Array.isArray(d.coords)) {
-            updateRuntime(udid, {
-              routePath: d.coords.map((p: any) => ({ lat: p.lat ?? p[0], lng: p.lng ?? p[1] })),
-            })
-          }
-          break
-        case 'state_change':
-          if (d.state) updateRuntime(udid, { state: d.state, ...(d.state === 'idle' || d.state === 'disconnected' ? { routePath: [] } : {}) })
-          break
-        case 'device_connected':
-          setRuntimes((prev) => prev[udid] ? prev : { ...prev, [udid]: emptyRuntime(udid) })
-          // A device reconnecting implicitly resolves any prior connection-
-          // loss banner (watchdog auto-connect now broadcasts `device_connected`
-          // rather than `device_reconnected`; the legacy case still handles
-          // the latter).
-          setError(null)
-          break
-        case 'device_disconnected':
-          updateRuntime(udid, { state: 'disconnected' })
-          break
-        case 'simulation_complete':
-          updateRuntime(udid, { progress: 1, state: 'idle' })
-          break
-        case 'waypoint_progress':
-          if (typeof d.current_index === 'number') {
-            updateRuntime(udid, { waypointIndex: d.current_index })
-          }
-          break
-      }
-    }
-    // Dual-device filter: when a primary is set, only let events tagged
-    // with the primary's udid update the global (single-device) state.
-    // Untagged events still flow through (used by legacy test paths).
-    const msgUdid: string | undefined = wsMessage.data?.udid
-    const primary = primaryUdidRef.current
-    if (primary && msgUdid && msgUdid !== primary) {
-      return
-    }
-    switch (wsMessage.type) {
-      case 'position_update': {
-        const { lat, lng } = wsMessage.data
-        if (typeof lat === 'number' && typeof lng === 'number') {
-          setCurrentPosition({ lat, lng })
-        }
-        if (wsMessage.data.progress != null) {
-          setProgress(wsMessage.data.progress)
-        }
-        {
-          const etaVal = wsMessage.data.eta_seconds ?? wsMessage.data.eta
-          if (etaVal != null) setEta(etaVal)
-        }
-        {
-          const dr = wsMessage.data.distance_remaining
-          const dt = wsMessage.data.distance_traveled
-          if (dr != null || dt != null) {
-            setStatus((prev) => ({
-              ...prev,
-              ...(dr != null ? { distance_remaining: dr } : {}),
-              ...(dt != null ? { distance_traveled: dt } : {}),
-            }))
-          }
-        }
-        break
-      }
-      case 'simulation_state': {
-        const d = wsMessage.data
-        setStatus({
-          running: !!d.running,
-          paused: !!d.paused,
-          speed: d.speed ?? 0,
-          state: d.state,
-          distance_remaining: d.distance_remaining,
-          distance_traveled: d.distance_traveled,
+    if (!ws) return
+
+    const offPos = ws.subscribe('position_update', (e: WsEvent) => {
+      // ── Group mode: mirror per-device state into `runtimes` map ────────
+      const udid = e.udid as string | undefined
+      if (udid) {
+        updateRuntime(udid, {
+          currentPos: (typeof e.lat === 'number' && typeof e.lng === 'number') ? { lat: e.lat as number, lng: e.lng as number } : undefined as any,
+          progress: e.progress as any,
+          eta: (e.eta_seconds ?? e.eta) as any,
+          distanceRemaining: e.distance_remaining as any,
+          distanceTraveled: e.distance_traveled as any,
+          currentSpeedKmh: e.speed_mps != null ? (e.speed_mps as number) * 3.6 : undefined as any,
         })
-        if (d.mode) _setMode(d.mode)
-        if (d.progress != null) setProgress(d.progress)
-        if (d.eta != null) setEta(d.eta)
-        if (d.destination) setDestination(d.destination)
-        if (d.waypoints) setWaypoints(d.waypoints)
-        break
       }
-      case 'simulation_complete':
-      case 'navigation_complete':
-      case 'multi_stop_complete':
-      case 'loop_complete': {
+      // Dual-device filter
+      const msgUdid = udid
+      const primary = primaryUdidRef.current
+      if (primary && msgUdid && msgUdid !== primary) return
+      const lat = e.lat as number | undefined
+      const lng = e.lng as number | undefined
+      if (typeof lat === 'number' && typeof lng === 'number') {
+        setCurrentPosition({ lat, lng })
+      }
+      if (e.progress != null) {
+        setProgress(e.progress as number)
+      }
+      {
+        const etaVal = e.eta_seconds ?? e.eta
+        if (etaVal != null) setEta(etaVal as number)
+      }
+      {
+        const dr = e.distance_remaining
+        const dt = e.distance_traveled
+        if (dr != null || dt != null) {
+          setStatus((prev) => ({
+            ...prev,
+            ...(dr != null ? { distance_remaining: dr as number } : {}),
+            ...(dt != null ? { distance_traveled: dt as number } : {}),
+          }))
+        }
+      }
+    })
+
+    const offSimState = ws.subscribe('simulation_state', (e: WsEvent) => {
+      const msgUdid = e.udid as string | undefined
+      const primary = primaryUdidRef.current
+      if (primary && msgUdid && msgUdid !== primary) return
+      setStatus({
+        running: !!(e.running),
+        paused: !!(e.paused),
+        speed: (e.speed as number) ?? 0,
+        state: e.state as string | undefined,
+        distance_remaining: e.distance_remaining as number | undefined,
+        distance_traveled: e.distance_traveled as number | undefined,
+      })
+      if (e.mode) _setMode(e.mode as any)
+      if (e.progress != null) setProgress(e.progress as number)
+      if (e.eta != null) setEta(e.eta as number)
+      if (e.destination) setDestination(e.destination as any)
+      if (e.waypoints) setWaypoints(e.waypoints as any)
+    })
+
+    const handleComplete = (e: WsEvent) => {
+      const msgUdid = e.udid as string | undefined
+      const primary = primaryUdidRef.current
+      if (primary && msgUdid && msgUdid !== primary) return
+      setStatus((prev) => ({ ...prev, running: false, paused: false }))
+      setProgress(1)
+      setEta(null)
+      setPauseEndAt(null)
+      setWaypointProgress(null)
+      setLapProgress(null)
+      setDestination(null)
+      setRoutePath([])
+      // Route reached its end naturally (vs user pressing stop). Fire
+      // the user-toggleable cascading-bell alert; alertSound's setting
+      // gate suppresses playback when disabled.
+      playCompletionAlert()
+    }
+    const offSimComplete = ws.subscribe('simulation_complete', (e: WsEvent) => {
+      // ── Group mode ──────────────────────────────────────────────────────
+      const udid = e.udid as string | undefined
+      if (udid) updateRuntime(udid, { progress: 1, state: 'idle' })
+      handleComplete(e)
+    })
+    const offNavComplete = ws.subscribe('navigation_complete', handleComplete)
+    const offMultiComplete = ws.subscribe('multi_stop_complete', handleComplete)
+    const offLoopComplete = ws.subscribe('loop_complete', handleComplete)
+
+    const offWpProgress = ws.subscribe('waypoint_progress', (e: WsEvent) => {
+      // ── Group mode ──────────────────────────────────────────────────────
+      const udid = e.udid as string | undefined
+      if (udid && typeof e.current_index === 'number') {
+        updateRuntime(udid, { waypointIndex: e.current_index as number })
+      }
+      // Dual-device filter
+      const msgUdid = udid
+      const primary = primaryUdidRef.current
+      if (primary && msgUdid && msgUdid !== primary) return
+      if (typeof e.current_index === 'number') {
+        setWaypointProgress({
+          current: e.current_index as number,
+          next: (e.next_index as number) ?? (e.current_index as number) + 1,
+          total: (e.total as number) ?? 0,
+        })
+      }
+    })
+
+    const offLapComplete = ws.subscribe('lap_complete', (e: WsEvent) => {
+      const msgUdid = e.udid as string | undefined
+      const primary = primaryUdidRef.current
+      if (primary && msgUdid && msgUdid !== primary) return
+      if (typeof e.lap === 'number') {
+        setLapProgress({
+          current: e.lap as number,
+          total: typeof e.total === 'number' && (e.total as number) > 0 ? e.total as number : null,
+        })
+      }
+    })
+
+    const offDdiMounting = ws.subscribe('ddi_mounting', (e: WsEvent) => {
+      const msgUdid = e.udid as string | undefined
+      const primary = primaryUdidRef.current
+      if (primary && msgUdid && msgUdid !== primary) return
+      setDdiMounting(true)
+      if (typeof e.stage === 'string') {
+        setDdiStage({ stage: e.stage as string, elapsed: typeof e.elapsed === 'number' ? e.elapsed as number : 0 })
+      }
+    })
+
+    const handleDdiDone = (e: WsEvent) => {
+      const msgUdid = e.udid as string | undefined
+      const primary = primaryUdidRef.current
+      if (primary && msgUdid && msgUdid !== primary) return
+      setDdiMounting(false)
+      setDdiStage(null)
+    }
+    const offDdiMounted = ws.subscribe('ddi_mounted', handleDdiDone)
+    const offDdiMountFailed = ws.subscribe('ddi_mount_failed', handleDdiDone)
+
+    const offDdiNotMounted = ws.subscribe('ddi_not_mounted', (e: WsEvent) => {
+      const msgUdid = e.udid as string | undefined
+      const primary = primaryUdidRef.current
+      if (primary && msgUdid && msgUdid !== primary) return
+      // Backend reports the DDI isn't mounted. Silently dismiss the
+      // mount-progress overlay; we no longer surface the hint as a
+      // banner because most users on iOS 17+ have DDI auto-mounted by
+      // a prior tool and the warning fires spuriously after every
+      // reconnect. Users who genuinely lack DDI will see the failure
+      // when an action (teleport / navigate) actually returns an
+      // error from the device.
+      setDdiMounting(false)
+      setDdiStage(null)
+    })
+
+    const offTunnelLost = ws.subscribe('tunnel_lost', (e: WsEvent) => {
+      const msgUdid = e.udid as string | undefined
+      const primary = primaryUdidRef.current
+      if (primary && msgUdid && msgUdid !== primary) return
+      // Uses localStorage to get current language (hooks don't have i18n context easily here)
+      setError((typeof localStorage !== 'undefined' && localStorage.getItem('locwarp.lang') === 'en')
+        ? 'Wi-Fi tunnel dropped, please reconnect'
+        : 'WiFi Tunnel 連線中斷,請重新建立')
+    })
+
+    const offDisc = ws.subscribe('device_disconnected', (e: WsEvent) => {
+      // ── Group mode ──────────────────────────────────────────────────────
+      const udid = e.udid as string | undefined
+      if (udid) updateRuntime(udid, { state: 'disconnected' })
+      // Dual-device filter
+      const msgUdid = udid
+      const primary = primaryUdidRef.current
+      if (primary && msgUdid && msgUdid !== primary) return
+      // In dual-device mode we only show the full-screen banner when the
+      // LAST connected device goes away. If another device is still alive
+      // (remaining_count > 0), the sidebar chip already reflects the
+      // per-device state; no need to nag the user. Backward compat: when
+      // the broadcast omits remaining_count we default to 0 (old behaviour).
+      const remaining = typeof e.remaining_count === 'number' ? e.remaining_count as number : 0
+      if (remaining === 0) {
+        const isEn = typeof localStorage !== 'undefined' && localStorage.getItem('locwarp.lang') === 'en'
+        setError(isEn
+          ? 'Device disconnected (USB unplugged or tunnel died), please reconnect USB'
+          : '裝置連線中斷(USB 拔除或 Tunnel 死亡),請重新插上 USB')
         setStatus((prev) => ({ ...prev, running: false, paused: false }))
-        setProgress(1)
-        setEta(null)
-        setPauseEndAt(null)
-        setWaypointProgress(null)
-        setLapProgress(null)
-        setDestination(null)
-        setRoutePath([])
-        // Route reached its end naturally (vs user pressing stop). Fire
-        // the user-toggleable cascading-bell alert; alertSound's setting
-        // gate suppresses playback when disabled.
-        playCompletionAlert()
-        break
-      }
-      case 'waypoint_progress': {
-        const d = wsMessage.data
-        if (d && typeof d.current_index === 'number') {
-          setWaypointProgress({
-            current: d.current_index,
-            next: d.next_index ?? d.current_index + 1,
-            total: d.total ?? 0,
-          })
-        }
-        break
-      }
-      case 'lap_complete': {
-        const d = wsMessage.data
-        if (d && typeof d.lap === 'number') {
-          setLapProgress({
-            current: d.lap,
-            total: typeof d.total === 'number' && d.total > 0 ? d.total : null,
-          })
-        }
-        break
-      }
-      case 'ddi_mounting': {
-        setDdiMounting(true)
-        const d = wsMessage.data
-        if (d && typeof d.stage === 'string') {
-          setDdiStage({ stage: d.stage, elapsed: typeof d.elapsed === 'number' ? d.elapsed : 0 })
-        }
-        break
-      }
-      case 'ddi_mounted':
-      case 'ddi_mount_failed': {
-        setDdiMounting(false)
-        setDdiStage(null)
-        break
-      }
-      case 'ddi_not_mounted': {
-        // Backend reports the DDI isn't mounted. Silently dismiss the
-        // mount-progress overlay; we no longer surface the hint as a
-        // banner because most users on iOS 17+ have DDI auto-mounted by
-        // a prior tool and the warning fires spuriously after every
-        // reconnect. Users who genuinely lack DDI will see the failure
-        // when an action (teleport / navigate) actually returns an
-        // error from the device.
-        setDdiMounting(false)
-        setDdiStage(null)
-        break
-      }
-      case 'tunnel_lost': {
-        // Uses localStorage to get current language (hooks don't have i18n context easily here)
-        setError((typeof localStorage !== 'undefined' && localStorage.getItem('locwarp.lang') === 'en')
-          ? 'Wi-Fi tunnel dropped, please reconnect'
-          : 'WiFi Tunnel 連線中斷,請重新建立')
-        break
-      }
-      case 'device_disconnected': {
-        // In dual-device mode we only show the full-screen banner when the
-        // LAST connected device goes away. If another device is still alive
-        // (remaining_count > 0), the sidebar chip already reflects the
-        // per-device state; no need to nag the user. Backward compat: when
-        // the broadcast omits remaining_count we default to 0 (old behaviour).
-        const remaining = typeof wsMessage.data?.remaining_count === 'number'
-          ? wsMessage.data.remaining_count : 0
-        if (remaining === 0) {
-          const isEn = typeof localStorage !== 'undefined' && localStorage.getItem('locwarp.lang') === 'en'
-          setError(isEn
-            ? 'Device disconnected (USB unplugged or tunnel died), please reconnect USB'
-            : '裝置連線中斷(USB 拔除或 Tunnel 死亡),請重新插上 USB')
-          setStatus((prev) => ({ ...prev, running: false, paused: false }))
-        } else {
-          // Clear any stale banner in case a previous lost-all event left it
-          // visible; the fact that at least one device is still connected
-          // means we're back to a healthy state.
-          setError(null)
-        }
-        break
-      }
-      case 'device_reconnected': {
-        // Auto-reconnected by the usbmux watchdog after a re-plug, clear
-        // the banner; the success is already visible via DeviceStatus.
+      } else {
+        // Clear any stale banner in case a previous lost-all event left it
+        // visible; the fact that at least one device is still connected
+        // means we're back to a healthy state.
         setError(null)
-        break
       }
-      case 'pause_countdown':
-      case 'random_walk_pause': {
-        const dur = wsMessage.data?.duration_seconds
-        if (typeof dur === 'number' && dur > 0) {
-          setPauseEndAt(Date.now() + dur * 1000)
-        }
-        break
+    })
+
+    const offReconn = ws.subscribe('device_reconnected', (e: WsEvent) => {
+      const msgUdid = e.udid as string | undefined
+      const primary = primaryUdidRef.current
+      if (primary && msgUdid && msgUdid !== primary) return
+      // Auto-reconnected by the usbmux watchdog after a re-plug, clear
+      // the banner; the success is already visible via DeviceStatus.
+      setError(null)
+    })
+
+    const offConnected = ws.subscribe('device_connected', (e: WsEvent) => {
+      // ── Group mode ──────────────────────────────────────────────────────
+      const udid = e.udid as string | undefined
+      if (udid) {
+        setRuntimes((prev) => prev[udid] ? prev : { ...prev, [udid]: emptyRuntime(udid) })
       }
-      case 'pause_countdown_end':
-      case 'random_walk_pause_end': {
-        setPauseEndAt(null)
-        break
-      }
-      case 'route_path': {
-        const pts = wsMessage.data?.coords
-        if (Array.isArray(pts)) {
-          setRoutePath(pts.map((p: any) => ({ lat: p.lat ?? p[0], lng: p.lng ?? p[1] })))
-        }
-        break
-      }
-      case 'state_change': {
-        const st = wsMessage.data?.state
-        if (st === 'idle') {
-          // User-initiated stop or natural sim completion: clear the
-          // overlays so the map goes back to a clean state.
-          setStatus((prev) => ({ ...prev, running: false, paused: false, state: st }))
-          setRoutePath([])
-          setDestination(null)
-          setEta(null)
-        } else if (st === 'disconnected') {
-          // USB unplug or tunnel death of THIS engine. In dual-device
-          // mode the surviving device is still running the same sim, so
-          // keep routePath / destination AND keep running/paused alone:
-          // flipping running to false here would revert the toolbar's
-          // 停止 button back to 開始 even though the other device is
-          // still actively running the simulation. Just record the new
-          // state for completeness; the global running flag is reset by
-          // the device_disconnected handler when remaining_count hits 0.
-          setStatus((prev) => ({ ...prev, state: st }))
-        } else if (st === 'paused') {
-          setStatus((prev) => ({ ...prev, paused: true, state: st }))
-        } else if (st) {
-          setStatus((prev) => ({ ...prev, running: true, paused: false, state: st }))
-        }
-        break
-      }
-      case 'simulation_error': {
-        setError(wsMessage.data?.message ?? 'Simulation error')
-        break
+      // A device reconnecting implicitly resolves any prior connection-
+      // loss banner (watchdog auto-connect now broadcasts `device_connected`
+      // rather than `device_reconnected`; the legacy case still handles
+      // the latter).
+      const msgUdid = udid
+      const primary = primaryUdidRef.current
+      if (primary && msgUdid && msgUdid !== primary) return
+      setError(null)
+    })
+
+    const handlePauseStart = (e: WsEvent) => {
+      const msgUdid = e.udid as string | undefined
+      const primary = primaryUdidRef.current
+      if (primary && msgUdid && msgUdid !== primary) return
+      const dur = e.duration_seconds
+      if (typeof dur === 'number' && (dur as number) > 0) {
+        setPauseEndAt(Date.now() + (dur as number) * 1000)
       }
     }
+    const offPauseCountdown = ws.subscribe('pause_countdown', handlePauseStart)
+    const offRandomWalkPause = ws.subscribe('random_walk_pause', handlePauseStart)
+
+    const handlePauseEnd = (e: WsEvent) => {
+      const msgUdid = e.udid as string | undefined
+      const primary = primaryUdidRef.current
+      if (primary && msgUdid && msgUdid !== primary) return
+      setPauseEndAt(null)
+    }
+    const offPauseCountdownEnd = ws.subscribe('pause_countdown_end', handlePauseEnd)
+    const offRandomWalkPauseEnd = ws.subscribe('random_walk_pause_end', handlePauseEnd)
+
+    const offRoutePath = ws.subscribe('route_path', (e: WsEvent) => {
+      // ── Group mode ──────────────────────────────────────────────────────
+      const udid = e.udid as string | undefined
+      if (udid && Array.isArray(e.coords)) {
+        updateRuntime(udid, {
+          routePath: (e.coords as any[]).map((p: any) => ({ lat: p.lat ?? p[0], lng: p.lng ?? p[1] })),
+        })
+      }
+      // Dual-device filter
+      const msgUdid = udid
+      const primary = primaryUdidRef.current
+      if (primary && msgUdid && msgUdid !== primary) return
+      const pts = e.coords
+      if (Array.isArray(pts)) {
+        setRoutePath((pts as any[]).map((p: any) => ({ lat: p.lat ?? p[0], lng: p.lng ?? p[1] })))
+      }
     })
-  }, [subscribe, updateRuntime])
+
+    const offStateChange = ws.subscribe('state_change', (e: WsEvent) => {
+      // ── Group mode ──────────────────────────────────────────────────────
+      const udid = e.udid as string | undefined
+      if (udid && e.state) {
+        updateRuntime(udid, { state: e.state as string, ...((e.state === 'idle' || e.state === 'disconnected') ? { routePath: [] } : {}) })
+      }
+      // Dual-device filter
+      const msgUdid = udid
+      const primary = primaryUdidRef.current
+      if (primary && msgUdid && msgUdid !== primary) return
+      const st = e.state as string | undefined
+      if (st === 'idle') {
+        // User-initiated stop or natural sim completion: clear the
+        // overlays so the map goes back to a clean state.
+        setStatus((prev) => ({ ...prev, running: false, paused: false, state: st }))
+        setRoutePath([])
+        setDestination(null)
+        setEta(null)
+      } else if (st === 'disconnected') {
+        // USB unplug or tunnel death of THIS engine. In dual-device
+        // mode the surviving device is still running the same sim, so
+        // keep routePath / destination AND keep running/paused alone:
+        // flipping running to false here would revert the toolbar's
+        // 停止 button back to 開始 even though the other device is
+        // still actively running the simulation. Just record the new
+        // state for completeness; the global running flag is reset by
+        // the device_disconnected handler when remaining_count hits 0.
+        setStatus((prev) => ({ ...prev, state: st }))
+      } else if (st === 'paused') {
+        setStatus((prev) => ({ ...prev, paused: true, state: st }))
+      } else if (st) {
+        setStatus((prev) => ({ ...prev, running: true, paused: false, state: st }))
+      }
+    })
+
+    const offSimError = ws.subscribe('simulation_error', (e: WsEvent) => {
+      const msgUdid = e.udid as string | undefined
+      const primary = primaryUdidRef.current
+      if (primary && msgUdid && msgUdid !== primary) return
+      setError((e.message as string) ?? 'Simulation error')
+    })
+
+    return () => {
+      offPos(); offSimState(); offSimComplete(); offNavComplete(); offMultiComplete(); offLoopComplete()
+      offWpProgress(); offLapComplete(); offDdiMounting(); offDdiMounted(); offDdiMountFailed()
+      offDdiNotMounted(); offTunnelLost(); offDisc(); offReconn(); offConnected()
+      offPauseCountdown(); offRandomWalkPause(); offPauseCountdownEnd(); offRandomWalkPauseEnd()
+      offRoutePath(); offStateChange(); offSimError()
+    }
+  }, [ws, updateRuntime])
 
   const clearError = useCallback(() => setError(null), [])
 

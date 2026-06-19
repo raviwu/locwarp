@@ -1,11 +1,14 @@
 import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { useT } from './i18n'
-import { useWebSocket } from './hooks/useWebSocket'
+import { useWsRouter } from './adapters/ws/useWsRouter'
 import { useDevice } from './hooks/useDevice'
 import { useSimulation } from './hooks/useSimulation'
 import { useJoystick } from './hooks/useJoystick'
 import { useBookmarks } from './hooks/useBookmarks'
+import { useExternalChangeSubscriptions } from './hooks/useExternalChangeSubscriptions'
+import { useGoldDittoSubscription } from './hooks/useGoldDittoSubscription'
+import { ServicesProvider } from './contexts/ServicesContext'
 import UserAvatarPicker from './components/UserAvatarPicker'
 import { UserAvatar, avatarToHtml, loadAvatar, saveAvatar, loadCustomPng, saveCustomPng } from './userAvatars'
 import * as api from './services/api'
@@ -80,14 +83,14 @@ const SPEED_MAP: Record<MoveMode, number> = {
 const App: React.FC = () => {
   const t = useT()
   useCloudSyncDiscovery()
-  const ws = useWebSocket()
-  const device = useDevice(ws.subscribe)
+  const { router, sendMessage, connected } = useWsRouter()
+  const device = useDevice(router)
   // Pass primary-device udid into useSimulation so its legacy single-device
   // setters only react to the primary's WS events in dual-device mode,
   // stopping the map marker from ping-ponging between both devices'
   // independently-jittered positions.
-  const sim = useSimulation(ws.subscribe, device.primaryDevice?.udid)
-  const joystick = useJoystick(ws.sendMessage, sim.mode === SimMode.Joystick)
+  const sim = useSimulation(router, device.primaryDevice?.udid)
+  const joystick = useJoystick(sendMessage, sim.mode === SimMode.Joystick)
   const bm = useBookmarks()
   const categoryDatesByName = useMemo(
     () => Object.fromEntries(
@@ -204,18 +207,9 @@ const App: React.FC = () => {
 
   // Auto-refresh bookmarks / routes when the backend signals an external
   // change (cloud-sync watchdog picked up a file written by another device).
-  useEffect(() => {
-    return ws.subscribe((msg) => {
-      if (msg.type === 'bookmarks_changed') {
-        bm.refresh()
-        showToast(t('cloud_sync.toast_synced'))
-      } else if (msg.type === 'routes_changed') {
-        api.getSavedRoutes().then(setSavedRoutes).catch(() => {})
-        refreshRouteCategories()
-        showToast(t('cloud_sync.toast_routes_synced'))
-      }
-    })
-  }, [ws.subscribe, bm.refresh, refreshRouteCategories, showToast, t])
+  const onBookmarksChanged = useCallback(() => { bm.refresh(); showToast(t('cloud_sync.toast_synced')) }, [bm.refresh, showToast, t])
+  const onRoutesChanged = useCallback(() => { api.getSavedRoutes().then(setSavedRoutes).catch(() => {}); refreshRouteCategories(); showToast(t('cloud_sync.toast_routes_synced')) }, [refreshRouteCategories, showToast, t])
+  useExternalChangeSubscriptions(router, useMemo(() => ({ onBookmarks: onBookmarksChanged, onRoutes: onRoutesChanged }), [onBookmarksChanged, onRoutesChanged]))
 
   const handleRestore = useCallback(async () => {
     // The backend stop + DVT clear can take a few seconds, especially if
@@ -378,10 +372,10 @@ const App: React.FC = () => {
 
   // Auto-scan devices when WebSocket (re)connects (e.g. after backend restart)
   useEffect(() => {
-    if (ws.connected) {
+    if (connected) {
       device.scan()
     }
-  }, [ws.connected])
+  }, [connected])
 
   // Auto-attempt WiFi tunnel on first WS connect if the user previously
   // saved at least one IP/port AND has the auto-connect toggle on. Runs
@@ -402,7 +396,7 @@ const App: React.FC = () => {
   // restart logic) so we don't fight with an existing USB connection.
   const wifiAutoConnectAttemptedRef = useRef(false)
   useEffect(() => {
-    if (!ws.connected) return
+    if (!connected) return
     if (wifiAutoConnectAttemptedRef.current) return
     let enabled: boolean
     let savedList: Array<{ ip: string; port: number; udid?: string }> = []
@@ -496,11 +490,11 @@ const App: React.FC = () => {
     }, 1500)
     return () => clearTimeout(tid)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ws.connected])
+  }, [connected])
 
   // Poll cooldown
   useEffect(() => {
-    if (!ws.connected) return
+    if (!connected) return
     const id = setInterval(() => {
       api.getCooldownStatus().then((s: any) => {
         setCooldown(s.remaining_seconds ?? 0)
@@ -508,7 +502,7 @@ const App: React.FC = () => {
       }).catch(() => {})
     }, 2000)
     return () => clearInterval(id)
-  }, [ws.connected])
+  }, [connected])
 
   // Insert-after-waypoint mode: when set, the next map click drops a new
   // waypoint immediately AFTER the chosen index instead of appending to
@@ -609,10 +603,10 @@ const App: React.FC = () => {
     try { setRecentPlaces(await api.getRecent()) } catch { /* silent */ }
   }, [])
   // Re-fetch on initial mount AND whenever the backend WebSocket becomes
-  // reachable. Without the ws.connected dep, a slow/racing backend boot
+  // reachable. Without the connected dep, a slow/racing backend boot
   // could blow the only fetch attempt and the recent list would stay empty
   // for the rest of the session (silent catch in refreshRecent above).
-  useEffect(() => { void refreshRecent() }, [refreshRecent, ws.connected])
+  useEffect(() => { void refreshRecent() }, [refreshRecent, connected])
   const pushRecent = useCallback(async (lat: number, lng: number, kind: api.RecentKind, name?: string) => {
     try {
       await api.pushRecent({ lat, lng, kind, name: name || null })
@@ -1236,72 +1230,10 @@ const App: React.FC = () => {
     }
   }, [sim, device, t, showToast])
 
-  // Subscribe to backend goldditto_cycle phase events. Three terminal phases
-  // are possible:
-  //   teleported    — start a 200ms-tick countdown that updates the toast
-  //                   live with `goldditto.toast.waiting` until the timer
-  //                   matches the user-configured wait_seconds (read from
-  //                   the same localStorage key the panel writes to).
-  //   restored      — clear the countdown, show success toast.
-  //   restore_failed — clear the countdown, show a persistent (8s) red
-  //                    warning toast. The device is left simulated; spec
-  //                    §8 row 5 wants the user to manually tap 一鍵還原.
-  //
-  // The countdown timer is held in a ref so a) re-renders don't lose it and
-  // b) the cleanup function below can clear it on unmount.
-  //
-  // Depend on ws.subscribe (stable useCallback) — NOT the whole ws object,
-  // whose identity changes every render and would re-subscribe on every
-  // render.
-  const goldDittoCountdownRef = useRef<{ timer: ReturnType<typeof setInterval> | null; endAt: number }>({ timer: null, endAt: 0 })
-  useEffect(() => {
-    const clearCountdown = () => {
-      if (goldDittoCountdownRef.current.timer !== null) {
-        clearInterval(goldDittoCountdownRef.current.timer)
-      }
-      goldDittoCountdownRef.current = { timer: null, endAt: 0 }
-    }
-    const unsub = ws.subscribe((msg) => {
-      if (msg?.type !== 'goldditto_cycle') return
-      const data: any = msg.data ?? {}
-      const phase = String(data.phase ?? '')
-      if (phase === 'teleported') {
-        const target = String(data.target ?? '')
-        showToast(t('goldditto.toast.teleported', { target }))
-        // Read wait_seconds back from the same localStorage key the panel
-        // writes to. Avoids plumbing it as a prop through every layer just
-        // for this one timer. Falls back to 3.0 (panel default).
-        const raw = localStorage.getItem('goldditto.wait_seconds') ?? '3.0'
-        const parsed = parseFloat(raw)
-        const waitS = Number.isFinite(parsed) && parsed > 0 ? parsed : 3.0
-        const endAt = Date.now() + waitS * 1000
-        clearCountdown()
-        const timer = setInterval(() => {
-          const remaining = Math.max(0, (goldDittoCountdownRef.current.endAt - Date.now()) / 1000)
-          if (remaining <= 0) {
-            clearCountdown()
-            return
-          }
-          showToast(t('goldditto.toast.waiting', { remaining: remaining.toFixed(1) }))
-        }, 200)
-        goldDittoCountdownRef.current = { timer, endAt }
-      } else if (phase === 'restored') {
-        clearCountdown()
-        showToast(t('goldditto.toast.restored'))
-      } else if (phase === 'restore_failed') {
-        clearCountdown()
-        // 8s persistent red banner — see goldditto.toast.restore_failed key
-        // for the warning text. Spec §8 row 5.
-        showToast(t('goldditto.toast.restore_failed'), 8000)
-      }
-    })
-    return () => {
-      // Component unmount or effect re-run: drop the WS subscription AND
-      // kill any pending countdown timer so it doesn't leak past unmount.
-      unsub?.()
-      clearCountdown()
-    }
-  }, [ws.subscribe, t, showToast])
+  // Subscribe to backend goldditto_cycle phase events via typed WsRouter.
+  // Extracted into useGoldDittoSubscription for testability; countdown ref
+  // and setInterval logic live there.
+  useGoldDittoSubscription(router, useMemo(() => ({ t, showToast }), [t, showToast]))
 
   const handleOpenLog = useCallback(async () => {
     try {
@@ -1456,6 +1388,7 @@ const App: React.FC = () => {
   )
 
   return (
+    <ServicesProvider value={{ api: api as any, ws: router }}>
     <div className="app-layout">
       <div className="noise-overlay" aria-hidden />
       <div className="sidebar">
@@ -2672,6 +2605,7 @@ const App: React.FC = () => {
         )}
       </div>
     </div>
+    </ServicesProvider>
   )
 }
 
