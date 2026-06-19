@@ -1286,12 +1286,22 @@ promotion) are pinned by exact-value characterization tests. Every later phase
 builds on these nets.
 ## Phase 0b — The 7 folds (each an independent, revertable commit)
 
-These land **after** the Phase 0a nets (the FakeClock seam, the `Settings`
-object built in `bootstrap/container.py`, the `create_app()` factory in
-`bootstrap/app.py`, and the frontend Vitest harness). Each task below is one
-commit-worthy deliverable: a hardcoded value, a piece of global mutable state,
-or an unsynchronized I/O site, consolidated behind config / a lock / a port —
-landed with a regression test that locks the behaviour in.
+These land **after** the Phase 0a nets (the FakeClock seam and the frontend
+Vitest harness). Each task below is one commit-worthy deliverable: a hardcoded
+value, a piece of global mutable state, or an unsynchronized I/O site,
+consolidated behind config / a lock — landed with a regression test that locks
+the behaviour in.
+
+> **⚠️ GOVERNING CONTROLLER NOTE (pre-flight resolution).** `bootstrap/`,
+> `Settings`, and `create_app()` do **NOT** exist in Phase 0 — they are
+> **Phase-1** artifacts (P1 Task 6). **Phase 0 changes NO architecture.**
+> Therefore Tasks 11–14 apply their changes to the **EXISTING** modules:
+> env-derived config values go in `backend/config.py` (module-level, beside
+> `API_HOST`); the CORS allowlist and CSP middleware go on the **existing**
+> FastAPI app + `CORSMiddleware` block in `backend/main.py`. Wherever a task
+> body below says `Settings.x` / `create_app()` / `bootstrap/app.py`,
+> substitute the existing `config.py` / `main.py` target. Phase 1 Task 6 later
+> relocates these into `bootstrap/settings.py` + `create_app()`.
 
 **Shared mechanics for every task in this phase:**
 
@@ -1299,12 +1309,17 @@ landed with a regression test that locks the behaviour in.
   The repo `conftest.py` (`backend/tests/conftest.py`) already inserts
   `backend/` onto `sys.path`, so test modules import `core.*`, `services.*`,
   `api.*` exactly like the runtime does.
-- The full suite is **352 passing tests**. After every commit in this phase you
-  MUST run `cd backend && .venv/bin/python -m pytest -q` and confirm the count
-  is still green. Each task ends with that gate.
-- Personal repo: commit directly to `main`. Never pass `-c user.email=...` —
-  the `includeIf` in `~/.gitconfig` sets the personal identity automatically.
-- Each commit message ends with the two trailers the global config mandates.
+- **Baseline = the pinned pre-change count (this checkout collects 371; confirm
+  with `--collect-only -q`).** After every commit you MUST run
+  `cd backend && .venv/bin/python -m pytest -q` and confirm the count is still
+  green and has not dropped. Each task ends with that gate. (Task bodies that
+  say "352" mean this pinned baseline.)
+- **Execution branch:** commit to `refactor/clean-arch-p0` (merged to `main` at
+  the end via finishing-a-development-branch — no PR). Never pass
+  `-c user.email=...` — the `includeIf` in `~/.gitconfig` sets the personal
+  identity automatically.
+- Conventional-commit messages; **no agent/Claude trailers** (match this repo's
+  existing history).
 
 ---
 
