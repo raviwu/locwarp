@@ -1,0 +1,14 @@
+[importlinter]
+root_packages =
+    api
+    core
+    services
+    models
+
+[importlinter:contract:no-core-imports-api]
+name = Core must not import API
+type = forbidden
+source_modules =
+    core
+forbidden_modules =
+    api
