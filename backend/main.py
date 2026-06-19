@@ -92,6 +92,10 @@ class AppState:
         self.simulation_engines: dict = {}
         self._primary_udid: str | None = None
         self.cooldown_timer = CooldownTimer()
+        # Guards create_engine_for_device's check->await->assign and the
+        # watchdog pop/promote so two concurrent connects for the same udid
+        # cannot both pass the guard and clobber each other's engine.
+        self._engines_lock = asyncio.Lock()
         # bookmark_manager / route_manager are constructed lazily in
         # load_state(), which runs INSIDE the FastAPI lifespan AFTER the
         # elevated helper has chowned any root-owned ~/.locwarp/ files
@@ -345,49 +349,53 @@ class AppState:
         navigate / loop / multi-stop / random-walk raises "Cannot
         navigate: no current position" because the engine they're
         aiming at is a fresh one that never saw the teleport.
+
+        _engines_lock serializes the check→await→assign so two concurrent
+        calls for the same udid cannot both pass the guard.
         """
-        if udid in self.simulation_engines:
-            logger.debug("Simulation engine already exists for %s; preserving current_position", udid)
-            return
-        from core.simulation_engine import SimulationEngine
-        from api.websocket import broadcast
-        from infra.device.location_service_port import LocationServiceDevicePort
+        async with self._engines_lock:
+            if udid in self.simulation_engines:
+                logger.debug("Simulation engine already exists for %s; preserving current_position", udid)
+                return
+            from core.simulation_engine import SimulationEngine
+            from api.websocket import broadcast
+            from infra.device.location_service_port import LocationServiceDevicePort
 
-        loc_service = await self.device_manager.get_location_service(udid)
+            loc_service = await self.device_manager.get_location_service(udid)
 
-        async def event_callback(event_type: str, data: dict):
-            # Always tag emissions with udid so the frontend can route per-device.
-            if isinstance(data, dict) and "udid" not in data:
-                data = {**data, "udid": udid}
-            await broadcast(event_type, data)
-            if event_type == "position_update" and "lat" in data:
-                self.update_last_position(data["lat"], data["lng"])
+            async def event_callback(event_type: str, data: dict):
+                # Always tag emissions with udid so the frontend can route per-device.
+                if isinstance(data, dict) and "udid" not in data:
+                    data = {**data, "udid": udid}
+                await broadcast(event_type, data)
+                if event_type == "position_update" and "lat" in data:
+                    self.update_last_position(data["lat"], data["lng"])
 
-        engine = SimulationEngine(
-            loc_service, event_callback,
-            device_port=LocationServiceDevicePort(loc_service),
-        )
-        self.simulation_engines[udid] = engine
-        # Keep the existing primary on additional device connects. If no
-        # primary is set (e.g. fresh install, first device), this udid
-        # becomes primary. Second device plugging in no longer hijacks
-        # the map view away from the first device.
-        if self._primary_udid is None:
-            self._primary_udid = udid
+            engine = SimulationEngine(
+                loc_service, event_callback,
+                device_port=LocationServiceDevicePort(loc_service),
+            )
+            self.simulation_engines[udid] = engine
+            # Keep the existing primary on additional device connects. If no
+            # primary is set (e.g. fresh install, first device), this udid
+            # becomes primary. Second device plugging in no longer hijacks
+            # the map view away from the first device.
+            if self._primary_udid is None:
+                self._primary_udid = udid
 
-        # DO NOT push any initial location to the device on connect. The
-        # engine's current_position stays None until the user explicitly
-        # teleports / navigates / picks a bookmark. iPhone's real GPS is
-        # left untouched by merely plugging the phone into LocWarp.
-        #
-        # The map UI still shows a default center (Taipei or the user's
-        # `initial_map_position` setting) — that's purely a visual default
-        # for the Leaflet view, not a virtual GPS coordinate.
+            # DO NOT push any initial location to the device on connect. The
+            # engine's current_position stays None until the user explicitly
+            # teleports / navigates / picks a bookmark. iPhone's real GPS is
+            # left untouched by merely plugging the phone into LocWarp.
+            #
+            # The map UI still shows a default center (Taipei or the user's
+            # `initial_map_position` setting) — that's purely a visual default
+            # for the Leaflet view, not a virtual GPS coordinate.
 
-        # Setup reconnect manager
-        self.reconnect_manager = ReconnectManager(self.device_manager)
+            # Setup reconnect manager
+            self.reconnect_manager = ReconnectManager(self.device_manager)
 
-        logger.info("Simulation engine created for device %s (no initial location pushed)", udid)
+            logger.info("Simulation engine created for device %s (no initial location pushed)", udid)
 
 
 app_state = AppState()
@@ -644,10 +652,13 @@ async def _usbmux_presence_watchdog():
                     # Only remove the lost device's engine. The legacy setter
                     # `simulation_engine = None` wipes *all* engines, which
                     # destroys the surviving device's engine in dual mode.
-                    app_state.simulation_engines.pop(udid, None)
-                    if app_state._primary_udid == udid:
-                        remaining = next(iter(app_state.simulation_engines.keys()), None)
-                        app_state._primary_udid = remaining
+                    # _engines_lock guards the pop+promote so a concurrent
+                    # create_engine_for_device cannot race with cleanup.
+                    async with app_state._engines_lock:
+                        app_state.simulation_engines.pop(udid, None)
+                        if app_state._primary_udid == udid:
+                            remaining = next(iter(app_state.simulation_engines.keys()), None)
+                            app_state._primary_udid = remaining
 
                 # Promote: if the leader was among the lost AND there's
                 # a successor still connected AND we captured a usable
