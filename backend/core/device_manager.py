@@ -1147,7 +1147,7 @@ class DeviceManager:
             # replaces conn.lockdown along the way) or we time out.
             if conn.connection_type == "Network":
                 runner = self._tunnels.get_runner(udid) if self._tunnels is not None else None
-                if runner is not None and not self._tunnels.is_running(udid):
+                if runner is not None and not runner.is_running():
                     remaining = deadline - time.monotonic()
                     if remaining <= 0:
                         raise DeviceLostError(

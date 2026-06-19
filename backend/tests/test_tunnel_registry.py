@@ -73,3 +73,31 @@ async def test_attempt_restart_delegates(monkeypatch):
 async def test_attempt_restart_false_when_no_runner():
     reg = WifiTunnelRegistry()
     assert await reg.attempt_restart("NOPE") is False
+
+
+@pytest.mark.asyncio
+async def test_attempt_restart_false_when_runner_has_no_target(monkeypatch):
+    """Runner present but target_ip/target_port empty — short-circuits before delegating."""
+    import api.device as device_mod
+
+    class FakeRunner:
+        target_ip = ""
+        target_port = None
+
+        def is_running(self):
+            return False
+
+    device_mod._tunnels["U2"] = FakeRunner()
+
+    calls = []
+
+    async def fake_restart(udid, ip, port, snapshot, original_runner):
+        calls.append((udid, ip, port))
+        return True
+
+    monkeypatch.setattr("api.device._attempt_tunnel_restart", fake_restart)
+
+    reg = WifiTunnelRegistry()
+    ok = await reg.attempt_restart("U2")
+    assert ok is False
+    assert calls == [], "attempt_restart must not delegate when target_ip/target_port absent"
