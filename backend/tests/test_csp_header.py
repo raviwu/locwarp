@@ -28,4 +28,5 @@ def test_dev_profile_allows_vite(monkeypatch):
     c = TestClient(main.app)
     r = c.get("/")
     csp = r.headers.get("content-security-policy", "")
-    assert "localhost:5173" in csp or "ws:" in csp
+    assert "ws://localhost:5173" in csp
+    assert "localhost:5173" in csp

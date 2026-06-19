@@ -21,10 +21,9 @@ def test_token_gated_endpoint_rejects_missing_token():
 
 def test_bad_pin_rejected():
     c = _client()
-    r = c.post("/api/phone/auth", json={"pin": "000000"})
-    if r.status_code == 200:
-        # 1-in-a-million: real PIN happened to be 000000; test is still valid.
-        return
+    real_pin = pc._auth.pin
+    wrong_pin = "000001" if real_pin == "000000" else "000000"
+    r = c.post("/api/phone/auth", json={"pin": wrong_pin})
     assert r.status_code == 401
     assert r.json()["detail"]["code"] == "bad_pin"
 

@@ -3,6 +3,8 @@ import logging
 import httpx
 from fastapi import APIRouter, HTTPException
 
+from config import TIMEZONEDB_API_KEY
+
 from models.schemas import (
     Coordinate,
     GeocodingResult,
@@ -77,7 +79,6 @@ async def reverse_geocode(lat: float, lng: float):
 @router.get("/timezone", response_model=TimezoneInfo | None)
 async def timezone_lookup(lat: float, lng: float):
     """Return IANA timezone + UTC offset for a coordinate (TimezoneDB)."""
-    from config import TIMEZONEDB_API_KEY
     return await get_timezone(lat, lng, api_key=TIMEZONEDB_API_KEY)
 
 
