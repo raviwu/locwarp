@@ -968,6 +968,18 @@ async def lifespan(application: FastAPI):
 
 app = FastAPI(title="LocWarp", version="0.1.0", description="iOS Virtual Location Simulator", lifespan=lifespan)
 
+# ── Composition root ──────────────────────────────────────
+# Wire the thin Container onto the real app using app_state's singletons.
+# KEY INVARIANT: one DeviceManager, one _engines_lock — shared by reference,
+# never duplicated. api/deps.py resolves from request.app.state.container.
+from bootstrap.container import Container as _Container
+app.state.container = _Container(
+    device_manager=app_state.device_manager,
+    event_publisher=app_state.device_manager._events,
+    tunnel_registry=app_state.device_manager._tunnels,
+    engines_lock=app_state._engines_lock,
+)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=CORS_ORIGINS,

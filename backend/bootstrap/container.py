@@ -1,4 +1,11 @@
-"""Composition root. Builds the wired object graph for the app."""
+"""Composition root. Thin DI holder that wraps the singletons AppState owns.
+
+Container is NOT a factory — it never constructs DeviceManager,
+WsEventPublisher, WifiTunnelRegistry, or asyncio.Lock on its own.
+The real instances live in AppState (main.py); this class just exposes
+them under dependency-injection-friendly names so api/deps.py can
+resolve them from app.state.container.
+"""
 
 from __future__ import annotations
 
@@ -14,27 +21,21 @@ class MonotonicClock:
 
 
 class Container:
-    def __init__(self) -> None:
-        from api.websocket import broadcast as _ws_broadcast
-        from infra.events.ws_event_publisher import WsEventPublisher
-        from infra.device.wifi_tunnel import WifiTunnelRegistry
-        from core.device_manager import DeviceManager
-
+    def __init__(
+        self,
+        *,
+        device_manager,
+        event_publisher,
+        tunnel_registry,
+        engines_lock: asyncio.Lock,
+    ) -> None:
         self.clock = MonotonicClock()
-        self.event_publisher = WsEventPublisher(broadcast=_ws_broadcast)
-        self.tunnel_registry = WifiTunnelRegistry()
-        self.device_manager = DeviceManager(
-            event_publisher=self.event_publisher,
-            tunnel_registry=self.tunnel_registry,
-        )
-        # Guards create_engine_for_device's check->await->assign and the
-        # watchdog pop/promote (used via app_state in this phase).
-        self._engines_lock = asyncio.Lock()
-
-    def engine_factory(self, location_service, event_callback=None):
-        from core.simulation_engine import SimulationEngine
-
-        return SimulationEngine(location_service, event_callback)
+        self.device_manager = device_manager
+        self.event_publisher = event_publisher
+        self.tunnel_registry = tunnel_registry
+        # The SAME lock AppState uses for create_engine_for_device and the
+        # watchdog pop/promote — one lock, shared by reference.
+        self._engines_lock = engines_lock
 
     @property
     def device_service(self):
