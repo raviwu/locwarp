@@ -123,6 +123,19 @@ class BookmarkManager:
         from services.cloud_sync import materialize_if_placeholder
         materialize_if_placeholder(self._bookmarks_path())
         self._load()
+        # Serialise cross-thread store read-modify-write.  _save runs on the
+        # asyncio event-loop thread; _watcher_tick runs on a daemon
+        # threading.Timer thread.  asyncio.Lock cannot be used here because
+        # one side is a non-async thread — threading.Lock is correct.
+        #
+        # FUTURE MAINTAINER NOTE: do NOT change _watcher_tick's thread-
+        # affinity (e.g. marshal it onto the event loop via
+        # loop.call_soon_threadsafe) without re-proving atomicity.  The 40+
+        # single-threaded bookmark tests in test_bookmark_concurrency.py
+        # cannot catch a Timer-vs-event-loop interleave; only the real-thread
+        # stress test in test_bookmarks_thread_race.py does.  A refactor that
+        # changes thread boundaries must add or extend that test accordingly.
+        self._store_lock = threading.Lock()
         # Handle to the watch on the shared file_watcher Observer; set
         # by start_watcher, cleared by stop_watcher.
         self._watch: ObservedWatch | None = None
@@ -167,12 +180,17 @@ class BookmarkManager:
         because iCloud propagation is asynchronous — its items and tombstones
         are folded in here instead of being overwritten. Merging against an
         unchanged file is a verified no-op (merge is idempotent).
+
+        The full read-merge-write sequence is held under ``_store_lock`` so
+        that a concurrent ``_watcher_tick`` (Timer daemon thread) cannot
+        interleave its own rebind of ``self.store`` mid-sequence.
         """
         path = self._bookmarks_path()
-        self.store = merge_stores(self.store, _load_store_or_empty(path))
-        payload = json.loads(self.store.model_dump_json())
-        safe_write_json(path, payload)
-        self._record_disk_mtime()
+        with self._store_lock:
+            self.store = merge_stores(self.store, _load_store_or_empty(path))
+            payload = json.loads(self.store.model_dump_json())
+            safe_write_json(path, payload)
+            self._record_disk_mtime()
 
     def _reconcile_from_disk(self) -> None:
         """Merge external on-disk changes into self.store via merge_stores.
@@ -274,22 +292,32 @@ class BookmarkManager:
                 return  # transient absence (iCloud cloud-only eviction); retry on next event
             if current_mtime <= self._last_loaded_mtime:
                 return  # self-echo or already reconciled
-            before_payload = self.store.model_dump_json()
-            self._reconcile_from_disk()
-            after_payload = self.store.model_dump_json()
-            if before_payload != after_payload:
-                # Persist the merged state so disk reflects local edits we
-                # may have reapplied on top of the remote update.
-                payload = json.loads(after_payload)
-                safe_write_json(path, payload)
-                self._record_disk_mtime()
-                if self._on_external_change is not None:
-                    try:
-                        self._on_external_change()
-                    except Exception:
-                        logger.exception("on_external_change callback raised")
-            else:
-                self._record_disk_mtime()  # still resync mtime
+            # Hold _store_lock across the full read-merge-write so this Timer
+            # daemon thread is serialised against _save (event-loop thread).
+            # The callback is intentionally run OUTSIDE the lock: it may
+            # re-enter the manager (which would call _save → lock again) and
+            # could take an unbounded amount of time — both would deadlock or
+            # stall if the lock were held here.
+            with self._store_lock:
+                before_payload = self.store.model_dump_json()
+                self._reconcile_from_disk()
+                after_payload = self.store.model_dump_json()
+                if before_payload != after_payload:
+                    # Persist the merged state so disk reflects local edits we
+                    # may have reapplied on top of the remote update.
+                    payload = json.loads(after_payload)
+                    safe_write_json(path, payload)
+                    self._record_disk_mtime()
+                    fire_callback = True
+                else:
+                    self._record_disk_mtime()  # still resync mtime
+                    fire_callback = False
+            # Callback runs outside the lock (see note above).
+            if fire_callback and self._on_external_change is not None:
+                try:
+                    self._on_external_change()
+                except Exception:
+                    logger.exception("on_external_change callback raised")
         except Exception:
             logger.exception("Bookmark watcher tick failed")
 
