@@ -107,8 +107,29 @@ class SimulationEngine:
         *,
         clock: Callable[[], float] = time.monotonic,
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+        device_port=None,
     ) -> None:
         self.location_service = location_service
+        # Coordinate-push seam: the DevicePort abstracts the device push so
+        # SimulationEngine depends on the port (domain), not a concrete service.
+        # If no port is injected (e.g. tests that construct the engine directly)
+        # we build a minimal inline adapter that delegates to location_service.set.
+        if device_port is not None:
+            self._device = device_port
+        else:
+            _ls = location_service
+
+            class _DefaultDevicePort:
+                async def set_location(self, udid: str, lat: float, lng: float) -> None:
+                    await _ls.set(lat, lng)
+
+                async def clear(self, udid: str) -> None:
+                    clear = getattr(_ls, "clear", None)
+                    if clear is not None:
+                        await clear()
+
+            self._device = _DefaultDevicePort()
+        self._udid = ""  # engine is udid-agnostic; main.py's event_callback tags udid
         self.state: SimulationState = SimulationState.IDLE
         self.current_position: Coordinate | None = None
         self.event_callback = event_callback
@@ -591,7 +612,7 @@ class SimulationEngine:
 
     async def _set_position(self, lat: float, lng: float) -> None:
         """Push a coordinate to the device and update internal state."""
-        await self.location_service.set(lat, lng)
+        await self._device.set_location(self._udid, lat, lng)
         self.current_position = Coordinate(lat=lat, lng=lng)
 
     def apply_speed(

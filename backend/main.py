@@ -351,6 +351,7 @@ class AppState:
             return
         from core.simulation_engine import SimulationEngine
         from api.websocket import broadcast
+        from infra.device.location_service_port import LocationServiceDevicePort
 
         loc_service = await self.device_manager.get_location_service(udid)
 
@@ -362,7 +363,10 @@ class AppState:
             if event_type == "position_update" and "lat" in data:
                 self.update_last_position(data["lat"], data["lng"])
 
-        engine = SimulationEngine(loc_service, event_callback)
+        engine = SimulationEngine(
+            loc_service, event_callback,
+            device_port=LocationServiceDevicePort(loc_service),
+        )
         self.simulation_engines[udid] = engine
         # Keep the existing primary on additional device connects. If no
         # primary is set (e.g. fresh install, first device), this udid
