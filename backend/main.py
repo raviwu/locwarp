@@ -974,13 +974,34 @@ _CSP_DEV = (
     "object-src 'none'; base-uri 'self'"
 )
 
+# Route-specific CSP for the /phone LAN page served to a real phone over
+# WiFi. Leaflet JS+CSS come from unpkg.com; OSM tiles from
+# *.tile.openstreetmap.org; the page has an inline <script> block. The
+# default CSP (above) deliberately omits all of these — this policy is
+# scoped ONLY to /phone so the main app's CSP stays strict.
+_CSP_PHONE = (
+    "default-src 'self'; "
+    "script-src 'self' 'unsafe-inline' https://unpkg.com; "
+    "style-src 'self' 'unsafe-inline' https://unpkg.com; "
+    "img-src 'self' data: blob: https://*.tile.openstreetmap.org https://*.tile.osm.org; "
+    "connect-src 'self'; "
+    "object-src 'none'; base-uri 'self'"
+)
+
+# Paths that get the phone-specific CSP (exact path match).
+_PHONE_CSP_PATHS = frozenset({"/phone"})
+
 
 @app.middleware("http")
 async def _csp_middleware(request, call_next):
     response = await call_next(request)
-    response.headers["Content-Security-Policy"] = (
-        _CSP_STRICT if CSP_MODE == "strict" else _CSP_DEV
-    )
+    if request.url.path in _PHONE_CSP_PATHS:
+        policy = _CSP_PHONE
+    elif CSP_MODE == "strict":
+        policy = _CSP_STRICT
+    else:
+        policy = _CSP_DEV
+    response.headers["Content-Security-Policy"] = policy
     return response
 
 

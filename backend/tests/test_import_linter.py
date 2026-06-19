@@ -56,9 +56,9 @@ def test_import_linter_report_only():
         "Expected the contract name 'Core must not import API' in lint-imports output. "
         f"Got:\n{report}"
     )
-    # Confirm the expected violation is visible (documents Phase 0 state).
-    assert "BROKEN" in report or "broken" in report.lower(), (
-        "Expected at least one broken contract in Phase 0 — "
-        "core.device_manager deferred imports of api.* were not detected."
-    )
+    # We do NOT assert "BROKEN" here: if a future change satisfies the contract
+    # this test must stay green (the contract was still evaluated, which is what
+    # we care about). Phase 0 note: the contract is currently broken due to
+    # deferred imports of api.* in core.device_manager — but that is documented
+    # in the report output above, not enforced here.
     # Phase 1 flips this to enforced (assert returncode == 0).
