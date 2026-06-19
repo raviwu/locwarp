@@ -2,6 +2,36 @@
 
 Project-specific instructions for Claude / agentic workers. Layered on top of `~/personal/CLAUDE.md` and `~/.claude-work/CLAUDE.md`.
 
+> Tool-agnostic project rules also live in [`AGENTS.md`](AGENTS.md) (read by Codex / Gemini / other agents). Keep the two in sync when changing shared conventions.
+
+---
+
+## Clean Architecture (Pragmatic Hexagonal-lite) — target layering
+
+**Status (2026-06-19):** decided target, migration **not yet started**. The as-is structure (`api/` / `core/` / `services/` / `models/`) still describes today's code. When you **add or modify** backend/frontend code, follow the target layering below. Migration scope and per-phase status: [`docs/superpowers/specs/2026-06-19-clean-architecture-refactor-design.md`](docs/superpowers/specs/2026-06-19-clean-architecture-refactor-design.md). Current commitment is the **MVP only: Phase 0 (safety nets + bug/security folds) + Phase 1 (break the cycle via 3 ports) + the Phase-1 cycle gate.** Phases 2–5 are documented but deferred — do not start them without explicit approval.
+
+**Why Pragmatic Hexagonal-lite, not strict L1–L4:** real clean architecture (inward-only rings, inner-owned ports, repository, composition-root DI, CI-enforced layering) **without** per-verb interactor classes, numbered `l1–l4` folders, or a presenter layer (`response_model` already serves that role). For a solo dev on real hardware, the strict form multiplies file count for substitutability we never use.
+
+**Backend rings — dependencies point inward only:**
+`bootstrap/` (composition root, the ONLY ring that imports every other ring) → `api/` + `infra/` (outermost adapters) → `services/` (use-cases) → `core/` (engine + movers) → `domain/` (pure: models, `events.py`, `movement.py`, `errors.py`, `ports/`).
+
+**Import bans (will become import-linter contracts — the "353rd test"):**
+- `domain/` imports stdlib + pydantic ONLY — never fastapi, httpx, asyncio I/O, pymobiledevice3, or any outer ring.
+- `core/` imports `domain/` only (may depend on ports, never on infra impls / services / api).
+- `services/` raises **domain errors**, never `fastapi.HTTPException`.
+- **No `core→api` edge** (forbids the whole `api` package; validated by `grep 'from api\.'` under `core/` == 0 — not just the `broadcast` string). **No `infra→api` edge.** `api/*` may not import another `api/*`.
+- Only `bootstrap/` + `main.py` read `Settings`/env. `main.py` imports `bootstrap` only.
+
+**Frontend (hexagon-lite):** `view (features/app)` → `hooks/` → `ports/` (interfaces) ← `adapters/` impls injected via `ServicesContext`. View MUST NOT import `adapters/api` / `services/api` directly. The `WsRouter` MUST preserve the existing **multi-subscriber fan-out** (`useWebSocket` Set/forEach + per-handler try/catch) — it is a broadcast, not route-by-type-to-single-owner. Backend origin (`8777`) lives in ONE constant (`contract/endpoints.ts` + `adapters/config.ts`).
+
+**The three load-bearing inversions:** engine → `DevicePort` (infra `device_manager` injected); `device_manager` → `EventPublisher` (api WS publisher injected; **awaited, in-line, order-preserving** — never hold the connection-manager lock under `device_manager._lock`); `device_manager` → `TunnelRegistry` (infra `wifi_tunnel` injected, owning `_tunnels` + `_tunnels_lock`; read path snapshots under the lock). DI = one container on `app.state`, synchronous providers, no DI framework.
+
+**Hard rules for any work under this refactor:**
+- **Behavior / API freeze.** No external HTTP / WS / IPC change. 352 backend tests stay green after EVERY commit. WS payloads compared **deep-equal JSON** (not literal bytes), serialized `exclude_unset`/`exclude_none` so absent keys stay absent. The ONE documented exception is the `device_manager.py:1155` NameError fix (a dead retry path becomes live).
+- **Danger-zone-test-first.** `simulation_engine.py` + all movers + `api/location.py` + `device_manager` recovery + `phone_control.py` have **no direct tests**. Write characterization tests (driven by an injected `ClockPort` + stepped `asyncio.sleep`, asserting ordered exact tuples) **before** touching them. The frontend has zero test infra — bootstrap Vitest **first and alone** before any god-component split.
+- **Thick carve-outs stay leaky.** Do NOT abstract `pymobiledevice3` / `usbmuxd` / SIP / tunnel-helper / `osascript` guts into pure cores — wrap them behind narrow ports only as a test/inversion seam.
+- **CI gate before structural moves.** import-linter ships report-only in Phase 0; each contract flips to enforced at its establishing phase's exit.
+
 ---
 
 ## Before proposing API changes — survey the existing surface
