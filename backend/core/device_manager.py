@@ -33,6 +33,12 @@ from pymobiledevice3.services.simulate_location import DtSimulateLocation
 from pymobiledevice3.usbmux import list_devices
 
 from config import DEVICE_NAMES_FILE, STICKY_DENIED_FILE, WIFI_ALIASES_FILE
+from domain.events import (
+    DdiMountedEvent,
+    DdiNotMountedEvent,
+    DdiMountingEvent,
+    DdiMountFailedEvent,
+)
 from models.schemas import DeviceInfo
 from services.json_safe import safe_load_json, safe_write_json
 from services.location_service import (
@@ -245,9 +251,13 @@ class DeviceManager:
         await dm.disconnect(devices[0].udid)
     """
 
-    def __init__(self) -> None:
+    def __init__(self, event_publisher=None) -> None:
         self._connections: Dict[str, _ActiveConnection] = {}
         self._lock = asyncio.Lock()
+        # Injected EventPublisher — routes DDI events to the WS layer without
+        # importing api.websocket directly. None means events are silently
+        # dropped (safe for tests that don't exercise DDI paths).
+        self._events = event_publisher
         # Udids the user has explicitly tapped "Don't Trust" on the iPhone
         # for, or forgotten via the in-app Forget action. The watchdog
         # refuses to auto-connect these (would just trigger another ignored
@@ -705,8 +715,8 @@ class DeviceManager:
         if mounted:
             logger.info("Personalized DDI already mounted on %s; DVT should work", conn.udid)
             try:
-                from api.websocket import broadcast
-                await broadcast("ddi_mounted", {"udid": conn.udid})
+                if self._events is not None:
+                    await self._events.publish(DdiMountedEvent(udid=conn.udid))
             except Exception:
                 pass
             return
@@ -717,14 +727,14 @@ class DeviceManager:
             "reconnect.", conn.udid,
         )
         try:
-            from api.websocket import broadcast
-            await broadcast("ddi_not_mounted", {
-                "udid": conn.udid,
-                "hint": (
-                    "iPhone 上未偵測到 DDI。請先為這支 iPhone 掛載一次 DDI(Developer Disk Image),"
-                    "再重新連接 LocWarp;或先重開 iPhone 後再試。"
-                ),
-            })
+            if self._events is not None:
+                await self._events.publish(DdiNotMountedEvent(
+                    udid=conn.udid,
+                    hint=(
+                        "iPhone 上未偵測到 DDI。請先為這支 iPhone 掛載一次 DDI(Developer Disk Image),"
+                        "再重新連接 LocWarp;或先重開 iPhone 後再試。"
+                    ),
+                ))
         except Exception:
             pass
 
@@ -769,8 +779,8 @@ class DeviceManager:
 
         logger.info("Classic DDI not mounted on %s; attempting auto-mount", conn.udid)
         try:
-            from api.websocket import broadcast
-            await broadcast("ddi_mounting", {"udid": conn.udid})
+            if self._events is not None:
+                await self._events.publish(DdiMountingEvent(udid=conn.udid))
         except Exception:
             pass
 
@@ -783,12 +793,13 @@ class DeviceManager:
             logger.warning("Classic DDI auto-mount failed for %s", conn.udid, exc_info=True)
         finally:
             try:
-                from api.websocket import broadcast
-                event = "ddi_mounted" if mounted else "ddi_mount_failed"
-                payload = {"udid": conn.udid}
-                if not mounted:
-                    payload["error"] = "Classic DDI mount failed"
-                await broadcast(event, payload)
+                if self._events is not None:
+                    if mounted:
+                        await self._events.publish(DdiMountedEvent(udid=conn.udid))
+                    else:
+                        await self._events.publish(DdiMountFailedEvent(
+                            udid=conn.udid, error="Classic DDI mount failed"
+                        ))
             except Exception:
                 pass
 

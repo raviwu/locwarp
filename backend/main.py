@@ -24,6 +24,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from config import API_HOST, API_PORT, SETTINGS_FILE, DEFAULT_LOCATION, CORS_ORIGINS, CSP_MODE
 from core.device_manager import DeviceManager
+from infra.events.ws_event_publisher import WsEventPublisher
 from services.cooldown import CooldownTimer
 from services.bookmarks import BookmarkManager
 from services.route_store import RouteManager
@@ -78,7 +79,10 @@ class AppState:
     """Central application state — shared across API endpoints."""
 
     def __init__(self):
-        self.device_manager = DeviceManager()
+        from api.websocket import broadcast as _ws_broadcast
+        self.device_manager = DeviceManager(
+            event_publisher=WsEventPublisher(broadcast=_ws_broadcast)
+        )
         # Per-udid simulation engines (group mode, max 3). The legacy
         # `simulation_engine` attribute still returns the most-recently-
         # created engine for single-device call sites that have not yet

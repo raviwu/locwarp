@@ -190,9 +190,10 @@ def test_forget_unpair_failure_does_not_block(monkeypatch, tmp_path):
 
 
 def test_forget_broadcast_includes_remaining_count(monkeypatch, tmp_path):
-    """The forget broadcast must carry remaining_count so the frontend
-    doesn't mis-render the 'device lost' banner (it defaults a missing
-    field to 0)."""
+    """The forget broadcast must carry remaining_count. After Phase 1 the four
+    DDI events route through device_manager._events; the forget event still
+    routes through api.websocket.broadcast. Capture from BOTH into one list so
+    the assertion is source-agnostic."""
     from main import app, app_state
 
     udid = "UDID-BCAST"
@@ -205,7 +206,6 @@ def test_forget_broadcast_includes_remaining_count(monkeypatch, tmp_path):
     conn.lockdown = MagicMock()
     dm._connections[udid] = conn
 
-    # A second, surviving device — remaining_count must reflect it.
     other = MagicMock()
     other.connection_type = "USB"
     dm._connections["UDID-SURVIVOR"] = other
@@ -224,6 +224,18 @@ def test_forget_broadcast_includes_remaining_count(monkeypatch, tmp_path):
         captured.append((event, payload))
 
     monkeypatch.setattr("api.websocket.broadcast", fake_broadcast)
+
+    # Also capture anything the injected publisher emits (DDI events etc.).
+    class _CapPublisher:
+        async def publish(self, event):
+            if hasattr(event, "model_dump"):
+                p = event.model_dump(exclude_unset=True, exclude_none=True)
+                captured.append((p.pop("type"), p))
+            else:
+                etype, data = event
+                captured.append((etype, {**data}))
+
+    monkeypatch.setattr(dm, "_events", _CapPublisher())
 
     client = TestClient(app)
     resp = client.post(f"/api/device/{udid}/forget")
