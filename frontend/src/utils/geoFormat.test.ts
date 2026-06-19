@@ -26,11 +26,11 @@ describe('countryName', () => {
   })
 
   it('returns Intl display name or uppercased code for unknown region', () => {
-    // Brief expected 'ZZ' but this Node ICU (full-ICU) returns 'Unknown Region'
-    // for unrecognized codes — the `|| cc` fallback in the source only fires when
-    // Intl.DisplayNames returns falsy, which does not happen on full-ICU builds.
-    // Characterizing the ACTUAL observed output: 'Unknown Region'.
-    expect(countryName('zz', 'en')).toBe('Unknown Region')
+    // Node full-ICU: Intl.DisplayNames.of('ZZ') -> 'Unknown Region' (truthy, so
+    // `|| cc` never fires). On small-ICU / older Node it's falsy -> output 'ZZ'.
+    // Accept both so this characterization doesn't silently flip on a Node/ICU change.
+    const result = countryName('zz', 'en')
+    expect(['Unknown Region', 'ZZ']).toContain(result)
   })
 })
 
@@ -45,9 +45,10 @@ describe('formatGmtOffset', () => {
   })
 
   it('formats UTC as GMT+0 (source normalizes bare GMT to GMT+0)', () => {
-    // Node ICU yields 'GMT' for UTC; the source normalizes it to 'GMT+0'.
-    // Accept either canonical form in case of ICU variation.
-    expect(['GMT', 'GMT+0']).toContain(formatGmtOffset('UTC'))
+    // The source explicitly normalizes a bare 'GMT' return from ICU to 'GMT+0'
+    // (see geoFormat.ts: `return tzName === 'GMT' ? 'GMT+0' : tzName`), so no
+    // code path can return bare 'GMT' — hard-assert the normalized form.
+    expect(formatGmtOffset('UTC')).toBe('GMT+0')
   })
 
   it('returns empty string for an unrecognized timezone', () => {

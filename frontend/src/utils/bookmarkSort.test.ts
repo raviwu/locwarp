@@ -63,4 +63,16 @@ describe('sortCategoryEntries', () => {
     expect(sortCategoryEntries(entries, 'date_added').map(([c]) => c))
       .toEqual(['Alpha', 'Zebra', 'Uncategorized'])
   })
+
+  it("'last_used' orders by newest last_used_at desc, Uncategorized still last", () => {
+    // categoryKey picks the max last_used_at per category, then sorts descending.
+    // Zebra=2026-06-01, Alpha=2026-03-15 -> Zebra first; Uncategorized pinned last.
+    const luEntries: [string, B[]][] = [
+      ['Zebra',         [{ name: 'z', last_used_at: '2026-06-01' }]],
+      ['Uncategorized', [{ name: 'u', last_used_at: '2026-09-09' }]],
+      ['Alpha',         [{ name: 'a', last_used_at: '2026-03-15' }]],
+    ]
+    expect(sortCategoryEntries(luEntries, 'last_used').map(([c]) => c))
+      .toEqual(['Zebra', 'Alpha', 'Uncategorized'])
+  })
 })
