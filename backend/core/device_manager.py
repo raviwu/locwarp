@@ -41,6 +41,7 @@ from domain.events import (
 )
 from models.schemas import DeviceInfo
 from services.json_safe import safe_load_json, safe_write_json
+from infra.device.wifi_tunnel import WifiTunnelRegistry
 from services.location_service import (
     DeviceLostError,
     DvtLocationService,
@@ -251,13 +252,18 @@ class DeviceManager:
         await dm.disconnect(devices[0].udid)
     """
 
-    def __init__(self, event_publisher=None) -> None:
+    def __init__(self, event_publisher=None, tunnel_registry=None) -> None:
         self._connections: Dict[str, _ActiveConnection] = {}
         self._lock = asyncio.Lock()
         # Injected EventPublisher — routes DDI events to the WS layer without
         # importing api.websocket directly. None means events are silently
         # dropped (safe for tests that don't exercise DDI paths).
         self._events = event_publisher
+        # TunnelRegistry port — provides is_running/get_runner/attempt_restart
+        # over the WiFi tunnel table without a direct core->api import.
+        # WifiTunnelRegistry is the default (reads api.device._tunnels via
+        # lazy intra-method imports). Tests may inject a fake.
+        self._tunnels = tunnel_registry if tunnel_registry is not None else WifiTunnelRegistry()
         # Udids the user has explicitly tapped "Don't Trust" on the iPhone
         # for, or forgotten via the in-app Forget action. The watchdog
         # refuses to auto-connect these (would just trigger another ignored
@@ -1141,13 +1147,8 @@ class DeviceManager:
             # runner appears (success path swaps in a new TunnelRunner and
             # replaces conn.lockdown along the way) or we time out.
             if conn.connection_type == "Network":
-                runner = None
-                try:
-                    from api.device import _tunnels  # local import: avoids cycle at module load
-                    runner = _tunnels.get(udid)
-                except ImportError:
-                    runner = None
-                if runner is not None and not runner.is_running():
+                runner = self._tunnels.get_runner(udid)
+                if runner is not None and not self._tunnels.is_running(udid):
                     remaining = deadline - time.monotonic()
                     if remaining <= 0:
                         raise DeviceLostError(
@@ -1207,22 +1208,14 @@ class DeviceManager:
         conn_type = conn.connection_type if conn else None
 
         if conn_type == "Network":
-            try:
-                from api.device import _tunnels, _attempt_tunnel_restart
-            except ImportError:
-                logger.debug("full_reconnect: api.device not importable")
-                return False
-            runner = _tunnels.get(udid)
+            runner = self._tunnels.get_runner(udid)
             if runner is None or not runner.target_ip or not runner.target_port:
                 logger.debug(
                     "full_reconnect: no live tunnel runner for %s; cannot recover", udid,
                 )
                 return False
             try:
-                ok = await _attempt_tunnel_restart(
-                    udid, runner.target_ip, runner.target_port, None, runner,
-                )
-                return bool(ok)
+                return await self._tunnels.attempt_restart(udid)
             except Exception:
                 logger.exception("full_reconnect: WiFi tunnel restart failed for %s", udid)
                 return False
