@@ -59,6 +59,36 @@ def test_reverse_returns_none_when_nominatim_raises_and_offline_empty(monkeypatc
     assert res.json() is None
 
 
+def test_timezone_resolves_offline_zone_and_offset(monkeypatch, client):
+    """The /timezone endpoint resolves the IANA zone fully offline (no external
+    key) and computes the current UTC offset server-side from that zone.
+    """
+    import services.geo_offline as geo_offline
+
+    # Stub the offline resolver so the test does not depend on the bundled
+    # timezonefinder/cities tables; Asia/Tokyo is UTC+9 year-round (no DST).
+    monkeypatch.setattr(
+        geo_offline, "resolve", lambda _lat, _lng: ("jp", "Asia/Tokyo", "Tokyo", "Tokyo")
+    )
+
+    res = client.get("/api/geocode/timezone", params={"lat": 35.68, "lng": 139.76})
+    assert res.status_code == 200
+    body = res.json()
+    assert body is not None
+    assert body["zone"] == "Asia/Tokyo"
+    assert body["gmt_offset_seconds"] == 32400  # UTC+9, no DST
+
+
+def test_timezone_returns_none_when_offline_has_no_zone(monkeypatch, client):
+    """No resolvable zone (open ocean / tables unavailable) → null, HTTP 200."""
+    import services.geo_offline as geo_offline
+
+    monkeypatch.setattr(geo_offline, "resolve", lambda _lat, _lng: ("", "", "", ""))
+    res = client.get("/api/geocode/timezone", params={"lat": 0, "lng": 0})
+    assert res.status_code == 200
+    assert res.json() is None
+
+
 def test_reverse_returns_nominatim_result_when_nominatim_succeeds(monkeypatch, client):
     """Happy path: Nominatim returns a result, the handler returns it
     unchanged. (Regression guard against the fallback short-circuiting

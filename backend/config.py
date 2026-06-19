@@ -188,9 +188,7 @@ DEFAULT_LOCATION = {"lat": 25.0375, "lng": 121.5637}
 API_HOST = "0.0.0.0"
 API_PORT = 8777
 
-# External API keys — read from environment; never hardcoded in source.
 import os as _os
-TIMEZONEDB_API_KEY: str = _os.getenv("TIMEZONEDB_API_KEY", "")
 
 # CORS — explicit allowlist: Electron/loopback UI, Vite dev server, optional LAN origin.
 # phone.html is served same-origin from :8777 over LAN, so the LAN host:port must be

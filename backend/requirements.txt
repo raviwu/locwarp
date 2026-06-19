@@ -13,3 +13,7 @@ timezonefinder>=8.0
 # dep). Declared explicitly so the offline geo resolver never relies on a
 # transitive-only install.
 numpy>=1.24
+# tzdata gives stdlib zoneinfo a bundled IANA tz database so /api/geocode/timezone
+# can compute the UTC offset from an IANA zone on platforms without a system tz db
+# (notably Windows, and PyInstaller bundles). macOS/Linux already ship /usr/share/zoneinfo.
+tzdata>=2024.1

@@ -1,9 +1,9 @@
 import logging
+from datetime import datetime
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import httpx
 from fastapi import APIRouter, HTTPException
-
-from config import TIMEZONEDB_API_KEY
 
 from models.schemas import (
     Coordinate,
@@ -16,7 +16,6 @@ from services import geo_offline
 from services.geocoding import GeocodingService
 from services.geo_extras import (
     _HAVERSINE_PROFILE_SPEED_MPS,
-    get_timezone,
     haversine_duration_matrix,
     optimize_order_exact,
     optimize_order_nearest_neighbor,
@@ -78,8 +77,32 @@ async def reverse_geocode(lat: float, lng: float):
 
 @router.get("/timezone", response_model=TimezoneInfo | None)
 async def timezone_lookup(lat: float, lng: float):
-    """Return IANA timezone + UTC offset for a coordinate (TimezoneDB)."""
-    return await get_timezone(lat, lng, api_key=TIMEZONEDB_API_KEY)
+    """IANA timezone + current UTC offset for a coordinate, resolved fully
+    offline via timezonefinder (no external API key). Returns ``None`` when the
+    offline tables are unavailable or the point has no resolvable zone.
+
+    The same offline resolver already backs bookmark geo-info, so this drops
+    the previous TimezoneDB online dependency entirely. The UTC offset is
+    computed server-side from the IANA zone via the stdlib zoneinfo tz database.
+    """
+    _cc, zone, _city, _region = geo_offline.resolve(lat, lng)
+    if not zone:
+        return None
+    try:
+        now = datetime.now(ZoneInfo(zone))
+        offset = now.utcoffset()
+        return TimezoneInfo(
+            zone=zone,
+            gmt_offset_seconds=int(offset.total_seconds()) if offset else 0,
+            abbreviation=now.tzname() or "",
+            timestamp=int(now.timestamp()),
+        )
+    except (ZoneInfoNotFoundError, ValueError):
+        # Zone resolved but the tz database lacks it (e.g. missing tzdata on a
+        # stripped platform) — still return the zone so the frontend can derive
+        # the offset itself via Intl.
+        logger.info("timezone offset unavailable for zone %s; returning zone only", zone)
+        return TimezoneInfo(zone=zone, gmt_offset_seconds=0, abbreviation="", timestamp=0)
 
 
 @router.get("/real-location")

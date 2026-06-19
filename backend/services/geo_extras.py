@@ -1,6 +1,5 @@
 """Extra geo services wired up in v0.2.22+.
 
-- Timezone (TimezoneDB)
 - Photon search / reverse (komoot's OSM geocoder, fallback to Nominatim)
 - Overpass 'nearby POI' lookup
 - OSRM table-based multi-stop waypoint optimization
@@ -19,41 +18,11 @@ from models.schemas import (
     Coordinate,
     GeocodingResult,
     NearbyPoi,
-    TimezoneInfo,
 )
 
 logger = logging.getLogger(__name__)
 
 _TIMEOUT = httpx.Timeout(10.0, connect=5.0)
-
-# ── TimezoneDB ────────────────────────────────────────────
-
-TIMEZONEDB_URL = "https://api.timezonedb.com/v2.1/get-time-zone"
-
-
-async def get_timezone(lat: float, lng: float, *, api_key: str = "") -> TimezoneInfo | None:
-    if not api_key:
-        logger.info("TimezoneDB key not configured; skipping timezone lookup")
-        return None
-    params = {"key": api_key, "format": "json", "by": "position", "lat": lat, "lng": lng}
-    try:
-        async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
-            resp = await client.get(TIMEZONEDB_URL, params=params)
-            resp.raise_for_status()
-            data = resp.json()
-        if data.get("status") != "OK":
-            logger.info("TimezoneDB returned non-OK: %s", data.get("message"))
-            return None
-        return TimezoneInfo(
-            zone=data.get("zoneName", ""),
-            gmt_offset_seconds=int(data.get("gmtOffset", 0)),
-            abbreviation=data.get("abbreviation", ""),
-            timestamp=int(data.get("timestamp", 0)),
-        )
-    except httpx.HTTPError as e:
-        logger.warning("TimezoneDB request failed: %s", e)
-        return None
-
 
 # ── Photon (komoot) with Nominatim fallback ────────────────
 
