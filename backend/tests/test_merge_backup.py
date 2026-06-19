@@ -7,6 +7,7 @@ tombstone still suppresses a backup item unless --force-restore is given.
 """
 
 import json
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -17,6 +18,12 @@ from models.schemas import BookmarkStore, RouteStore
 
 def _write(p: Path, data: dict) -> None:
     p.write_text(json.dumps(data))
+
+
+def _recent(hours_ago):
+    """ISO timestamp ``hours_ago`` hours before now — always inside the 30-day
+    tombstone retention window so GC never drops it (deterministic vs wall clock)."""
+    return (datetime.now(timezone.utc) - timedelta(hours=hours_ago)).isoformat()
 
 
 def _bm(id, name, updated_at):
@@ -76,9 +83,9 @@ def test_tombstone_suppresses_backup_item_without_force(tmp_path):
     live = tmp_path / "bookmarks.json"
     backup = tmp_path / "backup.json"
     _write(live, {"categories": [], "bookmarks": [], "tombstones": [
-        {"id": "x", "kind": "bookmark", "deleted_at": "2026-05-14T05:00:00+00:00"}]})
+        {"id": "x", "kind": "bookmark", "deleted_at": _recent(1)}]})
     _write(backup, {"categories": [], "tombstones": [],
-                    "bookmarks": [_bm("x", "X", "2026-05-14T01:00:00+00:00")]})
+                    "bookmarks": [_bm("x", "X", _recent(5))]})
     summary = merge_backup_into_live(backup, live)
     assert json.loads(live.read_text())["bookmarks"] == []
     assert summary["tombstone_suppressed"] == ["x"]

@@ -40,6 +40,14 @@ def _store(bms=(), cats=(), tombs=()):
     return BookmarkStore(bookmarks=list(bms), categories=list(cats), tombstones=list(tombs))
 
 
+def _recent(hours_ago):
+    """ISO timestamp ``hours_ago`` hours before now — always inside the 30-day
+    tombstone retention window so GC never drops it. Keeps these merge tests
+    deterministic instead of drifting red once the wall clock passes a
+    hard-coded date + TOMBSTONE_RETENTION_DAYS."""
+    return (datetime.now(timezone.utc) - timedelta(hours=hours_ago)).isoformat()
+
+
 def test_merge_unions_distinct_ids():
     a = _store(bms=[_bm("1", "A", "2026-05-14T01:00:00+00:00")])
     b = _store(bms=[_bm("2", "B", "2026-05-14T01:00:00+00:00")])
@@ -63,8 +71,8 @@ def test_merge_is_commutative_and_idempotent():
 
 
 def test_tombstone_suppresses_older_item():
-    item = _bm("1", "doomed", "2026-05-14T01:00:00+00:00")
-    tomb = Tombstone(id="1", kind="bookmark", deleted_at="2026-05-14T03:00:00+00:00")
+    item = _bm("1", "doomed", _recent(5))
+    tomb = Tombstone(id="1", kind="bookmark", deleted_at=_recent(3))
     merged = merge_stores(_store(bms=[item]), _store(tombs=[tomb]))
     assert merged.bookmarks == []
 
@@ -96,12 +104,12 @@ def test_missing_updated_at_loses_to_stamped_copy():
 def test_merge_routes_unions_and_keeps_tombstones():
     wp = [{"lat": 1.0, "lng": 1.0}, {"lat": 2.0, "lng": 2.0}]
     a = RouteStore(
-        routes=[SavedRoute(id="r1", name="A", waypoints=wp, updated_at="2026-05-14T01:00:00+00:00")],
+        routes=[SavedRoute(id="r1", name="A", waypoints=wp, updated_at=_recent(5))],
         tombstones=[],
     )
     b = RouteStore(
-        routes=[SavedRoute(id="r2", name="B", waypoints=wp, updated_at="2026-05-14T01:00:00+00:00")],
-        tombstones=[Tombstone(id="r1", kind="route", deleted_at="2026-05-14T05:00:00+00:00")],
+        routes=[SavedRoute(id="r2", name="B", waypoints=wp, updated_at=_recent(5))],
+        tombstones=[Tombstone(id="r1", kind="route", deleted_at=_recent(1))],
     )
     merged = merge_stores(a, b)
     # r1 tombstoned after its last edit → suppressed; r2 survives

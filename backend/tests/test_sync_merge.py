@@ -1,6 +1,7 @@
 """Unit tests for the generic store merge helper."""
 
 import json
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -14,6 +15,12 @@ from services.sync_merge import merge_bookmark_stores, merge_route_stores
 
 def _write(p: Path, payload: dict) -> None:
     p.write_text(json.dumps(payload))
+
+
+def _recent(hours_ago):
+    """ISO timestamp ``hours_ago`` hours before now — always inside the 30-day
+    tombstone retention window so GC never drops it (deterministic vs wall clock)."""
+    return (datetime.now(timezone.utc) - timedelta(hours=hours_ago)).isoformat()
 
 
 def _bm_payload(bookmarks, categories=None) -> dict:
@@ -231,12 +238,12 @@ def test_migration_merge_respects_tombstones(tmp_path):
     remote = tmp_path / "remote.json"
     _write(local, _bm_payload([{
         "id": "1", "name": "stale", "lat": 0.0, "lng": 0.0,
-        "category_id": "default", "created_at": "2026-05-14T00:00:00+00:00",
-        "updated_at": "2026-05-14T01:00:00+00:00",
+        "category_id": "default", "created_at": _recent(6),
+        "updated_at": _recent(5),
     }]))
     remote_payload = _bm_payload([])
     remote_payload["tombstones"] = [
-        {"id": "1", "kind": "bookmark", "deleted_at": "2026-05-14T03:00:00+00:00"}
+        {"id": "1", "kind": "bookmark", "deleted_at": _recent(1)}
     ]
     _write(remote, remote_payload)
 
