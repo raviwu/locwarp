@@ -15,8 +15,6 @@ Note on line-1155 (get_fresh_dvt_provider WiFi-tunnel-wait branch):
         path entirely. The line-1155 characterization is deferred to
         Task 10's post-fix scope.
 """
-import importlib
-import os
 import pytest
 
 from tests._engine_harness import FakeClock, SteppedSleep, make_engine
@@ -44,17 +42,24 @@ async def test_record_twice_teleport_streams_are_identical():
     # Deterministic doubles -> byte-for-byte identical observable streams.
     assert pushes1 == pushes2
     assert emitted1 == emitted2
-    assert durs1 == durs2
+    # Teleport never hits the backoff-sleep seam, so both are [].
+    # Intentionally characterizes: "the teleport path invokes NO backoff sleep."
+    assert durs1 == durs2 == []
 
 
 async def test_two_device_primary_promotion_via_appstate(tmp_path, monkeypatch):
     """Removing the primary engine from the registry and updating _primary_udid
     promotes the survivor. Pins the observable dict/attr surface of AppState
     (simulation_engines + _primary_udid + get_engine) without driving device I/O.
+
+    HOME isolation: monkeypatch.setattr redirects the module-bound path
+    constants in core.device_manager (imported at module load time; a config
+    reload does not rebind them) so DeviceManager.__init__ reads only tmp_path
+    files — never the real ~/.locwarp/sticky_denied.json.
     """
-    monkeypatch.setenv("HOME", str(tmp_path))
-    import config as _config
-    importlib.reload(_config)
+    monkeypatch.setattr("core.device_manager.STICKY_DENIED_FILE", tmp_path / "sticky_denied.json")
+    monkeypatch.setattr("core.device_manager.DEVICE_NAMES_FILE", tmp_path / "device_names.json")
+    monkeypatch.setattr("core.device_manager.WIFI_ALIASES_FILE", tmp_path / "wifi_aliases.json")
 
     from main import AppState
     state = AppState()
@@ -79,10 +84,13 @@ async def test_two_device_primary_promotion_via_appstate(tmp_path, monkeypatch):
 
 
 async def test_appstate_get_engine_none_with_no_primary_returns_none(tmp_path, monkeypatch):
-    """get_engine(None) with no primary set returns None (not raises)."""
-    monkeypatch.setenv("HOME", str(tmp_path))
-    import config as _config
-    importlib.reload(_config)
+    """get_engine(None) with no primary set returns None (not raises).
+
+    HOME isolation: same setattr strategy as the promotion test above.
+    """
+    monkeypatch.setattr("core.device_manager.STICKY_DENIED_FILE", tmp_path / "sticky_denied.json")
+    monkeypatch.setattr("core.device_manager.DEVICE_NAMES_FILE", tmp_path / "device_names.json")
+    monkeypatch.setattr("core.device_manager.WIFI_ALIASES_FILE", tmp_path / "wifi_aliases.json")
 
     from main import AppState
     state = AppState()

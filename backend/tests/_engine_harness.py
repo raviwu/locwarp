@@ -55,10 +55,11 @@ def make_engine(coords_recorder=None, clock=None, sleep=None):
     eng = SimulationEngine(
         loc, cb,
         clock=clock,
-        sleep=sleep or (lambda s: _noop()),
+        sleep=sleep or _noop_sleep,
     )
     return eng, loc, emitted
 
 
-async def _noop():
+async def _noop_sleep(_s: float) -> None:
+    """Default async sleep double: does nothing (no real wait, no clock advance)."""
     return None
