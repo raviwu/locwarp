@@ -324,14 +324,22 @@ function startBackend() {
     }
   })
 
-  const escaped = exe.replace(/'/g, "'\\''")
+  const { escapeAppleScriptString } = require('./applescript.js')
+
+  const escaped = exe.replace(/'/g, "'\\''")        // shell layer (unchanged)
   const cwd = path.dirname(exe).replace(/'/g, "'\\''")
   const parentPid = backendProc.pid
   const parentUid = typeof process.getuid === 'function' ? process.getuid() : 501
-  const script =
-    `do shell script "cd '${cwd}' && '${escaped}' --tunnel-helper ` +
+  // Escape the whole shell command for the AppleScript double-quoted string literal.
+  // Without this, a path containing " or \ breaks out of the AppleScript string
+  // and can inject arbitrary AppleScript that runs with administrator privileges.
+  const shellCmd =
+    `cd '${cwd}' && '${escaped}' --tunnel-helper ` +
     `--parent-pid=${parentPid} --parent-uid=${parentUid} ` +
-    `</dev/null >/tmp/locwarp-helper-stdout.log 2>/tmp/locwarp-helper-stderr.log &" ` +
+    `</dev/null >/tmp/locwarp-helper-stdout.log 2>/tmp/locwarp-helper-stderr.log &`
+  const asLiteral = escapeAppleScriptString(shellCmd)
+  const script =
+    `do shell script "${asLiteral}" ` +
     `with administrator privileges ` +
     `with prompt "LocWarp needs administrator access to communicate with iOS 17+ devices over USB."`
   spawn('osascript', ['-e', script], { stdio: 'ignore' })
