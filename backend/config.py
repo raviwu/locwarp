@@ -181,7 +181,10 @@ RECONNECT_MAX_RETRIES = 30
 # Default location (Taipei City Hall)
 DEFAULT_LOCATION = {"lat": 25.0375, "lng": 121.5637}
 
-# Server
+# Server — API_HOST must stay 0.0.0.0 (LAN bind). phone.html is served to a
+# real phone over WiFi; narrowing to 127.0.0.1 would silently break it.
+# LAN exposure is closed by the phone-control PIN/token gate (api/phone_control.py)
+# and the CORS allowlist (CORS_ORIGINS below), not by loopback bind.
 API_HOST = "0.0.0.0"
 API_PORT = 8777
 
