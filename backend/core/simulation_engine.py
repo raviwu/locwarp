@@ -6,6 +6,7 @@ import asyncio
 import logging
 import time
 from datetime import datetime, timedelta, timezone
+from typing import Awaitable, Callable
 
 from models.schemas import (
     Coordinate,
@@ -99,11 +100,20 @@ class SimulationEngine:
         used to push realtime events over WebSocket.
     """
 
-    def __init__(self, location_service, event_callback=None) -> None:
+    def __init__(
+        self,
+        location_service,
+        event_callback=None,
+        *,
+        clock: Callable[[], float] = time.monotonic,
+        sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+    ) -> None:
         self.location_service = location_service
         self.state: SimulationState = SimulationState.IDLE
         self.current_position: Coordinate | None = None
         self.event_callback = event_callback
+        self._clock = clock
+        self._sleep = sleep
 
         # Task management
         self._active_task: asyncio.Task | None = None
@@ -756,7 +766,7 @@ class SimulationEngine:
                 # update_interval + push_latency, so the iPhone-side
                 # CoreLocation speedometer measured ~75% of the requested
                 # speed over WiFi tunnel (issue #22).
-                tick_start = time.monotonic()
+                tick_start = self._clock()
 
                 # Calculate distance from previous point
                 step_dist = RouteInterpolator.haversine(prev_lat, prev_lng, lat, lng)
@@ -775,7 +785,7 @@ class SimulationEngine:
                         logger.warning(
                             "position push failed (attempt %d/3): %s", attempt + 1, exc,
                         )
-                        await asyncio.sleep(0.5 * (attempt + 1))
+                        await self._sleep(0.5 * (attempt + 1))
                     except asyncio.CancelledError:
                         raise
                     except Exception:
@@ -834,7 +844,7 @@ class SimulationEngine:
                 if idx < len(timed_points) - 1:
                     next_point = timed_points[idx + 1]
                     wait_time = next_point["timestamp_offset"] - point["timestamp_offset"]
-                    elapsed = time.monotonic() - tick_start
+                    elapsed = self._clock() - tick_start
                     sleep_for = max(wait_time - elapsed, 0.0)
                     if sleep_for > 0:
                         try:
