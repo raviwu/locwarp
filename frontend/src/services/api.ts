@@ -1,4 +1,5 @@
-const API = 'http://127.0.0.1:8777'
+import { BASE_URL } from '../contract/endpoints'
+const API = BASE_URL
 
 // Connection-refused means backend isn't up yet, retry with backoff.
 // Other HTTP errors (4xx/5xx) are real errors and propagate immediately.

@@ -1,11 +1,10 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
+import { WS_URL } from '../contract/endpoints'
 
 export interface WsMessage {
   type: string
   data: any
 }
-
-const WS_URL = 'ws://127.0.0.1:8777/ws/status'
 const RECONNECT_INTERVAL = 3000
 const MAX_RECONNECT_INTERVAL = 30000
 
