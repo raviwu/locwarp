@@ -2,7 +2,7 @@
 
 Tool-agnostic instructions for any coding agent (Claude Code, Codex, Gemini CLI, etc.) working in this repo. Claude Code also reads [`CLAUDE.md`](CLAUDE.md), which layers Claude-specific behavior on top of these shared rules — **keep the two in sync** when changing a shared convention.
 
-LocWarp is a macOS/Windows desktop app that spoofs iOS device GPS: a **FastAPI backend** (`backend/`, Python, ~15.5k LOC, 352 pytest tests) plus a **React + TypeScript + Electron frontend** (`frontend/`, ~19.7k LOC). Single-developer personal project.
+LocWarp is a macOS/Windows desktop app that spoofs iOS device GPS: a **FastAPI backend** (`backend/`, Python, ~15.5k LOC, ≈371 pytest tests collected) plus a **React + TypeScript + Electron frontend** (`frontend/`, ~19.7k LOC). Single-developer personal project.
 
 ---
 
@@ -42,7 +42,7 @@ DI is plain constructor injection + one container on `app.state` (AppState refra
 
 ### Hard rules for any work under this refactor
 
-- **Behavior / API freeze.** No external HTTP / WS / IPC change. 352 backend tests stay green after EVERY commit. WS payloads compared **deep-equal JSON** (not literal bytes), serialized `exclude_unset`/`exclude_none` so absent keys stay absent. The ONE documented exception is the `device_manager.py:1155` NameError fix (a dead retry path becomes live).
+- **Behavior / API freeze.** No external HTTP / WS / IPC change. The full backend pytest suite stays green after EVERY commit (current baseline ≈371 collected — pin via `cd backend && .venv/bin/python -m pytest --collect-only -q`; the design-scan's "352" counted test *functions*). WS payloads compared **deep-equal JSON** (not literal bytes), serialized `exclude_unset`/`exclude_none` so absent keys stay absent. The ONE documented exception is the `device_manager.py:1155` NameError fix (a dead retry path becomes live).
 - **Danger-zone-test-first.** `simulation_engine.py` + all movers + `api/location.py` + `device_manager` recovery + `phone_control.py` have **no direct tests**. Write characterization tests (injected `ClockPort` + stepped `asyncio.sleep`, asserting ordered exact tuples) **before** touching them. The frontend has zero test infra — bootstrap Vitest **first and alone** before any god-component split.
 - **Thick carve-outs stay leaky.** Do NOT abstract `pymobiledevice3` / `usbmuxd` / SIP / tunnel-helper / `osascript` guts into pure cores — wrap them behind narrow ports only as a test/inversion seam.
 

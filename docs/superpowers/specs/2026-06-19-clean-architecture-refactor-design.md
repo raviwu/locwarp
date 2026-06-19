@@ -7,7 +7,7 @@
 - **Reference studied:** `CJHwong/py-clean-architecture-examples` (`example_2_fastapi_todo_app`).
 - **Source analysis:** two parallel agent workflows — a 12-agent codebase scan and an 11-agent design + adversarial-risk pass.
 
-> **Constraint reminder:** No external behavior / HTTP / WS / IPC API change. All 352 backend pytest tests stay green after **every** commit. WS payloads compared **deep-equal JSON** (not literal bytes). One explicit, documented exception: the `device_manager.py:1155` NameError fix (a dead retry path becomes live).
+> **Constraint reminder:** No external behavior / HTTP / WS / IPC API change. The full backend pytest suite stays green after **every** commit — the design scan's "352" counted test *functions*; this checkout actually collects **≈371 items** (`pytest --collect-only -q`), so pin the exact pre-change baseline and treat every "352" below as shorthand for it. WS payloads compared **deep-equal JSON** (not literal bytes). One explicit, documented exception: the `device_manager.py:1155` NameError fix (a dead retry path becomes live).
 
 ---
 
