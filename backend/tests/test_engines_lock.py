@@ -37,3 +37,55 @@ async def test_concurrent_create_engine_creates_one(monkeypatch):
     # cleanup
     app_state.simulation_engines.clear()
     app_state._primary_udid = None
+
+
+@pytest.mark.asyncio
+async def test_remove_engine_pops_and_promotes_primary():
+    from main import app_state
+    app_state.simulation_engines.clear()
+    app_state.simulation_engines["A"] = object()
+    app_state.simulation_engines["B"] = object()
+    app_state._primary_udid = "A"
+    await app_state.remove_engine("A")
+    assert "A" not in app_state.simulation_engines
+    assert app_state._primary_udid == "B"
+    app_state.simulation_engines.clear()
+    app_state._primary_udid = None
+
+
+@pytest.mark.asyncio
+async def test_remove_engine_non_primary_keeps_primary():
+    from main import app_state
+    app_state.simulation_engines.clear()
+    app_state.simulation_engines["A"] = object()
+    app_state.simulation_engines["B"] = object()
+    app_state._primary_udid = "A"
+    await app_state.remove_engine("B")
+    assert "B" not in app_state.simulation_engines
+    assert app_state._primary_udid == "A"
+    app_state.simulation_engines.clear()
+    app_state._primary_udid = None
+
+
+@pytest.mark.asyncio
+async def test_remove_engine_last_engine_sets_primary_none():
+    from main import app_state
+    app_state.simulation_engines.clear()
+    app_state.simulation_engines["A"] = object()
+    app_state._primary_udid = "A"
+    await app_state.remove_engine("A")
+    assert app_state.simulation_engines == {}
+    assert app_state._primary_udid is None
+
+
+@pytest.mark.asyncio
+async def test_remove_engine_unknown_udid_is_noop():
+    from main import app_state
+    app_state.simulation_engines.clear()
+    app_state.simulation_engines["A"] = object()
+    app_state._primary_udid = "A"
+    await app_state.remove_engine("ZZZ")
+    assert "A" in app_state.simulation_engines
+    assert app_state._primary_udid == "A"
+    app_state.simulation_engines.clear()
+    app_state._primary_udid = None

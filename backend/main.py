@@ -400,6 +400,20 @@ class AppState:
 
             logger.info("Simulation engine created for device %s (no initial location pushed)", udid)
 
+    async def remove_engine(self, udid: str) -> None:
+        """Drop the engine for *udid* and promote a new primary if needed.
+
+        Locked teardown counterpart of create_engine_for_device: acquires
+        _engines_lock so a concurrent create_engine_for_device cannot race
+        with the pop/promote. Promotes _primary_udid to the next remaining
+        udid (or None) only when the removed udid was the primary. No-op for
+        an unknown udid.
+        """
+        async with self._engines_lock:
+            self.simulation_engines.pop(udid, None)
+            if self._primary_udid == udid:
+                self._primary_udid = next(iter(self.simulation_engines.keys()), None)
+
 
 app_state = AppState()
 
