@@ -663,10 +663,7 @@ async def _cleanup_wifi_connection_for(udid: str, *, caller: str) -> bool:
         _tunnel_logger.info("[%s] Disconnected WiFi device %s", caller, udid)
     except (OSError, RuntimeError):
         _tunnel_logger.exception("[%s] Failed to disconnect %s", caller, udid)
-    app_state.simulation_engines.pop(udid, None)
-    if app_state._primary_udid == udid:
-        remaining = next(iter(app_state.simulation_engines.keys()), None)
-        app_state._primary_udid = remaining
+    await app_state.remove_engine(udid)
     try:
         from api.websocket import broadcast
         await broadcast("device_disconnected", {
@@ -785,12 +782,7 @@ async def _attempt_tunnel_restart(
         # Rebuild the sim engine bound to the new location service. The
         # old engine pointed at the dead RSD and would throw
         # ConnectionTerminatedError on the next teleport / position push.
-        app_state.simulation_engines.pop(dev_info.udid, None)
-        if app_state._primary_udid == dev_info.udid:
-            # Keep this udid as primary; create_engine_for_device only
-            # promotes when _primary_udid is None.
-            pass
-        await app_state.create_engine_for_device(dev_info.udid)
+        await app_state.create_engine_for_device(dev_info.udid, force=True)
 
         # Re-arm the watchdog on the new runner so subsequent blips get
         # the same recovery treatment.
@@ -1268,8 +1260,7 @@ async def wifi_tunnel_stop(req: WifiTunnelStopRequest | None = None):
                 _tunnel_logger.exception("USB fallback: connect failed for %s", usb_dev.udid)
                 continue
             try:
-                app_state.simulation_engines.pop(usb_dev.udid, None)
-                await app_state.create_engine_for_device(usb_dev.udid)
+                await app_state.create_engine_for_device(usb_dev.udid, force=True)
                 _tunnel_logger.info("Switched back to USB connection: %s", usb_dev.udid)
             except Exception:
                 _tunnel_logger.exception(
@@ -1280,10 +1271,7 @@ async def wifi_tunnel_stop(req: WifiTunnelStopRequest | None = None):
                     await dm.disconnect(usb_dev.udid)
                 except Exception:
                     pass
-                app_state.simulation_engines.pop(usb_dev.udid, None)
-                if app_state._primary_udid == usb_dev.udid:
-                    remaining = next(iter(app_state.simulation_engines.keys()), None)
-                    app_state._primary_udid = remaining
+                await app_state.remove_engine(usb_dev.udid)
                 try:
                     from api.websocket import broadcast
                     await broadcast("device_error", {
@@ -1351,8 +1339,7 @@ async def wifi_tunnel_start_and_connect(req: WifiTunnelStartRequest):
         # ConnectionTerminatedError, reconnect would fail because the
         # cached lockdown is dead, and the user would see the device get
         # kicked as device_lost within 8 seconds of the WiFi switch.
-        app_state.simulation_engines.pop(info.udid, None)
-        await app_state.create_engine_for_device(info.udid)
+        await app_state.create_engine_for_device(info.udid, force=True)
 
         # Re-key the runner from temp_key (often "pending:ip:port") to
         # the real udid so per-udid stop / status / watchdog keep working.
@@ -1577,9 +1564,7 @@ async def forget_device(udid: str):
                 await dm.disconnect(udid)
             except Exception:
                 _tunnel_logger.exception("Forget: disconnect failed for %s", udid)
-        app_state.simulation_engines.pop(udid, None)
-        if app_state._primary_udid == udid:
-            app_state._primary_udid = next(iter(app_state.simulation_engines), None)
+        await app_state.remove_engine(udid)
 
         # 3. Clear host pair records (both idempotent, never raise).
         system_cleared = await delete_system_pair_record(udid)

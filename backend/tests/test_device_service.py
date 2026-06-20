@@ -74,6 +74,13 @@ async def test_disconnect_calls_dm_and_pops_engine():
     engine_registry.simulation_engines = fake_engines
     engine_registry._primary_udid = "U3"
 
+    async def fake_remove_engine(udid):
+        fake_engines.pop(udid, None)
+        if engine_registry._primary_udid == udid:
+            engine_registry._primary_udid = next(iter(fake_engines), None)
+
+    engine_registry.remove_engine = AsyncMock(side_effect=fake_remove_engine)
+
     svc = DeviceService(
         device_manager=dm,
         tunnel_registry=MagicMock(),
@@ -82,6 +89,7 @@ async def test_disconnect_calls_dm_and_pops_engine():
     await svc.disconnect("U3")
 
     dm.disconnect.assert_awaited_once_with("U3")
+    engine_registry.remove_engine.assert_awaited_once_with("U3")
     assert "U3" not in fake_engines
     # _primary_udid must be updated to a remaining engine or None
     assert engine_registry._primary_udid != "U3"
@@ -98,6 +106,13 @@ async def test_disconnect_non_primary_leaves_primary_unchanged():
     engine_registry.simulation_engines = fake_engines
     engine_registry._primary_udid = "U5"
 
+    async def fake_remove_engine(udid):
+        fake_engines.pop(udid, None)
+        if engine_registry._primary_udid == udid:
+            engine_registry._primary_udid = next(iter(fake_engines), None)
+
+    engine_registry.remove_engine = AsyncMock(side_effect=fake_remove_engine)
+
     svc = DeviceService(
         device_manager=dm,
         tunnel_registry=MagicMock(),
@@ -106,6 +121,7 @@ async def test_disconnect_non_primary_leaves_primary_unchanged():
     await svc.disconnect("U6")
 
     dm.disconnect.assert_awaited_once_with("U6")
+    engine_registry.remove_engine.assert_awaited_once_with("U6")
     assert "U6" not in fake_engines
     assert engine_registry._primary_udid == "U5"
 

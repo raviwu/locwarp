@@ -216,11 +216,9 @@ async def _handle_device_lost(exc: Exception, udid: str | None = None) -> "HTTPE
         except Exception:
             _log.exception("device_lost cleanup: disconnect failed for %s", u)
         # Only remove this udid's engine; the legacy `= None` setter clears
-        # every engine (bad for dual mode).
-        app_state.simulation_engines.pop(u, None)
-        if app_state._primary_udid == u:
-            remaining = next(iter(app_state.simulation_engines.keys()), None)
-            app_state._primary_udid = remaining
+        # every engine (bad for dual mode). remove_engine pops+promotes under
+        # _engines_lock so a concurrent create cannot race the mutation.
+        await app_state.remove_engine(u)
 
     try:
         await broadcast("device_disconnected", {

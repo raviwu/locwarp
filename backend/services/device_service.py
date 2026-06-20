@@ -25,13 +25,14 @@ class DeviceService:
         await self._engines.create_engine_for_device(udid)
 
     async def disconnect(self, udid: str) -> None:
-        """Disconnect device (USB path) and drop the simulation engine."""
+        """Disconnect device (USB path) and drop the simulation engine.
+
+        Teardown goes through engine_registry.remove_engine so the pop+promote
+        runs under _engines_lock — a concurrent create_engine_for_device cannot
+        race the registry mutation.
+        """
         await self._dm.disconnect(udid)
-        self._engines.simulation_engines.pop(udid, None)
-        if self._engines._primary_udid == udid:
-            self._engines._primary_udid = next(
-                iter(self._engines.simulation_engines), None
-            )
+        await self._engines.remove_engine(udid)
 
     async def repair(self, udid: str) -> None:
         """Clear the sticky-denied flag (matches wifi_repair clear_user_denied call)."""
