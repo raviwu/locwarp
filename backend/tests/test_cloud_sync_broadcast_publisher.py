@@ -29,7 +29,6 @@ def test_enable_disable_emit_unchanged_events(monkeypatch, tmp_path):
 
     client = TestClient(app)
     resp = client.post("/api/cloud-sync/enable", json={})
-    assert resp.status_code in (200, 409, 422, 500), resp.text
-    if any(e == "bookmarks_changed" for e, _ in captured):
-        assert ("bookmarks_changed", {"reason": "cloud_sync_enabled"}) in captured
-        assert ("routes_changed", {"reason": "cloud_sync_enabled"}) in captured
+    assert resp.status_code == 200, resp.text
+    assert ("bookmarks_changed", {"reason": "cloud_sync_enabled"}) in captured
+    assert ("routes_changed", {"reason": "cloud_sync_enabled"}) in captured

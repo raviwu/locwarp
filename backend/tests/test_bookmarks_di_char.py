@@ -23,7 +23,7 @@ def _fresh_client(tmp_path, monkeypatch):
     import main
     from services.bookmarks import BookmarkManager
 
-    main.app_state.bookmark_manager = BookmarkManager()
+    monkeypatch.setattr(main.app_state, "bookmark_manager", BookmarkManager())
     return TestClient(main.app)
 
 

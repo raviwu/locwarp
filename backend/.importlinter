@@ -10,10 +10,6 @@ include_external_packages = True
 
 # Enforced in Phase 1 (Task 8). The no-core->api contract is KEPT with 0 broken
 # after Tasks 3-4 removed all api.* imports from core/device_manager.py.
-#
-# NOTE: A no-infra->api contract is intentionally NOT added here. The file
-# infra/device/wifi_tunnel.py still contains a lazy import of api.device._tunnels
-# (Task-7-deferred intermediate). That contract is deferred to Phase 2.
 [importlinter:contract:no-core-imports-api]
 name = Core must not import API
 type = forbidden
