@@ -42,16 +42,25 @@ exercises them.
 3. Start a moving **navigate / route / loop**.
 4. While it runs, **kill the tunnel**: toggle the Mac's Wi-Fi off→on, or drop
    the phone's Wi-Fi, mid-simulation.
-5. Watch the backend log (dev: the `start.sh` terminal).
+5. Watch BOTH the backend log (dev: the `start.sh` terminal) AND the desktop UI.
 
-**Observe:** the recovery either re-acquires a fresh DVT provider and the sim
-resumes, **or** raises a clean `REASON_TUNNEL_DEAD` / connection-lost banner —
-**without hanging** and without an unhandled traceback.
+**Observe (backend):** the recovery either re-acquires a fresh DVT provider and
+the sim resumes, **or** raises a clean `REASON_TUNNEL_DEAD` / connection-lost
+banner — **without hanging** and without an unhandled traceback.
+
+**Observe (UI — the three-state wiring, commit `8bc77cf`):** the moment the
+tunnel drops, an **amber "重新連線中… / reconnecting…" banner** appears
+(top-center) for the retry window. Then either: on success → the amber banner
+clears and a **"WiFi Tunnel 已恢復 / Wi-Fi tunnel restored" toast** flashes; or
+on terminal loss (all retries fail) → the amber banner is replaced by the
+**red terminal banner**. The amber and red banners must never show at once.
 
 - ✅ **PASS:** clean recovery or a clean tunnel-dead banner; no hang, no
-  unhandled exception, the process stays alive.
-- ❌ **FAIL:** the recovery hangs, throws an `AttributeError`/`NameError` on the
-  runner, or the backend dies on the tunnel drop.
+  unhandled exception; AND the UI shows amber-reconnecting → (restored toast |
+  red terminal banner) with correct transitions.
+- ❌ **FAIL:** the recovery hangs / throws on the runner / the backend dies; OR
+  the amber banner never appears, gets stuck after recovery, the restored toast
+  never fires, or both banners show simultaneously.
 
 ---
 
