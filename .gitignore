@@ -9,9 +9,17 @@ env/
 .venv/
 
 # ── Node / Frontend ─────────────────────────────────
+node_modules/
 frontend/node_modules/
 frontend/dist/
 frontend/.vite/
+
+# ── Test / coverage artifacts ───────────────────────
+backend/.coverage
+backend/htmlcov/
+frontend/coverage/
+frontend/test-results/
+frontend/playwright-report/
 
 # ── PyInstaller / electron-builder build artifacts ──
 dist-py/
