@@ -8,9 +8,7 @@ LocWarp is a macOS/Windows desktop app that spoofs iOS device GPS: a **FastAPI b
 
 ## Architecture — Clean Architecture (Pragmatic Hexagonal-lite), target layering
 
-**Status (2026-06-19):** decided target, migration **not yet started**. Today's code still uses the flat `api/` / `core/` / `services/` / `models/` layout. When you **add or modify** code, follow the target layering below. Full design, phase plan, and per-phase status: [`docs/superpowers/specs/2026-06-19-clean-architecture-refactor-design.md`](docs/superpowers/specs/2026-06-19-clean-architecture-refactor-design.md).
-
-**Current commitment = MVP only:** Phase 0 (safety nets + 7 bug/security folds) + Phase 1 (break the import cycle via 3 ports) + the Phase-1 cycle gate. **Phases 2–5 are documented but deferred — do not start them without explicit approval from Ravi.**
+**Status (2026-06-20):** Phase 0 + Phase 1 + Phase 2 (C / spec-literal) IMPLEMENTED + merged (2026-06-20). Phases 3–5 deferred. Inward-only rings enforced; geocode `GeocodeError`s mapped at the boundary; last `infra→api` edge killed; all `from main import app_state` retired from non-test code; api→api broadcasts via injected `EventPublisher`; **five import-linter contracts ENFORCED (`5 kept, 0 broken`)**. Task 34 (module-level state class-wraps) deferred as a residual tidy-up — no behavior or contract impact. **Do not start Phases 3–5 without explicit approval from Ravi.**
 
 **Flavor:** real clean architecture (inward-only rings, inner-owned ports, repository, composition-root DI, CI-enforced layering) **without** per-verb interactor classes, numbered `l1–l4` folders, or a presenter layer (FastAPI `response_model` already serves that role). Strict L1–L4 was rejected: for a solo dev on real hardware it multiplies file count for substitutability that is never used.
 

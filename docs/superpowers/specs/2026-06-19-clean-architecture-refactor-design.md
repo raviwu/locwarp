@@ -1,7 +1,7 @@
 # Clean Architecture Refactor — Design Spec
 
 - **Date:** 2026-06-19
-- **Status:** Approved direction, not yet implemented (planning only)
+- **Status:** Phase 0 + Phase 1 + Phase 2 (C / spec-literal) IMPLEMENTED + merged (2026-06-20). Phases 3–5 deferred.
 - **Decision (flavor):** **Pragmatic Hexagonal-lite** — real clean architecture (inward-only rings, inner-owned ports, repository, composition-root DI, CI-enforced layering) **without** per-verb interactor classes, numbered `l1–l4` folders, or a presenter layer (`response_model` already serves that role).
 - **Decision (scope):** **MVP first — Phase 0 + Phase 1 + the Phase-1 cycle gate.** Phases 2–5 are documented here but **deferred** (adopt/partial/skip later). The 4 lock/port corrections ride along with the MVP.
 - **Reference studied:** `CJHwong/py-clean-architecture-examples` (`example_2_fastapi_todo_app`).
@@ -134,7 +134,7 @@ Each phase: **執行目標 / 優先順序(first) / 潛在風險 / 驗證方式**
 - **潛在風險:** single highest-coupling change; tunnel + sticky_denied + autopair + `_attempt_tunnel_restart` are timing-sensitive (DANGER); `device_disconnected`'s 6 shapes must serialize with `exclude_unset` (pydantic must NOT inject defaults); all 4 `ddi_*` events' ordering + keys must be deep-equal; `EventPublisher` must be in-line/order-preserving; cannot be proven green by pytest alone (real Trust dialogs + tunnels live on the path).
 - **驗證方式:** import-linter `no core→api` (whole api package) **enforced** green; `grep 'from api\.' device_manager.py` == 0; 352 green; migrated forget test captures from BOTH emit sinks and still asserts exactly one `device_disconnected` (reason='forgotten', remaining_count==1); WS payloads **deep-equal per emission site** vs P0 recordings (absent keys absent); frontend WsRouter Vitest proves one `device_disconnected` fires BOTH `useSimulation` AND `useDevice`; Playwright WS e2e green; **manual real-hardware smoke: connect + teleport over BOTH USB and WiFi; Trust dialog + tunnel-restart path observed.**
 
-### Phase 2 — Kill service-locator + remove remaining silent side-effects + lock engine registry — **deferred** — ~8 commits
+### Phase 2 — Kill service-locator + remove remaining silent side-effects + lock engine registry — **DONE (2026-06-20)** — ~8 commits
 
 - **執行目標:** retire all 34 `from main import app_state`; remove `HTTPException`-from-service and import-time `mkdir`; add the `asyncio.Lock` guarding the engine registry's `check→await→assign`.
 - **優先順序(first):** migrate `api/geocode` + `services/geocoding.py` — enumerate EVERY raise with exact `(status_code, detail)` incl. the 2 `raise_for_status` (httpx) paths; `GeocodeError` carries `(status, code, detail)` so the boundary mapper reproduces EACH verbatim; strengthen `test_geocode_api` to assert exact status+body per failure mode BEFORE the move.
