@@ -32,6 +32,11 @@ async def websocket_endpoint(ws: WebSocket):
     _connections.append(ws)
     logger.info("WebSocket client connected (%d total)", len(_connections))
 
+    # Bind the engine registry from the DI container once per connection.
+    # Engines are read fresh per message so newly-connected devices join the
+    # fan-out, but the registry handle itself never changes.
+    engine_registry = ws.app.state.container.engine_registry
+
     try:
         while True:
             text = await ws.receive_text()
@@ -44,7 +49,6 @@ async def websocket_endpoint(ws: WebSocket):
 
             if msg_type == "joystick_input":
                 data = msg.get("data", {})
-                from main import app_state
                 # Route per-udid if provided; otherwise fan out to all engines.
                 udid = msg.get("udid") or data.get("udid")
                 inp = JoystickInput(
@@ -52,22 +56,21 @@ async def websocket_endpoint(ws: WebSocket):
                     intensity=data.get("intensity", 0),
                 )
                 if udid:
-                    engine = app_state.get_engine(udid)
+                    engine = engine_registry.get_engine(udid)
                     if engine:
                         engine.joystick_move(inp)
                 else:
-                    for engine in list(app_state.simulation_engines.values()):
+                    for engine in list(engine_registry.simulation_engines.values()):
                         engine.joystick_move(inp)
 
             elif msg_type == "joystick_stop":
-                from main import app_state
                 udid = msg.get("udid") or msg.get("data", {}).get("udid")
                 if udid:
-                    engine = app_state.get_engine(udid)
+                    engine = engine_registry.get_engine(udid)
                     if engine:
                         await engine.joystick_stop()
                 else:
-                    for engine in list(app_state.simulation_engines.values()):
+                    for engine in list(engine_registry.simulation_engines.values()):
                         await engine.joystick_stop()
 
     except WebSocketDisconnect:
