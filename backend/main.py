@@ -22,7 +22,7 @@ import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from config import API_HOST, API_PORT, SETTINGS_FILE, DEFAULT_LOCATION, CORS_ORIGINS, CSP_MODE
+from config import API_HOST, API_PORT, DATA_DIR, SETTINGS_FILE, DEFAULT_LOCATION, CORS_ORIGINS, CSP_MODE
 from core.device_manager import DeviceManager
 from infra.device.wifi_tunnel import WifiTunnelRegistry
 from infra.events.ws_event_publisher import WsEventPublisher
@@ -766,6 +766,9 @@ async def _usbmux_presence_watchdog():
 @asynccontextmanager
 async def lifespan(application: FastAPI):
     import asyncio
+    # ── Ensure data directory exists (moved here from config.py import time) ──
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+
     # ── Helper handshake + state migration ──
     # The helper split applies ONLY to macOS packaged builds. The helper
     # runs as root and owns ~/.locwarp/ files left over from any previous

@@ -3,7 +3,8 @@ from typing import TypedDict
 
 # Paths
 DATA_DIR = Path.home() / ".locwarp"
-DATA_DIR.mkdir(exist_ok=True)
+# NOTE: DATA_DIR is created at RUNTIME in the FastAPI lifespan (main.py),
+# not here — config.py must remain import-pure (no filesystem side effects).
 SETTINGS_FILE = DATA_DIR / "settings.json"
 _DEFAULT_BOOKMARKS_FILE = DATA_DIR / "bookmarks.json"
 
