@@ -22,7 +22,7 @@ import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from config import API_HOST, API_PORT, DATA_DIR, SETTINGS_FILE, DEFAULT_LOCATION, CORS_ORIGINS, CSP_MODE
+from config import API_HOST, API_PORT, DATA_DIR, SETTINGS_FILE, DEFAULT_LOCATION, CORS_ORIGINS, DEFAULT_CSP_MODE
 from core.device_manager import DeviceManager
 from infra.device.wifi_tunnel import WifiTunnelRegistry
 from infra.events.ws_event_publisher import WsEventPublisher
@@ -953,9 +953,14 @@ app.state.container = _Container(
 from bootstrap.runtime import set_container as _set_container
 _set_container(app.state.container)
 
+# ── Runtime env reads (env belongs in main.py, not config.py) ──
+_lan_origin = os.getenv("LOCWARP_LAN_ORIGIN", "").strip()
+_cors_origins = [*CORS_ORIGINS, _lan_origin] if _lan_origin else CORS_ORIGINS
+CSP_MODE = os.getenv("LOCWARP_CSP_MODE", DEFAULT_CSP_MODE)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=CORS_ORIGINS,
+    allow_origins=_cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

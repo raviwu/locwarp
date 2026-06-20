@@ -189,22 +189,18 @@ DEFAULT_LOCATION = {"lat": 25.0375, "lng": 121.5637}
 API_HOST = "0.0.0.0"
 API_PORT = 8777
 
-import os as _os
-
 # CORS — explicit allowlist: Electron/loopback UI, Vite dev server, optional LAN origin.
 # phone.html is served same-origin from :8777 over LAN, so the LAN host:port must be
-# covered. Set LOCWARP_LAN_ORIGIN=http://<LAN-IP>:8777 to add it at runtime.
+# covered. Set LOCWARP_LAN_ORIGIN=http://<LAN-IP>:8777 to add it at runtime (in main.py).
 CORS_ORIGINS: list[str] = [
     "http://127.0.0.1:8777",
     "http://localhost:8777",
     "http://127.0.0.1:5173",
     "http://localhost:5173",
 ]
-_lan_origin = _os.getenv("LOCWARP_LAN_ORIGIN", "").strip()
-if _lan_origin:
-    CORS_ORIGINS.append(_lan_origin)
 
 # CSP — "dev" allows Vite HMR + unsafe-inline for dev convenience; "strict"
 # drops unsafe-inline for scripts (requires externalized JS, see boot-splash.ts).
 # Set LOCWARP_CSP_MODE=strict in the packaged/production build.
-CSP_MODE: str = _os.getenv("LOCWARP_CSP_MODE", "dev")
+# The runtime env read happens in main.py; this is the fallback default.
+DEFAULT_CSP_MODE: str = "dev"
