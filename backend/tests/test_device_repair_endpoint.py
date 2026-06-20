@@ -431,7 +431,8 @@ def test_wifi_repair_clears_sticky_user_denied_flag(monkeypatch):
     autopair. Otherwise the watchdog would keep skipping the device even
     after a successful re-pair."""
     from fastapi.testclient import TestClient
-    from main import app, app_state
+    from main import app
+    app_state = app.state.container.engine_registry
 
     udid = "UDID-STICKY"
     # Pre-populate the sticky set as if the user had previously tapped Don't Trust.
@@ -512,7 +513,8 @@ def test_wifi_repair_clear_persists_to_file(monkeypatch, tmp_path):
     """wifi_repair's sticky clear must go through clear_user_denied so the
     removal survives a restart (file updated, not just in-memory set)."""
     from fastapi.testclient import TestClient
-    from main import app, app_state
+    from main import app
+    app_state = app.state.container.engine_registry
 
     udid = "UDID-STICKY-PERSIST"
     dm = app_state.device_manager

@@ -18,7 +18,8 @@ def isolated_sticky_file(tmp_path, monkeypatch):
 @pytest.fixture(autouse=True)
 def clean_dm_state():
     """Tests mutate the app_state singleton; restore it afterwards."""
-    from main import app_state
+    from main import app
+    app_state = app.state.container.engine_registry
     dm = app_state.device_manager
     yield
     dm._connections.clear()
@@ -55,7 +56,8 @@ def test_forget_full_flow_for_connected_usb_device(monkeypatch, tmp_path):
     """Connected USB device: unpair called on the session lockdown, session
     torn down, both record deletes called, sticky marked + persisted,
     200 with status=forgotten."""
-    from main import app, app_state
+    from main import app
+    app_state = app.state.container.engine_registry
 
     udid = "UDID-FORGET-USB"
     dm = app_state.device_manager
@@ -105,7 +107,8 @@ def test_forget_full_flow_for_connected_usb_device(monkeypatch, tmp_path):
 def test_forget_idempotent_for_unknown_udid(monkeypatch, tmp_path):
     """Forget for a udid with no connection and no records: still 200,
     sticky marked. Re-posting is also 200."""
-    from main import app, app_state
+    from main import app
+    app_state = app.state.container.engine_registry
 
     udid = "UDID-NEVER-SEEN"
     deletes: list = []
@@ -123,7 +126,8 @@ def test_forget_idempotent_for_unknown_udid(monkeypatch, tmp_path):
 def test_forget_tears_down_wifi_tunnel(monkeypatch, tmp_path):
     """A udid with a registered TunnelRunner gets the per-udid tunnel
     teardown (runner.stop awaited, registry entry removed)."""
-    from main import app, app_state
+    from main import app
+    app_state = app.state.container.engine_registry
     import api.device as device_mod
 
     udid = "UDID-FORGET-WIFI"
@@ -160,7 +164,8 @@ def test_forget_tears_down_wifi_tunnel(monkeypatch, tmp_path):
 def test_forget_unpair_failure_does_not_block(monkeypatch, tmp_path):
     """lockdown.unpair raising must not abort the flow — records are still
     cleared and the response is still 200."""
-    from main import app, app_state
+    from main import app
+    app_state = app.state.container.engine_registry
 
     udid = "UDID-UNPAIR-FAIL"
     dm = app_state.device_manager
@@ -194,7 +199,8 @@ def test_forget_broadcast_includes_remaining_count(monkeypatch, tmp_path):
     DDI events route through device_manager._events; the forget event still
     routes through api.websocket.broadcast. Capture from BOTH into one list so
     the assertion is source-agnostic."""
-    from main import app, app_state
+    from main import app
+    app_state = app.state.container.engine_registry
 
     udid = "UDID-BCAST"
     dm = app_state.device_manager

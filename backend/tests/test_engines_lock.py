@@ -7,7 +7,8 @@ import pytest
 
 @pytest.mark.asyncio
 async def test_concurrent_create_engine_creates_one(monkeypatch):
-    from main import app_state
+    from main import app
+    app_state = app.state.container.engine_registry
 
     # Fresh state.
     app_state.simulation_engines.clear()
@@ -41,7 +42,8 @@ async def test_concurrent_create_engine_creates_one(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_remove_engine_pops_and_promotes_primary():
-    from main import app_state
+    from main import app
+    app_state = app.state.container.engine_registry
     app_state.simulation_engines.clear()
     app_state.simulation_engines["A"] = object()
     app_state.simulation_engines["B"] = object()
@@ -55,7 +57,8 @@ async def test_remove_engine_pops_and_promotes_primary():
 
 @pytest.mark.asyncio
 async def test_remove_engine_non_primary_keeps_primary():
-    from main import app_state
+    from main import app
+    app_state = app.state.container.engine_registry
     app_state.simulation_engines.clear()
     app_state.simulation_engines["A"] = object()
     app_state.simulation_engines["B"] = object()
@@ -69,7 +72,8 @@ async def test_remove_engine_non_primary_keeps_primary():
 
 @pytest.mark.asyncio
 async def test_remove_engine_last_engine_sets_primary_none():
-    from main import app_state
+    from main import app
+    app_state = app.state.container.engine_registry
     app_state.simulation_engines.clear()
     app_state.simulation_engines["A"] = object()
     app_state._primary_udid = "A"
@@ -80,7 +84,8 @@ async def test_remove_engine_last_engine_sets_primary_none():
 
 @pytest.mark.asyncio
 async def test_remove_engine_unknown_udid_is_noop():
-    from main import app_state
+    from main import app
+    app_state = app.state.container.engine_registry
     app_state.simulation_engines.clear()
     app_state.simulation_engines["A"] = object()
     app_state._primary_udid = "A"
@@ -93,7 +98,8 @@ async def test_remove_engine_unknown_udid_is_noop():
 
 @pytest.mark.asyncio
 async def test_create_force_rebuilds_in_lock(monkeypatch):
-    from main import app_state
+    from main import app
+    app_state = app.state.container.engine_registry
     app_state.simulation_engines.clear()
     app_state._primary_udid = None
 
@@ -118,7 +124,8 @@ async def test_create_force_rebuilds_in_lock(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_concurrent_force_creates_no_double_insert(monkeypatch):
-    from main import app_state
+    from main import app
+    app_state = app.state.container.engine_registry
     app_state.simulation_engines.clear()
     app_state._primary_udid = None
     # Reset the lock so it binds to this test's event loop (previous tests

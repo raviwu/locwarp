@@ -45,7 +45,8 @@ def client():
 def test_connect_drives_di_singleton_and_awaits_dm_connect(client):
     """POST /{udid}/connect resolves get_device_service to the real
     container singleton and awaits dm.connect(udid) + create_engine."""
-    from main import app, app_state
+    from main import app
+    app_state = app.state.container.engine_registry
 
     udid = "UDID-CONNECT-DI"
     dm = app_state.device_manager
@@ -90,7 +91,8 @@ def test_connect_drives_di_singleton_and_awaits_dm_connect(client):
 def test_connect_unsupported_ios_maps_to_400(client):
     """UnsupportedIosVersionError raised inside the service maps to
     HTTP 400 with code=ios_unsupported (the route's documented mapping)."""
-    from main import app_state
+    from main import app
+    app_state = app.state.container.engine_registry
     from core.device_manager import UnsupportedIosVersionError
 
     udid = "UDID-OLD-IOS"
@@ -125,7 +127,8 @@ def test_connect_unsupported_ios_maps_to_400(client):
 def test_connect_generic_error_maps_to_500(client):
     """A non-domain exception from the service maps to HTTP 500 with the
     raw message (the route's catch-all branch)."""
-    from main import app_state
+    from main import app
+    app_state = app.state.container.engine_registry
 
     udid = "UDID-BOOM"
     dm = app_state.device_manager
@@ -152,7 +155,8 @@ def test_connect_generic_error_maps_to_500(client):
 def test_disconnect_drives_di_singleton_and_awaits_dm_disconnect(client):
     """DELETE /{udid}/connect resolves the same singleton and awaits
     dm.disconnect(udid) via the service."""
-    from main import app, app_state
+    from main import app
+    app_state = app.state.container.engine_registry
 
     udid = "UDID-DISCONNECT-DI"
     dm = app_state.device_manager
