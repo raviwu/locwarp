@@ -1,0 +1,6 @@
+[run]
+source = core,services,api,domain,infra,bootstrap,models,config
+
+omit =
+    */tests/*
+    */.venv/*
