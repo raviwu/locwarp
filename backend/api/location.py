@@ -183,7 +183,6 @@ async def _handle_device_lost(exc: Exception, udid: str | None = None) -> "HTTPE
     behaviour, but log a warning.
     """
     from main import app_state
-    from api.websocket import broadcast
     import logging as _logging
     _log = _logging.getLogger("locwarp")
 
@@ -221,12 +220,12 @@ async def _handle_device_lost(exc: Exception, udid: str | None = None) -> "HTTPE
         await app_state.remove_engine(u)
 
     try:
-        await broadcast("device_disconnected", {
+        await dm._events.publish(("device_disconnected", {
             "udids": lost_udids,
             "reason": "device_lost",
             "error": str(exc),
             "remaining_count": len(dm._connections),
-        })
+        }))
     except Exception:
         _log.exception("Failed to broadcast device_disconnected")
 
