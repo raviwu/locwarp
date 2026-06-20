@@ -8,10 +8,11 @@ from typing import Literal
 
 logger = logging.getLogger(__name__)
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
 from pydantic import BaseModel
 
+from api.deps import get_bookmark_manager, get_engine_registry
 from models.schemas import Bookmark, BookmarkCategory, BookmarkMoveRequest
 
 _ISO_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
@@ -58,11 +59,6 @@ def _catalog_path() -> Path:
 router = APIRouter(prefix="/api/bookmarks", tags=["bookmarks"])
 
 
-def _bm():
-    from main import app_state
-    return app_state.bookmark_manager
-
-
 class BookmarkUiState(BaseModel):
     # Both optional: a POST updates only the fields it carries, so the
     # frontend can persist expand and hide independently without one
@@ -74,8 +70,7 @@ class BookmarkUiState(BaseModel):
 # ── Bookmarks ─────────────────────────────────────────────
 
 @router.get("", response_model=dict)
-async def list_bookmarks():
-    bm = _bm()
+async def list_bookmarks(bm=Depends(get_bookmark_manager)):
     return {
         "categories": [c.model_dump() for c in bm.list_categories()],
         "bookmarks": [b.model_dump() for b in bm.list_bookmarks()],
@@ -83,8 +78,7 @@ async def list_bookmarks():
 
 
 @router.post("", response_model=Bookmark)
-async def create_bookmark(bookmark: Bookmark):
-    bm = _bm()
+async def create_bookmark(bookmark: Bookmark, bm=Depends(get_bookmark_manager)):
     return bm.create_bookmark(
         name=bookmark.name,
         lat=bookmark.lat,
@@ -96,8 +90,7 @@ async def create_bookmark(bookmark: Bookmark):
 
 
 @router.put("/{bookmark_id}", response_model=Bookmark)
-async def update_bookmark(bookmark_id: str, bookmark: Bookmark):
-    bm = _bm()
+async def update_bookmark(bookmark_id: str, bookmark: Bookmark, bm=Depends(get_bookmark_manager)):
     updated = bm.update_bookmark(
         bookmark_id,
         name=bookmark.name,
@@ -113,16 +106,14 @@ async def update_bookmark(bookmark_id: str, bookmark: Bookmark):
 
 
 @router.delete("/{bookmark_id}")
-async def delete_bookmark(bookmark_id: str):
-    bm = _bm()
+async def delete_bookmark(bookmark_id: str, bm=Depends(get_bookmark_manager)):
     if not bm.delete_bookmark(bookmark_id):
         raise HTTPException(status_code=404, detail="Bookmark not found")
     return {"status": "deleted"}
 
 
 @router.post("/move")
-async def move_bookmarks(req: BookmarkMoveRequest):
-    bm = _bm()
+async def move_bookmarks(req: BookmarkMoveRequest, bm=Depends(get_bookmark_manager)):
     count = bm.move_bookmarks(req.bookmark_ids, req.target_category_id)
     return {"moved": count}
 
@@ -130,15 +121,13 @@ async def move_bookmarks(req: BookmarkMoveRequest):
 # ── Categories ────────────────────────────────────────────
 
 @router.get("/categories", response_model=list[BookmarkCategory])
-async def list_categories():
-    bm = _bm()
+async def list_categories(bm=Depends(get_bookmark_manager)):
     return bm.list_categories()
 
 
 @router.post("/categories", response_model=BookmarkCategory)
-async def create_category(cat: BookmarkCategory):
+async def create_category(cat: BookmarkCategory, bm=Depends(get_bookmark_manager)):
     _validate_date_range(cat.start_date, cat.end_date)
-    bm = _bm()
     return bm.create_category(
         name=cat.name,
         color=cat.color,
@@ -148,9 +137,8 @@ async def create_category(cat: BookmarkCategory):
 
 
 @router.put("/categories/{cat_id}", response_model=BookmarkCategory)
-async def update_category(cat_id: str, cat: BookmarkCategory):
+async def update_category(cat_id: str, cat: BookmarkCategory, bm=Depends(get_bookmark_manager)):
     _validate_date_range(cat.start_date, cat.end_date)
-    bm = _bm()
     updated = bm.update_category(
         cat_id,
         name=cat.name,
@@ -164,8 +152,7 @@ async def update_category(cat_id: str, cat: BookmarkCategory):
 
 
 @router.delete("/categories/{cat_id}")
-async def delete_category(cat_id: str, cascade: bool = False):
-    bm = _bm()
+async def delete_category(cat_id: str, cascade: bool = False, bm=Depends(get_bookmark_manager)):
     if cat_id == "default":
         raise HTTPException(status_code=400, detail="Cannot delete default category")
     result = bm.delete_category(cat_id, cascade=cascade)
@@ -197,11 +184,11 @@ _FORMAT_TO_FILENAME_EXT = {
 async def export_bookmarks(
     category_id: str | None = None,
     format: ExportFormat = "json",
+    bm=Depends(get_bookmark_manager),
 ):
     import json as _json
     from services import bookmark_export
 
-    bm = _bm()
     store = bm.store
 
     if category_id is not None and not any(c.id == category_id for c in store.categories):
@@ -242,11 +229,10 @@ async def export_bookmarks(
 
 
 @router.post("/import")
-async def import_bookmarks(data: dict):
+async def import_bookmarks(data: dict, bm=Depends(get_bookmark_manager)):
     import json as _json
     from services.bookmark_import import detect_and_import, InvalidImportError
 
-    bm = _bm()
     try:
         result = detect_and_import(bm, _json.dumps(data))
     except InvalidImportError as exc:
@@ -257,27 +243,25 @@ async def import_bookmarks(data: dict):
 # ── UI state (persists per-category collapse in ~/.locwarp/settings.json) ──
 
 @router.get("/ui-state")
-async def get_bookmark_ui_state():
-    from main import app_state
+async def get_bookmark_ui_state(registry=Depends(get_engine_registry)):
     return {
-        "expanded_categories": app_state._bookmark_expanded_categories,
-        "hidden_categories": app_state._bookmark_hidden_categories,
+        "expanded_categories": registry._bookmark_expanded_categories,
+        "hidden_categories": registry._bookmark_hidden_categories,
     }
 
 
 @router.post("/ui-state")
-async def set_bookmark_ui_state(req: BookmarkUiState):
-    from main import app_state
+async def set_bookmark_ui_state(req: BookmarkUiState, registry=Depends(get_engine_registry)):
     # Per-field update: only touch a field the request actually carries.
     if req.expanded_categories is not None:
-        app_state._bookmark_expanded_categories = list(req.expanded_categories)
+        registry._bookmark_expanded_categories = list(req.expanded_categories)
     if req.hidden_categories is not None:
-        app_state._bookmark_hidden_categories = list(req.hidden_categories)
-    app_state.save_settings()
+        registry._bookmark_hidden_categories = list(req.hidden_categories)
+    registry.save_settings()
     return {
         "status": "ok",
-        "expanded_categories": app_state._bookmark_expanded_categories,
-        "hidden_categories": app_state._bookmark_hidden_categories,
+        "expanded_categories": registry._bookmark_expanded_categories,
+        "hidden_categories": registry._bookmark_hidden_categories,
     }
 
 
@@ -302,7 +286,7 @@ async def get_catalog():
 
 
 @router.post("/catalog/sync")
-async def sync_catalog():
+async def sync_catalog(bm=Depends(get_bookmark_manager)):
     """Force-sync the bundled catalog into the local store.
 
     Catalog ids are authoritative — entries previously deleted on this
@@ -321,4 +305,4 @@ async def sync_catalog():
         text = path.read_text(encoding="utf-8")
     except OSError as exc:
         raise HTTPException(status_code=500, detail=f"Catalog unreadable: {exc}")
-    return _bm().import_catalog(text)
+    return bm.import_catalog(text)

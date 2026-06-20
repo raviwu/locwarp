@@ -74,6 +74,7 @@ modules =
     api.system
     api.websocket
 ignore_imports =
+    api.bookmarks -> api.deps
     api.device -> api.deps
     api.cloud_sync -> api.deps
     api.location -> api.deps
