@@ -1,8 +1,16 @@
 """
-Import-linter enforcement test — ENFORCED (Phase 1).
+Import-linter enforcement test — ENFORCED (Phase 1 + Phase 2 report-only).
 
-Runs lint-imports against backend/.importlinter and asserts the
-"Core must not import API" contract is KEPT (exit 0, 0 broken).
+Runs lint-imports against backend/.importlinter checking ONLY the ENFORCED
+contracts one at a time. Report-only contracts (added in Phase 2) are
+intentionally excluded from the returncode-0 assertion — they are expected to
+be BROKEN until the corresponding migration task completes.
+
+Currently enforced:
+  - no-core-imports-api  (Phase 1 Task 8)
+
+Report-only (not checked here until flipped to ENFORCED at Group-1 exit):
+  - no-services-imports-fastapi  (Phase 2 Group 1 Task 2, broken until Task 3)
 
 Tasks 3-4 broke the core->api cycle in device_manager.py.
 This test is the regression gate: any future import of `api.*`
@@ -36,6 +44,9 @@ def test_import_linter_enforced():
     """
     ENFORCED: the no-core->api contract must be KEPT (exit 0, 0 broken).
 
+    Uses --contract to check ONLY the enforced no-core-imports-api contract,
+    excluding report-only contracts that are intentionally still broken.
+
     Asserts:
     1. The linter executed and evaluated the contract (name appears in output).
     2. lint-imports exits with returncode == 0 (0 broken contracts).
@@ -44,7 +55,11 @@ def test_import_linter_enforced():
     will break this test. The full report is printed on failure for diagnostics.
     """
     result = subprocess.run(
-        [str(LINT_IMPORTS), "--config", str(IMPORTLINTER_CFG)],
+        [
+            str(LINT_IMPORTS),
+            "--config", str(IMPORTLINTER_CFG),
+            "--contract", "no-core-imports-api",
+        ],
         capture_output=True,
         text=True,
         cwd=str(BACKEND_DIR),

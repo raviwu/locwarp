@@ -4,6 +4,9 @@ root_packages =
     core
     services
     models
+    domain
+    infra
+include_external_packages = True
 
 # Enforced in Phase 1 (Task 8). The no-core->api contract is KEPT with 0 broken
 # after Tasks 3-4 removed all api.* imports from core/device_manager.py.
@@ -18,3 +21,14 @@ source_modules =
     core
 forbidden_modules =
     api
+
+# Phase 2 (Group 1): services must not import fastapi. REPORT-ONLY here — it is
+# still broken until services/geocoding.py drops `from fastapi import
+# HTTPException` (next task). Flipped to ENFORCED at the end of Group 1.
+[importlinter:contract:no-services-imports-fastapi]
+name = Services must not import FastAPI
+type = forbidden
+source_modules =
+    services
+forbidden_modules =
+    fastapi
