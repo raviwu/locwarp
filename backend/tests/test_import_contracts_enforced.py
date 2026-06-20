@@ -20,10 +20,17 @@ def test_importlinter_config_declares_all_five_contracts():
 
 
 def test_lint_imports_passes_with_zero_broken():
+    # Use the installed console-script (Path(sys.executable).parent / 'lint-imports').
+    # `python -m importlinter.cli lint` has no __main__ guard and exits 0 silently —
+    # it can never detect broken contracts, making any assertion vacuous.
+    lint_imports_bin = Path(sys.executable).parent / "lint-imports"
     proc = subprocess.run(
-        [sys.executable, "-m", "importlinter.cli", "lint"],
+        [str(lint_imports_bin)],
         cwd=str(BACKEND), capture_output=True, text=True)
     combined = proc.stdout + proc.stderr
+    # Self-check: a silent no-op invocation must not masquerade as a pass.
+    assert "Contracts:" in combined, (
+        f"lint-imports produced no 'Contracts:' output — invocation broken?\n{combined!r}"
+    )
     assert proc.returncode == 0, f"lint-imports failed (exit {proc.returncode}):\n{combined}"
-    tail = combined.lower().split("contracts:")[-1]
-    assert "broken" not in tail or "0 broken" in tail, f"a contract is broken:\n{combined}"
+    assert "0 broken" in combined, f"one or more contracts are broken:\n{combined}"
