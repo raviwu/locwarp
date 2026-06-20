@@ -8,10 +8,10 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
 import config as _config
-from api.websocket import broadcast as _ws_broadcast
+from api.deps import get_event_publisher
 from models.schemas import (
     CloudSyncEnableRequest, CloudSyncResource, CloudSyncStatus,
 )
@@ -61,7 +61,7 @@ async def cloud_sync_status():
 
 
 @router.post("/enable", response_model=CloudSyncStatus)
-async def cloud_sync_enable(req: CloudSyncEnableRequest):
+async def cloud_sync_enable(req: CloudSyncEnableRequest, publisher=Depends(get_event_publisher)):
     from main import app_state
     if req.folder:
         parent = Path(req.folder)
@@ -112,14 +112,14 @@ async def cloud_sync_enable(req: CloudSyncEnableRequest):
 
     # Tell every WS-connected client to re-fetch — managers were rebuilt and
     # the in-memory store may differ from what the user last saw.
-    await _ws_broadcast("bookmarks_changed", {"reason": "cloud_sync_enabled"})
-    await _ws_broadcast("routes_changed", {"reason": "cloud_sync_enabled"})
+    await publisher.publish(("bookmarks_changed", {"reason": "cloud_sync_enabled"}))
+    await publisher.publish(("routes_changed", {"reason": "cloud_sync_enabled"}))
 
     return _build_status()
 
 
 @router.post("/disable", response_model=CloudSyncStatus)
-async def cloud_sync_disable():
+async def cloud_sync_disable(publisher=Depends(get_event_publisher)):
     from main import app_state
     if app_state._sync_folder is None:
         return _build_status()
@@ -147,8 +147,8 @@ async def cloud_sync_disable():
     except RuntimeError:
         logger.debug("cloud-sync disable: no running loop; skipping route watcher rebind")
 
-    await _ws_broadcast("bookmarks_changed", {"reason": "cloud_sync_disabled"})
-    await _ws_broadcast("routes_changed", {"reason": "cloud_sync_disabled"})
+    await publisher.publish(("bookmarks_changed", {"reason": "cloud_sync_disabled"}))
+    await publisher.publish(("routes_changed", {"reason": "cloud_sync_disabled"}))
 
     return _build_status()
 
