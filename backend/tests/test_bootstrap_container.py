@@ -50,6 +50,14 @@ def test_container_accepts_injected_singletons():
         tunnel_registry=reg,
         engines_lock=lock,
         engine_registry=eng_reg,
+        cooldown_timer=object(),
+        coord_formatter=object(),
+        helper_client=object(),
+        geocoding_service=object(),
+        route_service=object(),
+        gpx_service=object(),
+        bookmark_manager=None,
+        route_manager=None,
     )
 
     assert c.device_manager is dm
@@ -104,3 +112,51 @@ def test_container_device_service_is_wired():
     assert isinstance(svc, DeviceService)
     # Identity invariant: the service's dm is the same singleton DeviceManager.
     assert svc._dm is main.app_state.device_manager
+
+
+def test_container_stores_engine_registry():
+    lock = asyncio.Lock()
+
+    class _Fake:
+        pass
+
+    eng_reg = _Fake()
+    c = Container(
+        device_manager=_Fake(), event_publisher=_Fake(), tunnel_registry=_Fake(),
+        engines_lock=lock, engine_registry=eng_reg,
+        cooldown_timer=_Fake(), coord_formatter=_Fake(), helper_client=_Fake(),
+        geocoding_service=_Fake(), route_service=_Fake(), gpx_service=_Fake(),
+        bookmark_manager=None, route_manager=None,
+    )
+    assert c.engine_registry is eng_reg
+
+
+def test_container_real_app_engine_registry_identity():
+    import main
+    assert main.app.state.container.engine_registry is main.app_state
+
+
+def test_container_real_app_service_singletons_identity():
+    import main
+    c = main.app.state.container
+    assert c.cooldown_timer is main.app_state.cooldown_timer
+    assert c.coord_formatter is main.app_state.coord_formatter
+    assert c.helper_client is main.helper_client
+
+
+def test_container_real_app_lazy_managers_track_app_state():
+    import main
+    c = main.app.state.container
+    assert c.bookmark_manager is main.app_state.bookmark_manager
+    assert c.route_manager is main.app_state.route_manager
+
+
+def test_container_real_app_geocode_route_gpx_singletons_present():
+    import main
+    from services.geocoding import GeocodingService
+    from services.route_service import RouteService
+    from services.gpx_service import GpxService
+    c = main.app.state.container
+    assert isinstance(c.geocoding_service, GeocodingService)
+    assert isinstance(c.route_service, RouteService)
+    assert isinstance(c.gpx_service, GpxService)

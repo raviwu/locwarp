@@ -32,6 +32,9 @@ from services.route_store import RouteManager
 from services.coord_format import CoordinateFormatter
 from services.reconnect import ReconnectManager
 from services.tunnel_helper_client import TunnelHelperClient, HelperError
+from services.geocoding import GeocodingService
+from services.route_service import RouteService
+from services.gpx_service import GpxService
 
 # Configure logging — console + rotating file.
 #
@@ -979,6 +982,14 @@ app.state.container = _Container(
     tunnel_registry=app_state.device_manager._tunnels,
     engines_lock=app_state._engines_lock,
     engine_registry=app_state,
+    cooldown_timer=app_state.cooldown_timer,
+    coord_formatter=app_state.coord_formatter,
+    helper_client=helper_client,
+    geocoding_service=GeocodingService(),
+    route_service=RouteService(),
+    gpx_service=GpxService(),
+    bookmark_manager=app_state.bookmark_manager,
+    route_manager=app_state.route_manager,
 )
 
 app.add_middleware(

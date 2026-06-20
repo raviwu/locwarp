@@ -29,20 +29,53 @@ class Container:
         tunnel_registry,
         engines_lock: asyncio.Lock,
         engine_registry,
+        cooldown_timer,
+        coord_formatter,
+        helper_client,
+        geocoding_service,
+        route_service,
+        gpx_service,
+        bookmark_manager,
+        route_manager,
     ) -> None:
         self.clock = MonotonicClock()
         self.device_manager = device_manager
         self.event_publisher = event_publisher
         self.tunnel_registry = tunnel_registry
-        # The SAME lock AppState uses for create_engine_for_device and the
-        # watchdog pop/promote — one lock, shared by reference.
         self._engines_lock = engines_lock
+        # engine_registry (AppState) is now a first-class attribute so api/deps.py
+        # can inject it into endpoints — not just forwarded into DeviceService.
+        self.engine_registry = engine_registry
+        self.cooldown_timer = cooldown_timer
+        self.coord_formatter = coord_formatter
+        self.helper_client = helper_client
+        self.geocoding_service = geocoding_service
+        self.route_service = route_service
+        self.gpx_service = gpx_service
+        # bookmark_manager / route_manager are stored for the fallback (unit tests
+        # that pass a fake engine_registry without these attrs). In production the
+        # properties below delegate live to engine_registry so they always reflect
+        # post-load_state() values.
+        self._bookmark_manager = bookmark_manager
+        self._route_manager = route_manager
 
-        # DeviceService is constructed here, after device_manager is available.
-        # engine_registry (AppState) is injected by main.py — no self-import.
         from services.device_service import DeviceService
         self.device_service = DeviceService(
             device_manager=self.device_manager,
             tunnel_registry=self.tunnel_registry,
             engine_registry=engine_registry,
         )
+
+    @property
+    def bookmark_manager(self):
+        """Live read from engine_registry so post-load_state() manager is returned."""
+        if self.engine_registry is not None and hasattr(self.engine_registry, "bookmark_manager"):
+            return self.engine_registry.bookmark_manager
+        return self._bookmark_manager
+
+    @property
+    def route_manager(self):
+        """Live read from engine_registry so post-load_state() manager is returned."""
+        if self.engine_registry is not None and hasattr(self.engine_registry, "route_manager"):
+            return self.engine_registry.route_manager
+        return self._route_manager
