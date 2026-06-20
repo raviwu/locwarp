@@ -58,3 +58,7 @@ def get_route_manager(request: Request):
     if mgr is None:
         raise HTTPException(status_code=503, detail="Route manager not ready")
     return mgr
+
+
+def get_event_publisher(request: Request):
+    return request.app.state.container.event_publisher
