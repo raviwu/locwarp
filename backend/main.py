@@ -339,7 +339,7 @@ class AppState:
             return self.simulation_engine
         return self.simulation_engines.get(udid)
 
-    async def create_engine_for_device(self, udid: str):
+    async def create_engine_for_device(self, udid: str, force: bool = False):
         """Create a SimulationEngine for the connected device.
 
         Idempotent: if an engine already exists for this udid, we
@@ -355,11 +355,20 @@ class AppState:
 
         _engines_lock serializes the check→await→assign so two concurrent
         calls for the same udid cannot both pass the guard.
+
+        When ``force=True`` an existing engine for the udid is dropped
+        **inside the lock** before rebuild — replaces the unlocked
+        pop()-then-create() two-step at api callsites so a concurrent
+        caller cannot race the registry mutation.
         """
         async with self._engines_lock:
             if udid in self.simulation_engines:
-                logger.debug("Simulation engine already exists for %s; preserving current_position", udid)
-                return
+                if not force:
+                    logger.debug("Simulation engine already exists for %s; preserving current_position", udid)
+                    return
+                # force: drop the stale engine INSIDE the lock before rebuild so
+                # there is no unlocked pop->create window for a concurrent caller.
+                self.simulation_engines.pop(udid, None)
             from core.simulation_engine import SimulationEngine
             from api.websocket import broadcast
             from infra.device.location_service_port import LocationServiceDevicePort

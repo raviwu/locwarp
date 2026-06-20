@@ -89,3 +89,56 @@ async def test_remove_engine_unknown_udid_is_noop():
     assert app_state._primary_udid == "A"
     app_state.simulation_engines.clear()
     app_state._primary_udid = None
+
+
+@pytest.mark.asyncio
+async def test_create_force_rebuilds_in_lock(monkeypatch):
+    from main import app_state
+    app_state.simulation_engines.clear()
+    app_state._primary_udid = None
+
+    class FakeLocService:
+        async def set(self, lat, lng):
+            pass
+
+    async def fake_get_location_service(udid):
+        return FakeLocService()
+
+    monkeypatch.setattr(app_state.device_manager, "get_location_service", fake_get_location_service)
+    udid = "FORCE-UDID"
+    await app_state.create_engine_for_device(udid)
+    first = app_state.simulation_engines[udid]
+    await app_state.create_engine_for_device(udid, force=True)
+    second = app_state.simulation_engines[udid]
+    assert second is not first
+    assert list(app_state.simulation_engines.keys()).count(udid) == 1
+    app_state.simulation_engines.clear()
+    app_state._primary_udid = None
+
+
+@pytest.mark.asyncio
+async def test_concurrent_force_creates_no_double_insert(monkeypatch):
+    from main import app_state
+    app_state.simulation_engines.clear()
+    app_state._primary_udid = None
+    # Reset the lock so it binds to this test's event loop (previous tests
+    # that acquired _engines_lock bind it to a different per-test loop).
+    app_state._engines_lock = asyncio.Lock()
+
+    class FakeLocService:
+        async def set(self, lat, lng):
+            pass
+
+    async def slow_get_location_service(udid):
+        await asyncio.sleep(0)
+        return FakeLocService()
+
+    monkeypatch.setattr(app_state.device_manager, "get_location_service", slow_get_location_service)
+    udid = "FORCE-RACE-UDID"
+    await asyncio.gather(
+        app_state.create_engine_for_device(udid, force=True),
+        app_state.create_engine_for_device(udid, force=True),
+    )
+    assert list(app_state.simulation_engines.keys()).count(udid) == 1
+    app_state.simulation_engines.clear()
+    app_state._primary_udid = None
