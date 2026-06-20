@@ -174,8 +174,12 @@ async def test_nominatim_raise_for_status_propagates(monkeypatch, svc):
     exc = httpx.HTTPStatusError("boom", request=None, response=None)
     resp = _FakeResponse(raise_exc=exc)
     _patch_client(monkeypatch, resp)
-    with pytest.raises(httpx.HTTPStatusError):
+    with pytest.raises(httpx.HTTPStatusError) as ei:
         await svc.search("anything")
+    # The httpx error is NOT remapped to a domain/HTTP error in the service
+    # layer — it propagates verbatim (mapped at the api boundary instead).
+    assert ei.value is exc
+    assert str(ei.value) == "boom"
 
 
 # ---------------------------------------------------------------------------
@@ -395,8 +399,10 @@ async def test_reverse_raise_for_status_propagates(monkeypatch, svc):
     exc = httpx.HTTPStatusError("boom", request=None, response=None)
     resp = _FakeResponse(raise_exc=exc)
     _patch_client(monkeypatch, resp)
-    with pytest.raises(httpx.HTTPStatusError):
+    with pytest.raises(httpx.HTTPStatusError) as ei:
         await svc.reverse(1.0, 2.0)
+    assert ei.value is exc
+    assert str(ei.value) == "boom"
 
 
 # ---------------------------------------------------------------------------
