@@ -91,3 +91,22 @@ ignore_imports =
     api.phone_control -> api.deps
     api.route -> api.deps
 unmatched_ignore_imports_alerting = none
+
+# Phase 2 (Group 5b, Task 30): ENFORCED. The global cycle-gate — api/* must
+# not import the composition root (main.py). After every Group 5a/5b sweep
+# removed all `from main import ...` sites, this forbidden contract locks the
+# invariant so the api->main->api cycle can never reform. KEPT, 0 broken.
+#
+# NOTE: `main` is NOT added to root_packages. main.py is a bare top-level
+# MODULE, not a package (no __init__.py), and grimp's packagefinder raises
+# NotATopLevelModule for bare modules — adding it to root_packages crashes
+# lint-imports (exit 1, no contracts analyzed). With include_external_packages
+# = True, grimp still resolves `main` as a forbidden external target reachable
+# from the scanned api/* sources, so the contract is fully enforced.
+[importlinter:contract:no-api-imports-main]
+name = API must not import main
+type = forbidden
+source_modules =
+    api
+forbidden_modules =
+    main

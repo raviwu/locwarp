@@ -118,3 +118,27 @@ def test_no_api_imports_api_contract_enforced():
         "lint-imports reported broken contracts — the no-api-imports-api contract "
         "(or another contract) is BROKEN. Check the report above."
     )
+
+
+def test_no_api_imports_main_contract_present_and_kept():
+    """The Phase-2 cycle-gate: api/* must not import the composition root."""
+    result = subprocess.run(
+        [str(LINT_IMPORTS), "--config", str(IMPORTLINTER_CFG)],
+        capture_output=True, text=True, cwd=str(BACKEND_DIR))
+    report = result.stdout + result.stderr
+    assert "API must not import main" in report, (
+        f"Expected the no-api-imports-main contract in output. Got:\n{report}")
+    assert result.returncode == 0, (
+        "no-api-imports-main is BROKEN — a `from main import ...` survives in "
+        f"the api package. Report:\n{report}")
+
+
+def test_zero_from_main_import_under_api():
+    """Defense-in-depth grep gate: no `from main import` anywhere in api/."""
+    api_dir = BACKEND_DIR / "api"
+    offenders = []
+    for path in api_dir.rglob("*.py"):
+        for i, line in enumerate(path.read_text().splitlines(), start=1):
+            if "from main import" in line:
+                offenders.append(f"{path.relative_to(BACKEND_DIR)}:{i}: {line.strip()}")
+    assert not offenders, "Residual `from main import` in api/:\n" + "\n".join(offenders)
