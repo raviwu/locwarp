@@ -17,9 +17,9 @@ from __future__ import annotations
 import logging
 
 import httpx
-from fastapi import HTTPException
 
 from config import NOMINATIM_BASE_URL, NOMINATIM_USER_AGENT
+from domain.errors import GeocodeError
 from models.schemas import GeocodingResult
 
 logger = logging.getLogger(__name__)
@@ -51,8 +51,9 @@ class GeocodingService:
         """Forward geocode: address or place name -> coordinates."""
         if provider == "google":
             if not google_key:
-                raise HTTPException(
+                raise GeocodeError(
                     status_code=400,
+                    code="google_missing_key",
                     detail="provider=google requires google_key",
                 )
             return await self._search_google(query, limit, google_key)
@@ -107,8 +108,9 @@ class GeocodingService:
             resp = await client.get(_GOOGLE_GEOCODE_URL, params=params)
         if resp.status_code != 200:
             text = resp.text[:200] if resp.text else ""
-            raise HTTPException(
+            raise GeocodeError(
                 status_code=502,
+                code="google_http",
                 detail=f"Google geocode HTTP {resp.status_code}: {text}",
             )
         data = resp.json()
@@ -118,8 +120,9 @@ class GeocodingService:
             # like REQUEST_DENIED (key invalid / API not enabled) and
             # OVER_QUERY_LIMIT (free tier exhausted).
             err_msg = data.get("error_message") or status or "unknown error"
-            raise HTTPException(
+            raise GeocodeError(
                 status_code=502,
+                code="google_status",
                 detail=f"Google geocode {status}: {err_msg}",
             )
 

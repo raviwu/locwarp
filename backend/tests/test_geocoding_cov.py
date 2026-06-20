@@ -18,6 +18,7 @@ import pytest
 from fastapi import HTTPException
 
 import services.geocoding as geocoding
+from domain.errors import GeocodeError
 from services.geocoding import GeocodingService, _pick_short_name
 
 
@@ -87,11 +88,11 @@ def svc():
 
 
 @pytest.mark.asyncio
-async def test_search_google_without_key_raises_http_400(svc):
-    with pytest.raises(HTTPException) as ei:
+async def test_search_google_without_key_raises_geocode_error_400(svc):
+    with pytest.raises(GeocodeError) as ei:
         await svc.search("anywhere", provider="google", google_key=None)
     assert ei.value.status_code == 400
-    assert "google_key" in ei.value.detail
+    assert ei.value.detail == "provider=google requires google_key"
 
 
 @pytest.mark.asyncio
@@ -283,18 +284,17 @@ async def test_google_missing_results_key_returns_empty(monkeypatch, svc):
 
 
 @pytest.mark.asyncio
-async def test_google_non_200_raises_http_502(monkeypatch, svc):
+async def test_google_non_200_raises_geocode_error_502(monkeypatch, svc):
     resp = _FakeResponse(json_data=None, status_code=403, text="Forbidden body text")
     _patch_client(monkeypatch, resp)
-    with pytest.raises(HTTPException) as ei:
+    with pytest.raises(GeocodeError) as ei:
         await svc.search("x", provider="google", google_key="KEY")
     assert ei.value.status_code == 502
-    assert "Google geocode HTTP 403" in ei.value.detail
-    assert "Forbidden body text" in ei.value.detail
+    assert ei.value.detail == "Google geocode HTTP 403: Forbidden body text"
 
 
 @pytest.mark.asyncio
-async def test_google_error_status_raises_http_502_with_error_message(monkeypatch, svc):
+async def test_google_error_status_raises_geocode_error_502_with_error_message(monkeypatch, svc):
     resp = _FakeResponse(
         json_data={
             "status": "REQUEST_DENIED",
@@ -302,11 +302,10 @@ async def test_google_error_status_raises_http_502_with_error_message(monkeypatc
         }
     )
     _patch_client(monkeypatch, resp)
-    with pytest.raises(HTTPException) as ei:
+    with pytest.raises(GeocodeError) as ei:
         await svc.search("x", provider="google", google_key="BAD")
     assert ei.value.status_code == 502
-    assert "REQUEST_DENIED" in ei.value.detail
-    assert "The provided API key is invalid." in ei.value.detail
+    assert ei.value.detail == "Google geocode REQUEST_DENIED: The provided API key is invalid."
 
 
 @pytest.mark.asyncio
@@ -315,11 +314,10 @@ async def test_google_error_status_without_error_message_falls_back_to_status(
 ):
     resp = _FakeResponse(json_data={"status": "OVER_QUERY_LIMIT"})
     _patch_client(monkeypatch, resp)
-    with pytest.raises(HTTPException) as ei:
+    with pytest.raises(GeocodeError) as ei:
         await svc.search("x", provider="google", google_key="KEY")
     assert ei.value.status_code == 502
-    # error_message absent -> detail uses status twice (status: status).
-    assert "OVER_QUERY_LIMIT" in ei.value.detail
+    assert ei.value.detail == "Google geocode OVER_QUERY_LIMIT: OVER_QUERY_LIMIT"
 
 
 # ---------------------------------------------------------------------------
