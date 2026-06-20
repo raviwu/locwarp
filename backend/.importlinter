@@ -22,9 +22,9 @@ source_modules =
 forbidden_modules =
     api
 
-# Phase 2 (Group 1): services must not import fastapi. REPORT-ONLY here — it is
-# still broken until services/geocoding.py drops `from fastapi import
-# HTTPException` (next task). Flipped to ENFORCED at the end of Group 1.
+# Phase 2 (Group 1): services must not import fastapi. ENFORCED at end of
+# Group 1 Task 4 — services/geocoding.py raises GeocodeError instead of
+# HTTPException; the api boundary re-maps it. Contract is KEPT (0 broken).
 [importlinter:contract:no-services-imports-fastapi]
 name = Services must not import FastAPI
 type = forbidden

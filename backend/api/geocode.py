@@ -13,6 +13,7 @@ from models.schemas import (
     TimezoneInfo,
 )
 from services import geo_offline
+from domain.errors import GeocodeError
 from services.geocoding import GeocodingService
 from services.geo_extras import (
     _HAVERSINE_PROFILE_SPEED_MPS,
@@ -42,7 +43,10 @@ async def search_address(
     ``google`` (requires `google_key`, 10k events/month free tier on
     Google's Essentials plan).
     """
-    return await geocoding_service.search(q, limit, provider, google_key)
+    try:
+        return await geocoding_service.search(q, limit, provider, google_key)
+    except GeocodeError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
 
 @router.get("/reverse", response_model=GeocodingResult | None)
