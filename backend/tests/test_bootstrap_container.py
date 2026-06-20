@@ -160,3 +160,12 @@ def test_container_real_app_geocode_route_gpx_singletons_present():
     assert isinstance(c.geocoding_service, GeocodingService)
     assert isinstance(c.route_service, RouteService)
     assert isinstance(c.gpx_service, GpxService)
+
+
+def test_importlinter_root_packages_include_infra():
+    import configparser
+    from pathlib import Path
+    cfg = configparser.ConfigParser()
+    cfg.read(Path(__file__).resolve().parent.parent / ".importlinter")
+    roots = cfg.get("importlinter", "root_packages").split()
+    assert "infra" in roots
