@@ -109,9 +109,16 @@ MAX_DEVICES = 3
 # facade's `.task` resolves when either stop() is called locally or the
 # helper drops the tunnel (detected via list_tunnels poll), which is
 # what _per_tunnel_watchdog awaits to trigger auto-restart.
-_tunnels: dict[str, TunnelRunner] = {}
-_tunnel_watchdogs: dict[str, asyncio.Task] = {}
-_tunnels_lock = asyncio.Lock()
+# The registry state now lives in infra/device/tunnel_state.py so the
+# WifiTunnelRegistry can read it without importing api (killing the last
+# infra->api edge). These module aliases keep api.device._tunnels et al.
+# pointing at the SAME objects, so every mutation/read site below — and
+# every test that does device_mod._tunnels.clear() — works unchanged.
+from infra.device.tunnel_state import (  # noqa: E402
+    _tunnels,
+    _tunnel_watchdogs,
+    _tunnels_lock,
+)
 
 
 def _classify_repair_error(msg: str) -> str:

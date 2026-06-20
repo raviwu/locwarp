@@ -13,8 +13,7 @@ from __future__ import annotations
 
 class WifiTunnelRegistry:
     def get_runner(self, udid: str):
-        from api.device import _tunnels
-
+        from infra.device.tunnel_state import _tunnels
         return _tunnels.get(udid)
 
     def is_running(self, udid: str) -> bool:
