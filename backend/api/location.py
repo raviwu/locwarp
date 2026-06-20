@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from services.location_service import DeviceLostError
@@ -20,17 +20,23 @@ from models.schemas import (
     CoordinateFormat,
     GoldDittoCycleRequest,
 )
+from api.deps import (
+    get_engine_registry,
+    get_cooldown_timer,
+    get_coord_formatter,
+    _engine_registry_or_main,
+)
 
 router = APIRouter(prefix="/api/location", tags=["location"])
 
 
-async def _engine(udid: str | None = None):
+async def _engine(udid: str | None = None, registry=None):
     """Return the active SimulationEngine for *udid* (or the primary one if
     unspecified), lazily rebuilding when the slot is empty. On the first
     attempt we just rebuild the engine; if that fails we force a full
     disconnect + reconnect + engine rebuild (covers the common iOS 17+ case
     where the RSD tunnel is alive but the DVT channel has silently gone stale)."""
-    from main import app_state
+    app_state = _engine_registry_or_main(registry)
     import logging as _logging
     _log = _logging.getLogger("locwarp")
 
@@ -138,7 +144,7 @@ def _device_lost_message(exc: Exception) -> tuple[str, str]:
     )
 
 
-async def _try_with_recovery_retry(udid: str | None, op):
+async def _try_with_recovery_retry(udid: str | None, op, registry=None):
     """Run *op* (a 0-arg async callable). On DeviceLostError, attempt
     one ``device_manager.full_reconnect(udid)``; if that succeeds, retry
     *op* once. Caller is responsible for re-resolving the engine inside
@@ -154,7 +160,7 @@ async def _try_with_recovery_retry(udid: str | None, op):
     except DeviceLostError:
         if not udid:
             raise
-        from main import app_state
+        app_state = _engine_registry_or_main(registry)
         import logging as _logging
         _log = _logging.getLogger("locwarp")
         _log.warning(
@@ -172,7 +178,7 @@ async def _try_with_recovery_retry(udid: str | None, op):
         return await op()
 
 
-async def _handle_device_lost(exc: Exception, udid: str | None = None) -> "HTTPException":
+async def _handle_device_lost(exc: Exception, udid: str | None = None, registry=None) -> "HTTPException":
     """Clean up after a DeviceLostError for the SPECIFIC udid that failed.
 
     Previous behaviour disconnected every currently-connected device, which
@@ -182,7 +188,7 @@ async def _handle_device_lost(exc: Exception, udid: str | None = None) -> "HTTPE
     yet updated), we fall back to disconnecting all as before to preserve
     behaviour, but log a warning.
     """
-    from main import app_state
+    app_state = _engine_registry_or_main(registry)
     import logging as _logging
     _log = _logging.getLogger("locwarp")
 
@@ -240,14 +246,12 @@ async def _handle_device_lost(exc: Exception, udid: str | None = None) -> "HTTPE
     )
 
 
-def _cooldown():
-    from main import app_state
-    return app_state.cooldown_timer
+def _cooldown(registry):
+    return registry.cooldown_timer
 
 
-def _coord_fmt():
-    from main import app_state
-    return app_state.coord_formatter
+def _coord_fmt(registry):
+    return registry.coord_formatter
 
 
 # ── Simulation modes ─────────────────────────────────────
@@ -261,12 +265,12 @@ class ApplySpeedRequest(BaseModel):
 
 
 @router.post("/apply-speed")
-async def apply_speed(req: ApplySpeedRequest):
+async def apply_speed(req: ApplySpeedRequest, registry=Depends(get_engine_registry)):
     """Hot-swap the active navigation's speed profile. The current
     _move_along_route loop re-interpolates from the current position
     with the new speed; already-completed progress is kept."""
     from config import resolve_speed_profile
-    engine = await _engine(getattr(req, "udid", None) if 'req' in dir() else None)
+    engine = await _engine(getattr(req, "udid", None) if 'req' in dir() else None, registry)
     profile = resolve_speed_profile(
         req.mode.value,
         speed_kmh=req.speed_kmh,
@@ -284,15 +288,14 @@ async def apply_speed(req: ApplySpeedRequest):
 
 
 @router.post("/teleport")
-async def teleport(req: TeleportRequest):
-    engine = await _engine(getattr(req, "udid", None) if 'req' in dir() else None)
-    cooldown = _cooldown()
+async def teleport(req: TeleportRequest, registry=Depends(get_engine_registry)):
+    engine = await _engine(getattr(req, "udid", None) if 'req' in dir() else None, registry)
+    cooldown = _cooldown(registry)
 
     # Group mode (2+ engines): bypass cooldown entirely. The UI also locks the
     # toggle off, but the saved cooldown_enabled value is preserved so single-
     # device mode restores the user's preference automatically.
-    from main import app_state as _app_state
-    dual_mode = len(_app_state.simulation_engines) >= 2
+    dual_mode = len(registry.simulation_engines) >= 2
 
     # Enforce cooldown server-side: if enabled and currently active,
     # refuse the teleport so API clients cannot bypass the UI guard.
@@ -309,20 +312,20 @@ async def teleport(req: TeleportRequest):
     old_pos = engine.current_position
     # Resolve which udid this action was targeting so device_lost cleanup
     # can be scoped to JUST that device in dual-device mode.
-    action_udid = getattr(req, "udid", None) or _app_state._primary_udid
+    action_udid = getattr(req, "udid", None) or registry._primary_udid
 
     # The op closure re-resolves the engine each call: full_reconnect
     # rebuilds it, so a captured reference would point at the dead one.
     async def _do_teleport():
-        eng = await _engine(action_udid)
+        eng = await _engine(action_udid, registry)
         await eng.teleport(req.lat, req.lng)
 
     try:
-        await _try_with_recovery_retry(action_udid, _do_teleport)
+        await _try_with_recovery_retry(action_udid, _do_teleport, registry)
     except HTTPException:
         raise
     except DeviceLostError as e:
-        raise (await _handle_device_lost(e, action_udid))
+        raise (await _handle_device_lost(e, action_udid, registry))
     except Exception as e:
         import traceback, logging
         logging.getLogger("locwarp").error("Teleport failed:\n%s", traceback.format_exc())
@@ -331,7 +334,7 @@ async def teleport(req: TeleportRequest):
         cause = e
         while cause is not None:
             if isinstance(cause, DeviceLostError):
-                raise (await _handle_device_lost(cause, action_udid))
+                raise (await _handle_device_lost(cause, action_udid, registry))
             cause = cause.__cause__
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -368,8 +371,8 @@ def _spawn(coro):
 
 
 @router.post("/navigate")
-async def navigate(req: NavigateRequest):
-    engine = await _engine(getattr(req, "udid", None) if 'req' in dir() else None)
+async def navigate(req: NavigateRequest, registry=Depends(get_engine_registry)):
+    engine = await _engine(getattr(req, "udid", None) if 'req' in dir() else None, registry)
     _spawn(engine.navigate(
         Coordinate(lat=req.lat, lng=req.lng), req.mode,
         speed_kmh=req.speed_kmh,
@@ -381,8 +384,8 @@ async def navigate(req: NavigateRequest):
 
 
 @router.post("/loop")
-async def loop(req: LoopRequest):
-    engine = await _engine(getattr(req, "udid", None) if 'req' in dir() else None)
+async def loop(req: LoopRequest, registry=Depends(get_engine_registry)):
+    engine = await _engine(getattr(req, "udid", None) if 'req' in dir() else None, registry)
     _spawn(engine.start_loop(
         req.waypoints, req.mode,
         speed_kmh=req.speed_kmh,
@@ -397,8 +400,8 @@ async def loop(req: LoopRequest):
 
 
 @router.post("/multistop")
-async def multi_stop(req: MultiStopRequest):
-    engine = await _engine(getattr(req, "udid", None) if 'req' in dir() else None)
+async def multi_stop(req: MultiStopRequest, registry=Depends(get_engine_registry)):
+    engine = await _engine(getattr(req, "udid", None) if 'req' in dir() else None, registry)
     _spawn(engine.multi_stop(
         req.waypoints, req.mode, req.stop_duration, req.loop,
         speed_kmh=req.speed_kmh,
@@ -419,11 +422,11 @@ class InsertWaypointRequest(BaseModel):
 
 
 @router.post("/insert_waypoint")
-async def insert_waypoint(req: InsertWaypointRequest):
+async def insert_waypoint(req: InsertWaypointRequest, registry=Depends(get_engine_registry)):
     """Insert a new waypoint into the running multi-stop / loop route at
     after_index+1 without requiring the user to Stop+Start. See
     SimulationEngine.live_insert_waypoint for the splice / resume contract."""
-    engine = await _engine(req.udid)
+    engine = await _engine(req.udid, registry)
     try:
         result = await engine.live_insert_waypoint(req.after_index, req.lat, req.lng)
     except Exception as e:
@@ -432,8 +435,8 @@ async def insert_waypoint(req: InsertWaypointRequest):
 
 
 @router.post("/randomwalk")
-async def random_walk(req: RandomWalkRequest):
-    engine = await _engine(getattr(req, "udid", None) if 'req' in dir() else None)
+async def random_walk(req: RandomWalkRequest, registry=Depends(get_engine_registry)):
+    engine = await _engine(getattr(req, "udid", None) if 'req' in dir() else None, registry)
     _spawn(engine.random_walk(
         req.center, req.radius_m, req.mode,
         speed_kmh=req.speed_kmh,
@@ -447,8 +450,8 @@ async def random_walk(req: RandomWalkRequest):
 
 
 @router.post("/joystick/start")
-async def joystick_start(req: JoystickStartRequest):
-    engine = await _engine(getattr(req, "udid", None) if 'req' in dir() else None)
+async def joystick_start(req: JoystickStartRequest, registry=Depends(get_engine_registry)):
+    engine = await _engine(getattr(req, "udid", None) if 'req' in dir() else None, registry)
     try:
         await engine.joystick_start(req.mode)
     except Exception as e:
@@ -457,46 +460,45 @@ async def joystick_start(req: JoystickStartRequest):
 
 
 @router.post("/joystick/stop")
-async def joystick_stop(udid: str | None = None):
-    engine = await _engine(udid)
+async def joystick_stop(udid: str | None = None, registry=Depends(get_engine_registry)):
+    engine = await _engine(udid, registry)
     await engine.joystick_stop()
     return {"status": "stopped"}
 
 
 @router.post("/pause")
-async def pause(udid: str | None = None):
-    engine = await _engine(udid)
+async def pause(udid: str | None = None, registry=Depends(get_engine_registry)):
+    engine = await _engine(udid, registry)
     await engine.pause()
     return {"status": "paused"}
 
 
 @router.post("/resume")
-async def resume(udid: str | None = None):
-    engine = await _engine(udid)
+async def resume(udid: str | None = None, registry=Depends(get_engine_registry)):
+    engine = await _engine(udid, registry)
     await engine.resume()
     return {"status": "resumed"}
 
 
 @router.post("/restore")
-async def restore(udid: str | None = None):
-    from main import app_state as _app_state
-    action_udid = udid or _app_state._primary_udid
+async def restore(udid: str | None = None, registry=Depends(get_engine_registry)):
+    action_udid = udid or registry._primary_udid
 
     async def _do_restore():
-        eng = await _engine(action_udid)
+        eng = await _engine(action_udid, registry)
         await eng.restore()
 
     try:
-        await _try_with_recovery_retry(action_udid, _do_restore)
+        await _try_with_recovery_retry(action_udid, _do_restore, registry)
     except DeviceLostError as e:
-        raise (await _handle_device_lost(e, action_udid))
+        raise (await _handle_device_lost(e, action_udid, registry))
     return {"status": "restored"}
 
 
 @router.post("/goldditto/cycle")
-async def goldditto_cycle(req: GoldDittoCycleRequest):
+async def goldditto_cycle(req: GoldDittoCycleRequest, registry=Depends(get_engine_registry)):
     """拉金盆 cycle: teleport → asyncio.sleep(wait) → restore, atomic."""
-    engine = await _engine(req.udid)
+    engine = await _engine(req.udid, registry)
     try:
         result = await engine.goldditto_cycle(
             target=req.target,
@@ -511,10 +513,8 @@ async def goldditto_cycle(req: GoldDittoCycleRequest):
                     "message": "拉金盆 cycle already in progress, wait for it to finish"},
         )
     except DeviceLostError as e:
-        action_udid = req.udid
-        from main import app_state as _app_state
-        action_udid = action_udid or _app_state._primary_udid
-        raise (await _handle_device_lost(e, action_udid))
+        action_udid = req.udid or registry._primary_udid
+        raise (await _handle_device_lost(e, action_udid, registry))
     except Exception as e:
         import logging, traceback
         logging.getLogger("locwarp").error("Gold Ditto cycle failed:\n%s", traceback.format_exc())
@@ -523,29 +523,28 @@ async def goldditto_cycle(req: GoldDittoCycleRequest):
 
 
 @router.post("/stop")
-async def stop_movement(udid: str | None = None):
+async def stop_movement(udid: str | None = None, registry=Depends(get_engine_registry)):
     """Stop active movement without clearing the simulated location.
     Keeps the device at its last reported position instead of restoring
     real GPS. restore() is a separate endpoint for that."""
-    engine = await _engine(udid)
+    engine = await _engine(udid, registry)
     await engine.stop()
     return {"status": "stopped"}
 
 
 @router.delete("/simulation")
-async def stop_simulation(udid: str | None = None):
+async def stop_simulation(udid: str | None = None, registry=Depends(get_engine_registry)):
     """Legacy endpoint: stop + restore. Kept for backwards compatibility,
     prefer /stop (movement only) or /restore (clear location)."""
-    engine = await _engine(udid)
+    engine = await _engine(udid, registry)
     await engine.restore()
     return {"status": "stopped"}
 
 
 @router.get("/debug")
-async def debug_info():
+async def debug_info(registry=Depends(get_engine_registry)):
     """Debug endpoint to check engine and location service state."""
-    from main import app_state
-    engine = app_state.simulation_engine
+    engine = registry.simulation_engine
     if engine is None:
         return {"engine": None}
     loc_svc = engine.location_service
@@ -559,10 +558,10 @@ async def debug_info():
 
 
 @router.get("/status", response_model=SimulationStatus)
-async def get_status(udid: str | None = None):
-    engine = await _engine(udid)
+async def get_status(udid: str | None = None, registry=Depends(get_engine_registry)):
+    engine = await _engine(udid, registry)
     status = engine.get_status()
-    cooldown = _cooldown()
+    cooldown = _cooldown(registry)
     cs = cooldown.get_status()
     status.cooldown_remaining = cs["remaining_seconds"]
     return status
@@ -571,15 +570,15 @@ async def get_status(udid: str | None = None):
 # ── Cooldown ──────────────────────────────────────────────
 
 @router.get("/cooldown/status", response_model=CooldownStatus, tags=["cooldown"])
-async def cooldown_status():
-    cd = _cooldown()
+async def cooldown_status(registry=Depends(get_engine_registry)):
+    cd = _cooldown(registry)
     s = cd.get_status()
     return CooldownStatus(**s)
 
 
 @router.put("/cooldown/settings", tags=["cooldown"])
-async def cooldown_settings(req: CooldownSettings):
-    cd = _cooldown()
+async def cooldown_settings(req: CooldownSettings, registry=Depends(get_engine_registry)):
+    cd = _cooldown(registry)
     cd.enabled = req.enabled
     if not req.enabled:
         await cd.dismiss()
@@ -587,8 +586,8 @@ async def cooldown_settings(req: CooldownSettings):
 
 
 @router.post("/cooldown/dismiss", tags=["cooldown"])
-async def cooldown_dismiss():
-    cd = _cooldown()
+async def cooldown_dismiss(registry=Depends(get_engine_registry)):
+    cd = _cooldown(registry)
     await cd.dismiss()
     return {"status": "dismissed"}
 
@@ -596,14 +595,14 @@ async def cooldown_dismiss():
 # ── Coordinate format ────────────────────────────────────
 
 @router.get("/settings/coord-format", tags=["settings"])
-async def get_coord_format():
-    fmt = _coord_fmt()
+async def get_coord_format(registry=Depends(get_engine_registry)):
+    fmt = _coord_fmt(registry)
     return {"format": fmt.format.value}
 
 
 @router.put("/settings/coord-format", tags=["settings"])
-async def set_coord_format(req: CoordFormatRequest):
-    fmt = _coord_fmt()
+async def set_coord_format(req: CoordFormatRequest, registry=Depends(get_engine_registry)):
+    fmt = _coord_fmt(registry)
     fmt.format = req.format
     return {"format": fmt.format.value}
 
@@ -616,25 +615,23 @@ class _InitialPosRequest(BaseModel):
 
 
 @router.get("/settings/initial-position", tags=["settings"])
-async def get_initial_position():
-    from main import app_state
-    pos = app_state._initial_map_position
+async def get_initial_position(registry=Depends(get_engine_registry)):
+    pos = registry._initial_map_position
     return {"position": pos}  # {"position": null} or {"position": {"lat","lng"}}
 
 
 @router.put("/settings/initial-position", tags=["settings"])
-async def set_initial_position(req: _InitialPosRequest):
+async def set_initial_position(req: _InitialPosRequest, registry=Depends(get_engine_registry)):
     """Pass `{lat: null, lng: null}` (or omit) to clear the custom initial
     map center and fall back to the default on next launch."""
-    from main import app_state
     if req.lat is None or req.lng is None:
-        app_state._initial_map_position = None
+        registry._initial_map_position = None
     else:
         if not (-90 <= req.lat <= 90) or not (-180 <= req.lng <= 180):
             raise HTTPException(
                 status_code=400,
                 detail={"code": "invalid_coord", "message": "lat must be in [-90, 90], lng in [-180, 180]"},
             )
-        app_state._initial_map_position = {"lat": float(req.lat), "lng": float(req.lng)}
-    app_state.save_settings()
-    return {"position": app_state._initial_map_position}
+        registry._initial_map_position = {"lat": float(req.lat), "lng": float(req.lng)}
+    registry.save_settings()
+    return {"position": registry._initial_map_position}

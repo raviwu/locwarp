@@ -62,3 +62,11 @@ def get_route_manager(request: Request):
 
 def get_event_publisher(request: Request):
     return request.app.state.container.event_publisher
+
+
+def _engine_registry_or_main(registry):
+    """Return the injected registry when provided; fall back to main.app_state
+    for call-sites that cannot receive a Depends (e.g. internal closures)."""
+    if registry is not None:
+        return registry
+    return __import__("main").app_state

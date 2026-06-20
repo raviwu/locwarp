@@ -43,7 +43,7 @@ def test_endpoint_returns_completed_when_engine_succeeds(client):
     fake_engine = MagicMock()
     fake_engine.goldditto_cycle = AsyncMock(return_value=fake_result)
 
-    async def fake_resolver(udid):
+    async def fake_resolver(udid, registry=None):
         return fake_engine
 
     with patch("api.location._engine", fake_resolver):
@@ -60,7 +60,7 @@ def test_endpoint_returns_409_on_locked_error(client):
     fake_engine = MagicMock()
     fake_engine.goldditto_cycle = AsyncMock(side_effect=GoldDittoLockedError("busy"))
 
-    async def fake_resolver(udid):
+    async def fake_resolver(udid, registry=None):
         return fake_engine
 
     with patch("api.location._engine", fake_resolver):

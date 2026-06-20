@@ -76,4 +76,5 @@ modules =
 ignore_imports =
     api.device -> api.deps
     api.cloud_sync -> api.deps
+    api.location -> api.deps
 unmatched_ignore_imports_alerting = none
