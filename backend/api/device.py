@@ -748,11 +748,13 @@ async def _attempt_tunnel_restart(
     """Thin api-layer wrapper: resolves the live collaborators and delegates to
     the relocated infra implementation. Behavior is identical to the
     pre-relocation function; see infra/device/tunnel_restart."""
-    from main import _auto_sync_new_device_to_primary
+    from services.group_sync_service import GroupSyncService
     from infra.device.tunnel_restart import attempt_tunnel_restart
 
     eng_reg = _engines()
     dm = _dm()
+
+    svc = GroupSyncService(engine_registry=eng_reg, device_manager=dm)
 
     async def broadcast(event_type, payload):
         await dm._events.publish((event_type, payload))
@@ -763,7 +765,7 @@ async def _attempt_tunnel_restart(
     return await attempt_tunnel_restart(
         udid, ip, port, snapshot, original_runner,
         engine_registry=eng_reg, device_manager=dm, broadcast=broadcast,
-        auto_sync=_auto_sync_new_device_to_primary, watchdog_factory=_watchdog_factory,
+        auto_sync=svc.auto_sync_new_device_to_primary, watchdog_factory=_watchdog_factory,
     )
 
 

@@ -459,107 +459,11 @@ helper_client = TunnelHelperClient()
 # ── Lifespan ─────────────────────────────────────────────
 
 async def _auto_sync_new_device_to_primary(new_udid: str) -> None:
-    """Align a freshly-connected second device to whatever the primary
-    device is doing, so dual-device mode behaves as one unit without the
-    user having to explicitly restart actions.
-
-    Behaviour:
-      * No primary yet, or primary is the same as *new_udid* → noop
-      * Primary has a ``current_position`` → teleport new device there
-      * Primary is running navigate / loop / multi_stop / random_walk →
-        replay the same action (with the same args) on the new engine so
-        both devices share the target / waypoints / seed
-      * Primary is idle / paused / teleport-only → only the position
-        sync happens; the user's next action will fan-out to both
-    """
-    import asyncio
-    primary_udid = app_state._primary_udid
-    if primary_udid is None or primary_udid == new_udid:
-        return
-    primary_eng = app_state.simulation_engines.get(primary_udid)
-    new_eng = app_state.simulation_engines.get(new_udid)
-    if primary_eng is None or new_eng is None:
-        return
-
-    pos = primary_eng.current_position
-    if pos is None:
-        # Primary hasn't been given a position yet — nothing to sync.
-        logger.info("Auto-sync: primary %s has no position, skipping %s", primary_udid, new_udid)
-        return
-
-    # 1) Teleport the new device to match the primary's current virtual
-    #    position (keeps the 'one marker' invariant in dual mode).
-    try:
-        await new_eng.teleport(pos.lat, pos.lng)
-        logger.info("Auto-sync: %s teleported to primary %s position (%.6f, %.6f)",
-                    new_udid, primary_udid, pos.lat, pos.lng)
-    except Exception:
-        logger.exception("Auto-sync: teleport failed for %s", new_udid)
-        return
-
-    # 2) If the primary is running a dynamic sim, attach the new device
-    #    as a position-follower instead of replaying the sim from scratch.
-    #    Why not replay: each sim mode restarts at its own "beginning"
-    #      * loop:      _move_along_route emits coords[0] first → iPhone
-    #                   teleports back to waypoint[0] before walking
-    #      * multi_stop: routes from current pos back to waypoint[0]
-    #                   first if >50m away → iPhone walks back to start
-    #      * random_walk: rng resets at walk_count=0 → iPhone walks the
-    #                   first random destination from scratch
-    #    All three desync the rejoining iPhone from the surviving one and
-    #    show up on Google Maps as the rejoining phone going back to the
-    #    route's beginning. Following primary's positions instead keeps
-    #    both iPhones perfectly in sync.
-    from models.schemas import SimulationState
-    dynamic = {
-        SimulationState.NAVIGATING,
-        SimulationState.LOOPING,
-        SimulationState.MULTI_STOP,
-        SimulationState.RANDOM_WALK,
-    }
-    if primary_eng.state not in dynamic:
-        return
-
-    logger.info("Auto-sync: attaching %s as position-follower of primary %s", new_udid, primary_udid)
-    asyncio.create_task(_follow_primary_positions(new_udid, primary_udid))
-
-
-async def _follow_primary_positions(follower_udid: str, primary_udid: str) -> None:
-    """Mirror the primary engine's current_position onto the follower
-    device. Runs until the primary changes, the follower disconnects,
-    the follower starts its own simulation (which sets _stop_event via
-    _ensure_stopped), or the primary engine is gone."""
-    import asyncio
-    poll_interval = 0.5  # 500ms — primary's own updates run ~1 Hz, so this oversamples slightly without thrashing
-    last_pushed_lat: float | None = None
-    last_pushed_lng: float | None = None
-    while True:
-        # Tear down conditions
-        if app_state._primary_udid != primary_udid:
-            logger.info("Follower %s: primary changed (%s → %s), stopping follow",
-                        follower_udid, primary_udid, app_state._primary_udid)
-            return
-        follower_eng = app_state.simulation_engines.get(follower_udid)
-        if follower_eng is None:
-            logger.info("Follower %s: engine gone, stopping follow", follower_udid)
-            return
-        if follower_eng._stop_event.is_set():
-            logger.info("Follower %s: stop_event set (own sim started or stop pressed), stopping follow",
-                        follower_udid)
-            return
-        primary_eng = app_state.simulation_engines.get(primary_udid)
-        if primary_eng is None:
-            logger.info("Follower %s: primary engine gone, stopping follow", follower_udid)
-            return
-
-        pos = primary_eng.current_position
-        if pos is not None and (pos.lat != last_pushed_lat or pos.lng != last_pushed_lng):
-            try:
-                await follower_eng._set_position(pos.lat, pos.lng)
-                last_pushed_lat, last_pushed_lng = pos.lat, pos.lng
-            except Exception:
-                logger.debug("Follower %s: _set_position failed", follower_udid, exc_info=True)
-        await asyncio.sleep(poll_interval)
+    """Delegate to GroupSyncService. Kept as a module-level name because the USB
+    presence watchdog calls it directly."""
+    from services.group_sync_service import GroupSyncService
+    svc = GroupSyncService(engine_registry=app_state, device_manager=app_state.device_manager)
+    await svc.auto_sync_new_device_to_primary(new_udid)
 
 
 async def _usbmux_presence_watchdog():
@@ -737,11 +641,16 @@ async def _usbmux_presence_watchdog():
                         asyncio.create_task(new_leader_eng.resume_from_snapshot(handoff_snapshot))
                         # Re-attach any remaining devices (besides the
                         # new leader) as followers of the new leader.
+                        from services.group_sync_service import GroupSyncService
+                        _gs = GroupSyncService(
+                            engine_registry=app_state,
+                            device_manager=app_state.device_manager,
+                        )
                         for other_udid in app_state.simulation_engines.keys():
                             if other_udid == new_leader:
                                 continue
                             asyncio.create_task(
-                                _follow_primary_positions(other_udid, new_leader)
+                                _gs._follow_primary_positions(other_udid, new_leader)
                             )
 
                 try:
