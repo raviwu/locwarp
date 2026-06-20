@@ -2,9 +2,10 @@ import logging
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, HTTPException, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from pydantic import BaseModel
 
+from api.deps import get_route_manager, get_route_service, get_gpx_service
 from models.schemas import (
     Coordinate,
     RouteCategory,
@@ -12,26 +13,14 @@ from models.schemas import (
     RoutePlanRequest,
     SavedRoute,
 )
-from services.route_service import RouteService
-from services.gpx_service import GpxService
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/route", tags=["route"])
 
-route_service = RouteService()
-gpx_service = GpxService()
-
-
-def _rm():
-    """Lazy lookup so route_store can read backend state without a circular
-    import at module load (api/route is imported before main builds app_state)."""
-    from main import app_state
-    return app_state.route_manager
-
 
 @router.post("/plan")
-async def plan_route(req: RoutePlanRequest):
+async def plan_route(req: RoutePlanRequest, route_service=Depends(get_route_service)):
     profile_map = {"walking": "foot", "running": "foot", "driving": "car", "foot": "foot", "car": "car"}
     profile = profile_map.get(req.profile, "foot")
     result = await route_service.get_route(req.start.lat, req.start.lng, req.end.lat, req.end.lng, profile)
@@ -41,32 +30,32 @@ async def plan_route(req: RoutePlanRequest):
 # ── Saved routes ──────────────────────────────────────────
 
 @router.get("/saved", response_model=list[SavedRoute])
-async def list_saved():
-    return _rm().list_routes()
+async def list_saved(rm=Depends(get_route_manager)):
+    return rm.list_routes()
 
 
 @router.post("/saved", response_model=SavedRoute)
-async def save_route(route: SavedRoute):
-    return _rm().create_route(route)
+async def save_route(route: SavedRoute, rm=Depends(get_route_manager)):
+    return rm.create_route(route)
 
 
 @router.put("/saved/{route_id}", response_model=SavedRoute)
-async def replace_saved(route_id: str, route: SavedRoute):
+async def replace_saved(route_id: str, route: SavedRoute, rm=Depends(get_route_manager)):
     """Overwrite an existing saved route's payload.
 
     Backend half of the "save and overwrite same-named route" UX. Keeps
     the original id and created_at; updates name, waypoints, profile,
     and category, and stamps updated_at.
     """
-    updated = _rm().replace_route(route_id, route)
+    updated = rm.replace_route(route_id, route)
     if updated is None:
         raise HTTPException(status_code=404, detail="Route not found")
     return updated
 
 
 @router.delete("/saved/{route_id}")
-async def delete_saved(route_id: str):
-    if not _rm().delete_route(route_id):
+async def delete_saved(route_id: str, rm=Depends(get_route_manager)):
+    if not rm.delete_route(route_id):
         raise HTTPException(status_code=404, detail="Route not found")
     return {"status": "deleted"}
 
@@ -76,27 +65,27 @@ class _RouteRenameRequest(BaseModel):
 
 
 @router.patch("/saved/{route_id}")
-async def rename_saved(route_id: str, req: _RouteRenameRequest):
+async def rename_saved(route_id: str, req: _RouteRenameRequest, rm=Depends(get_route_manager)):
     name = req.name.strip()
     if not name:
         raise HTTPException(status_code=400, detail={"code": "invalid_name", "message": "路線名稱不可為空"})
-    updated = _rm().rename_route(route_id, name)
+    updated = rm.rename_route(route_id, name)
     if updated is None:
         raise HTTPException(status_code=404, detail="Route not found")
     return updated
 
 
 @router.post("/saved/move")
-async def move_saved_routes(req: RouteMoveRequest):
-    count = _rm().move_routes(req.route_ids, req.target_category_id)
+async def move_saved_routes(req: RouteMoveRequest, rm=Depends(get_route_manager)):
+    count = rm.move_routes(req.route_ids, req.target_category_id)
     return {"moved": count}
 
 
 @router.get("/saved/export")
-async def export_all_saved_routes():
+async def export_all_saved_routes(rm=Depends(get_route_manager)):
     """Export every saved route + categories as a single JSON bundle."""
     from fastapi.responses import Response
-    body = _rm().export_json()
+    body = rm.export_json()
     return Response(content=body, media_type="application/json",
                     headers={"Content-Disposition": 'attachment; filename="locwarp-routes.json"'})
 
@@ -109,41 +98,41 @@ class _RouteImportBody(BaseModel):
 
 
 @router.post("/saved/import")
-async def import_all_saved_routes(body: _RouteImportBody):
+async def import_all_saved_routes(body: _RouteImportBody, rm=Depends(get_route_manager)):
     import json as _json
     payload = _json.dumps({
         "routes": [r.model_dump(mode="json") for r in body.routes],
         "categories": [c.model_dump(mode="json") for c in body.categories],
     })
-    imported = _rm().import_json(payload)
+    imported = rm.import_json(payload)
     return {"imported": imported}
 
 
 # ── Categories ────────────────────────────────────────────
 
 @router.get("/categories", response_model=list[RouteCategory])
-async def list_route_categories():
-    return _rm().list_categories()
+async def list_route_categories(rm=Depends(get_route_manager)):
+    return rm.list_categories()
 
 
 @router.post("/categories", response_model=RouteCategory)
-async def create_route_category(cat: RouteCategory):
-    return _rm().create_category(name=cat.name, color=cat.color)
+async def create_route_category(cat: RouteCategory, rm=Depends(get_route_manager)):
+    return rm.create_category(name=cat.name, color=cat.color)
 
 
 @router.put("/categories/{cat_id}", response_model=RouteCategory)
-async def update_route_category(cat_id: str, cat: RouteCategory):
-    updated = _rm().update_category(cat_id, name=cat.name, color=cat.color)
+async def update_route_category(cat_id: str, cat: RouteCategory, rm=Depends(get_route_manager)):
+    updated = rm.update_category(cat_id, name=cat.name, color=cat.color)
     if not updated:
         raise HTTPException(status_code=404, detail="Category not found")
     return updated
 
 
 @router.delete("/categories/{cat_id}")
-async def delete_route_category(cat_id: str):
+async def delete_route_category(cat_id: str, rm=Depends(get_route_manager)):
     if cat_id == "default":
         raise HTTPException(status_code=400, detail="Cannot delete default category")
-    if not _rm().delete_category(cat_id):
+    if not rm.delete_category(cat_id):
         raise HTTPException(status_code=404, detail="Category not found")
     return {"status": "deleted"}
 
@@ -151,7 +140,7 @@ async def delete_route_category(cat_id: str):
 # ── GPX ───────────────────────────────────────────────────
 
 @router.post("/gpx/import")
-async def import_gpx(file: UploadFile = File(...)):
+async def import_gpx(file: UploadFile = File(...), rm=Depends(get_route_manager), gpx_service=Depends(get_gpx_service)):
     content = await file.read()
     text = content.decode("utf-8")
     coords = gpx_service.parse_gpx(text)
@@ -162,13 +151,13 @@ async def import_gpx(file: UploadFile = File(...)):
         waypoints=coords,
         profile="walking",
     )
-    saved = _rm().create_route(route)
+    saved = rm.create_route(route)
     return {"status": "imported", "id": saved.id, "points": len(coords)}
 
 
 @router.get("/gpx/export/{route_id}")
-async def export_gpx(route_id: str):
-    route = next((r for r in _rm().list_routes() if r.id == route_id), None)
+async def export_gpx(route_id: str, rm=Depends(get_route_manager), gpx_service=Depends(get_gpx_service)):
+    route = next((r for r in rm.list_routes() if r.id == route_id), None)
     if route is None:
         raise HTTPException(status_code=404, detail="Route not found")
     points = [{"lat": c.lat, "lng": c.lng} for c in route.waypoints]
