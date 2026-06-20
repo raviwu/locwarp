@@ -64,7 +64,10 @@ def _patch_usb_world(*, ios_version="17.5", helper_connected=True, helper_side_e
         patch("pymobiledevice3.lockdown.create_using_usbmux", side_effect=fake_create_using_usbmux),
         patch("services.usbmux_pair_records.create_using_usbmux", side_effect=fake_create_using_usbmux),
         patch("pymobiledevice3.usbmux.list_devices", side_effect=fake_list_devices),
-        patch("main.helper_client", helper_mock),
+        # wifi_repair resolves the helper from the DI container (api/device.py
+        # `_helper()`), so the mock must replace the container's handle, not the
+        # module-level `main.helper_client` name (which the endpoint no longer reads).
+        patch("main.app.state.container.helper_client", helper_mock),
     ), helper_mock
 
 
@@ -156,7 +159,7 @@ def test_wifi_repair_targets_requested_udid(client):
         patch("pymobiledevice3.lockdown.create_using_usbmux", side_effect=fake_create_using_usbmux),
         patch("services.usbmux_pair_records.create_using_usbmux", side_effect=fake_create_using_usbmux),
         patch("pymobiledevice3.usbmux.list_devices", side_effect=fake_list_devices),
-        patch("main.helper_client", helper_mock),
+        patch("main.app.state.container.helper_client", helper_mock),
     ):
         resp = client.post("/api/device/wifi/repair", json={"udid": "UDID-TARGET"})
 
@@ -193,7 +196,7 @@ def test_wifi_repair_without_udid_keeps_legacy_first_usb(client):
         patch("pymobiledevice3.lockdown.create_using_usbmux", side_effect=fake_create_using_usbmux),
         patch("services.usbmux_pair_records.create_using_usbmux", side_effect=fake_create_using_usbmux),
         patch("pymobiledevice3.usbmux.list_devices", side_effect=fake_list_devices),
-        patch("main.helper_client", helper_mock),
+        patch("main.app.state.container.helper_client", helper_mock),
     ):
         resp = client.post("/api/device/wifi/repair")
 
@@ -224,7 +227,7 @@ def test_wifi_repair_unknown_udid_returns_404(client):
     with (
         patch("pymobiledevice3.lockdown.create_using_usbmux", side_effect=fake_create_using_usbmux),
         patch("pymobiledevice3.usbmux.list_devices", side_effect=fake_list_devices),
-        patch("main.helper_client", helper_mock),
+        patch("main.app.state.container.helper_client", helper_mock),
     ):
         resp = client.post("/api/device/wifi/repair", json={"udid": "DOES-NOT-EXIST"})
 

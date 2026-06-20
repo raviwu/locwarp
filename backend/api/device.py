@@ -7,9 +7,19 @@ from models.schemas import DeviceInfo
 router = APIRouter(prefix="/api/device", tags=["device"])
 
 
+from bootstrap.runtime import get_container as _container
+
+
 def _dm():
-    from main import app_state
-    return app_state.device_manager
+    return _container().device_manager
+
+
+def _engines():
+    return _container().engine_registry
+
+
+def _helper():
+    return _container().helper_client
 
 
 @router.get("/list", response_model=list[DeviceInfo])
@@ -40,8 +50,8 @@ class WifiTunnelConnectRequest(BaseModel):
 @router.post("/wifi/tunnel")
 async def wifi_tunnel_connect(req: WifiTunnelConnectRequest):
     """Connect to a device via an existing WiFi tunnel (RSD address/port)."""
-    from main import app_state
     from core.device_manager import UnsupportedIosVersionError
+    eng_reg = _engines()
     dm = _dm()
     # Max 3 devices (group mode). connect_wifi_tunnel may reconnect an existing udid;
     # we can only cheaply check the pre-state here.
@@ -52,7 +62,7 @@ async def wifi_tunnel_connect(req: WifiTunnelConnectRequest):
         )
     try:
         info = await dm.connect_wifi_tunnel(req.rsd_address, req.rsd_port)
-        await app_state.create_engine_for_device(info.udid)
+        await eng_reg.create_engine_for_device(info.udid)
         try:
             await dm._events.publish(("device_connected", {
                 "udid": info.udid,
@@ -195,8 +205,8 @@ async def wifi_repair(req: WifiRepairRequest | None = None, device_service=Depen
          ~/.pymobiledevice3/ as a side effect of the RSD handshake.
     """
     from pymobiledevice3.usbmux import list_devices as mux_list_devices
-    from main import helper_client
     from services.tunnel_helper_client import HelperError
+    helper_client = _helper()
 
     try:
         raw_devices = await mux_list_devices()
@@ -634,7 +644,7 @@ async def _cleanup_wifi_connection_for(udid: str, *, caller: str) -> bool:
     floods the log with `Giving up on this route after repeated push
     failures` every ~2 seconds for as long as LocWarp stays open.
     Mirrors the USB watchdog teardown sequence in main.py:387-418."""
-    from main import app_state
+    eng_reg = _engines()
     dm = _dm()
     conn = dm._connections.get(udid)
     if conn is None or getattr(conn, "connection_type", "") != "Network":
@@ -643,7 +653,7 @@ async def _cleanup_wifi_connection_for(udid: str, *, caller: str) -> bool:
     # Stop the running simulation BEFORE we close the underlying lockdown,
     # so its retry loop doesn't get a chance to log a dozen DeviceLostError
     # rounds against the dying RSD.
-    old_eng = app_state.simulation_engines.get(udid)
+    old_eng = eng_reg.simulation_engines.get(udid)
     if old_eng is not None:
         try:
             from models.schemas import SimulationState as _SS
@@ -669,7 +679,7 @@ async def _cleanup_wifi_connection_for(udid: str, *, caller: str) -> bool:
         _tunnel_logger.info("[%s] Disconnected WiFi device %s", caller, udid)
     except (OSError, RuntimeError):
         _tunnel_logger.exception("[%s] Failed to disconnect %s", caller, udid)
-    await app_state.remove_engine(udid)
+    await eng_reg.remove_engine(udid)
     try:
         await dm._events.publish(("device_disconnected", {
             "udid": udid,
@@ -738,9 +748,10 @@ async def _attempt_tunnel_restart(
     """Thin api-layer wrapper: resolves the live collaborators and delegates to
     the relocated infra implementation. Behavior is identical to the
     pre-relocation function; see infra/device/tunnel_restart."""
-    from main import app_state, _auto_sync_new_device_to_primary
+    from main import _auto_sync_new_device_to_primary
     from infra.device.tunnel_restart import attempt_tunnel_restart
 
+    eng_reg = _engines()
     dm = _dm()
 
     async def broadcast(event_type, payload):
@@ -751,7 +762,7 @@ async def _attempt_tunnel_restart(
 
     return await attempt_tunnel_restart(
         udid, ip, port, snapshot, original_runner,
-        engine_registry=app_state, device_manager=dm, broadcast=broadcast,
+        engine_registry=eng_reg, device_manager=dm, broadcast=broadcast,
         auto_sync=_auto_sync_new_device_to_primary, watchdog_factory=_watchdog_factory,
     )
 
@@ -800,9 +811,8 @@ async def _per_tunnel_watchdog(udid: str, runner: TunnelRunner) -> None:
                 udid,
             )
         else:
-            from main import app_state
             snapshot: dict | None = None
-            old_eng = app_state.simulation_engines.get(udid)
+            old_eng = _engines().simulation_engines.get(udid)
             if old_eng is not None:
                 try:
                     snapshot = old_eng.capture_resumable_snapshot()
@@ -1131,7 +1141,7 @@ async def wifi_tunnel_stop(req: WifiTunnelStopRequest | None = None):
     # USB fallback: only re-attach udids that were just in WiFi AND show
     # up as USB right now (covers users plugging in a cable mid-stop).
     try:
-        from main import app_state
+        eng_reg = _engines()
         devices = await dm.discover_devices()
         for udid in was_network_udids:
             # Never resurrect a Trust prompt for a device the user has
@@ -1158,7 +1168,7 @@ async def wifi_tunnel_stop(req: WifiTunnelStopRequest | None = None):
                 _tunnel_logger.exception("USB fallback: connect failed for %s", usb_dev.udid)
                 continue
             try:
-                await app_state.create_engine_for_device(usb_dev.udid, force=True)
+                await eng_reg.create_engine_for_device(usb_dev.udid, force=True)
                 _tunnel_logger.info("Switched back to USB connection: %s", usb_dev.udid)
             except Exception:
                 _tunnel_logger.exception(
@@ -1169,7 +1179,7 @@ async def wifi_tunnel_stop(req: WifiTunnelStopRequest | None = None):
                     await dm.disconnect(usb_dev.udid)
                 except Exception:
                     pass
-                await app_state.remove_engine(usb_dev.udid)
+                await eng_reg.remove_engine(usb_dev.udid)
                 try:
                     await dm._events.publish(("device_error", {
                         "udid": usb_dev.udid,
@@ -1192,7 +1202,7 @@ async def wifi_tunnel_start_and_connect(req: WifiTunnelStartRequest):
     after dm.connect_wifi_tunnel reveals the device identity. This is the
     primary entrypoint the frontend uses; /start and /wifi/tunnel exist as
     separate primitives but are not chained from the UI today."""
-    from main import app_state
+    eng_reg = _engines()
 
     # Cap check before we even spawn a runner. Counts active runners,
     # not dm._connections — a tunnel that's mid-handshake but not yet
@@ -1236,7 +1246,7 @@ async def wifi_tunnel_start_and_connect(req: WifiTunnelStartRequest):
         # ConnectionTerminatedError, reconnect would fail because the
         # cached lockdown is dead, and the user would see the device get
         # kicked as device_lost within 8 seconds of the WiFi switch.
-        await app_state.create_engine_for_device(info.udid, force=True)
+        await eng_reg.create_engine_for_device(info.udid, force=True)
 
         # Re-key the runner from temp_key (often "pending:ip:port") to
         # the real udid so per-udid stop / status / watchdog keep working.
@@ -1425,13 +1435,13 @@ async def forget_device(udid: str):
     The user's path back is the Re-trust button (wifi/repair), which
     clears the sticky flag and re-triggers the iPhone Trust prompt.
     """
-    from main import app_state
     from services.usbmux_pair_records import (
         acquire_pair_lock,
         delete_local_pair_record,
         delete_system_pair_record,
     )
 
+    eng_reg = _engines()
     dm = _dm()
     lock = await acquire_pair_lock(udid)
     async with lock:
@@ -1461,7 +1471,7 @@ async def forget_device(udid: str):
                 await dm.disconnect(udid)
             except Exception:
                 _tunnel_logger.exception("Forget: disconnect failed for %s", udid)
-        await app_state.remove_engine(udid)
+        await eng_reg.remove_engine(udid)
 
         # 3. Clear host pair records (both idempotent, never raise).
         system_cleared = await delete_system_pair_record(udid)

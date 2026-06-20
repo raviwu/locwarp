@@ -1038,6 +1038,8 @@ app.state.container = _Container(
     bookmark_manager=app_state.bookmark_manager,
     route_manager=app_state.route_manager,
 )
+from bootstrap.runtime import set_container as _set_container
+_set_container(app.state.container)
 
 app.add_middleware(
     CORSMiddleware,
