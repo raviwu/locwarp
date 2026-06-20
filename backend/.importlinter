@@ -44,3 +44,36 @@ source_modules =
     infra
 forbidden_modules =
     api
+
+# Phase 2 (Group 4, Task 19): ENFORCED. Tasks 15-18 removed all cross-module
+# api->api imports (api.device, api.location, api.cloud_sync no longer import
+# api.websocket; instead they use the injected EventPublisher). The sole
+# sanctioned exception is the DI shim: any api.* module may import api.deps
+# so that FastAPI Depends() wiring works. Contract enforced here (Task 19).
+# 4 kept, 0 broken.
+#
+# Note: import-linter's `forbidden` type rejects source == forbidden when modules
+# share descendants. We use the `independence` type instead: it checks that none
+# of the listed modules imports any other. The api.deps shim is exempted via
+# ignore_imports so that DI wiring (api.device -> api.deps, api.cloud_sync ->
+# api.deps) is allowed. unmatched_ignore_imports_alerting = none suppresses
+# warnings for ignore_imports entries that don't match any actual import.
+[importlinter:contract:no-api-imports-api]
+name = API modules must not import each other
+type = independence
+modules =
+    api.bookmarks
+    api.cloud_sync
+    api.deps
+    api.device
+    api.geocode
+    api.location
+    api.phone_control
+    api.recent
+    api.route
+    api.system
+    api.websocket
+ignore_imports =
+    api.device -> api.deps
+    api.cloud_sync -> api.deps
+unmatched_ignore_imports_alerting = none
