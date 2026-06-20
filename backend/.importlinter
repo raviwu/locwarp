@@ -78,5 +78,6 @@ ignore_imports =
     api.device -> api.deps
     api.cloud_sync -> api.deps
     api.location -> api.deps
+    api.phone_control -> api.deps
     api.route -> api.deps
 unmatched_ignore_imports_alerting = none

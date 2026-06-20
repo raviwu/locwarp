@@ -26,9 +26,11 @@ import socket
 import time
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException, Request, Header
+from fastapi import APIRouter, Depends, HTTPException, Request, Header
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
+
+from api.deps import get_device_manager, get_engine_registry, get_geocoding_service
 
 logger = logging.getLogger("locwarp.phone")
 
@@ -425,38 +427,36 @@ async def phone_auth(req: _AuthRequest):
 # ── Phone-side action endpoints (token required) ─────────────
 
 
-def _engine():
+def _engine(registry):
     """Return the primary simulation engine, or 503 if no device.
     We deliberately avoid the heavyweight rebuild path used by
     api/location.py so phone callers always get a fast, predictable
     answer (the desktop UI is responsible for re-pairing devices)."""
-    from main import app_state
-    eng = app_state.simulation_engine
+    eng = registry.simulation_engine
     if eng is None:
         raise HTTPException(status_code=503, detail={"code": "no_device",
                                                      "message": "尚未連接 iOS 裝置"})
     return eng
 
 
-def _all_engines():
+def _all_engines(registry):
     """Return every connected simulation engine. Used so phone-control
     actions fan out to both devices in dual-device group mode (matching
     the desktop UI's behaviour). Falls back to just the primary when
     only one device is connected."""
-    from main import app_state
-    if not app_state.simulation_engines:
+    if not registry.simulation_engines:
         raise HTTPException(status_code=503, detail={"code": "no_device",
                                                      "message": "尚未連接 iOS 裝置"})
-    return list(app_state.simulation_engines.values())
+    return list(registry.simulation_engines.values())
 
 
-async def _fanout(action_name: str, fn):
+async def _fanout(action_name: str, fn, registry):
     """Run `fn(engine)` on every connected engine concurrently. Logs
     per-engine failures but doesn't bubble them up unless every engine
     failed — that way unplugging one device mid-action still lets the
     other device complete the action."""
     import asyncio
-    engines = _all_engines()
+    engines = _all_engines(registry)
     results = await asyncio.gather(
         *[fn(e) for e in engines], return_exceptions=True
     )
@@ -478,6 +478,8 @@ async def phone_status(
     request: Request,
     x_locwarp_token: str | None = Header(default=None, alias="X-LocWarp-Token"),
     t: str | None = None,
+    registry=Depends(get_engine_registry),
+    dm=Depends(get_device_manager),
 ):
     """Per-device status snapshot. The phone UI renders one pill per
     entry in `devices`, each showing its own name + sim state, so
@@ -485,8 +487,6 @@ async def phone_status(
     `state` / `current_position` / `route_path` still mirror the
     primary engine for the map view (single marker, single polyline)."""
     _check_token(_resolve_token(request, x_locwarp_token, t))
-    from main import app_state
-    dm = app_state.device_manager
     devices_info = []
     try:
         for udid, conn in dm._connections.items():
@@ -495,9 +495,9 @@ async def phone_status(
                 "name": getattr(conn, "name", "") or "",
                 "connection_type": getattr(conn, "connection_type", "USB"),
                 "state": "disconnected",
-                "is_primary": udid == app_state._primary_udid,
+                "is_primary": udid == registry._primary_udid,
             }
-            dev_eng = app_state.simulation_engines.get(udid)
+            dev_eng = registry.simulation_engines.get(udid)
             if dev_eng is not None:
                 try:
                     ds = dev_eng.get_status()
@@ -508,7 +508,7 @@ async def phone_status(
     except Exception:
         logger.debug("status: device enumeration failed", exc_info=True)
 
-    eng = app_state.simulation_engine
+    eng = registry.simulation_engine
     if eng is None:
         return {
             "connected": False,
@@ -537,12 +537,13 @@ async def phone_teleport(
     request: Request,
     x_locwarp_token: str | None = Header(default=None, alias="X-LocWarp-Token"),
     t: str | None = None,
+    registry=Depends(get_engine_registry),
 ):
     """Teleport every connected device to the same coordinate. In single
     device mode this is just one engine; in dual-device group mode both
     iPhones move together, matching the desktop UI's behaviour."""
     _check_token(_resolve_token(request, x_locwarp_token, t))
-    await _fanout("teleport", lambda e: e.teleport(body.lat, body.lng))
+    await _fanout("teleport", lambda e: e.teleport(body.lat, body.lng), registry)
     return {"status": "ok", "lat": body.lat, "lng": body.lng}
 
 
@@ -551,9 +552,10 @@ async def phone_stop(
     request: Request,
     x_locwarp_token: str | None = Header(default=None, alias="X-LocWarp-Token"),
     t: str | None = None,
+    registry=Depends(get_engine_registry),
 ):
     _check_token(_resolve_token(request, x_locwarp_token, t))
-    await _fanout("stop", lambda e: e.stop())
+    await _fanout("stop", lambda e: e.stop(), registry)
     return {"status": "stopped"}
 
 
@@ -562,9 +564,10 @@ async def phone_restore(
     request: Request,
     x_locwarp_token: str | None = Header(default=None, alias="X-LocWarp-Token"),
     t: str | None = None,
+    registry=Depends(get_engine_registry),
 ):
     _check_token(_resolve_token(request, x_locwarp_token, t))
-    await _fanout("restore", lambda e: e.restore())
+    await _fanout("restore", lambda e: e.restore(), registry)
     return {"status": "restored"}
 
 
@@ -574,6 +577,7 @@ async def phone_navigate(
     request: Request,
     x_locwarp_token: str | None = Header(default=None, alias="X-LocWarp-Token"),
     t: str | None = None,
+    registry=Depends(get_engine_registry),
 ):
     """Navigate (walk / drive) from each device's current virtual position
     to the given coordinate. Fans out across every connected engine in
@@ -582,7 +586,7 @@ async def phone_navigate(
     silently no-op, which the phone UI used to mistake for a successful
     start."""
     _check_token(_resolve_token(request, x_locwarp_token, t))
-    engines = _all_engines()
+    engines = _all_engines(registry)
     # Require at least one engine with a current position. Otherwise
     # the navigate call falls through to a no-op on every engine.
     if all(e.current_position is None for e in engines):
@@ -620,13 +624,12 @@ async def phone_geocode(
     q: str,
     x_locwarp_token: str | None = Header(default=None, alias="X-LocWarp-Token"),
     t: str | None = None,
+    svc=Depends(get_geocoding_service),
 ):
     """Forward geocode via the existing GeocodingService (Nominatim).
     Returned as a list of {display_name, short_name, lat, lng,
     country_code} so the phone can render a results list."""
     _check_token(_resolve_token(request, x_locwarp_token, t))
-    from services.geocoding import GeocodingService
-    svc = GeocodingService()
     try:
         results = await svc.search(q, limit=8, provider="nominatim", google_key=None)
     except Exception as e:
