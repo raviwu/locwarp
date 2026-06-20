@@ -1,17 +1,28 @@
-"""WifiTunnelRegistry — adapter over api.device's _tunnels table.
+"""WifiTunnelRegistry — adapter over the infra.device.tunnel_state _tunnels table.
 
 Reads are bare dict.get (atomic in CPython), matching the existing lock-free
 reads at device_manager 1135/1200. The async attempt_restart delegates to
-api.device._attempt_tunnel_restart, which takes _tunnels_lock internally.
+infra.device.tunnel_restart.attempt_tunnel_restart, which takes _tunnels_lock
+internally.
 
-api.device is imported INSIDE the methods to avoid the import cycle at module
-load (same pattern the rest of the codebase uses for api<->core).
+The five api/main collaborators that attempt_tunnel_restart needs
+(engine_registry, device_manager, broadcast, auto_sync, watchdog_factory) are
+supplied by a ctor-injected ``restart_collaborators`` resolver — a zero-arg
+callable wired in main.py (the composition root). The resolver is called lazily
+per-restart so the registry imports zero api/main modules.
 """
 
 from __future__ import annotations
 
 
 class WifiTunnelRegistry:
+    def __init__(self, *, restart_collaborators=None):
+        """``restart_collaborators`` is a zero-arg callable returning a mapping
+        with keys engine_registry / device_manager / broadcast / auto_sync /
+        watchdog_factory. Optional so plain reads (get_runner / is_running)
+        work without wiring; attempt_restart requires it."""
+        self._restart_collaborators = restart_collaborators
+
     def get_runner(self, udid: str):
         from infra.device.tunnel_state import _tunnels
         return _tunnels.get(udid)
@@ -21,12 +32,15 @@ class WifiTunnelRegistry:
         return bool(runner is not None and runner.is_running())
 
     async def attempt_restart(self, udid: str) -> bool:
-        from api.device import _attempt_tunnel_restart
+        from infra.device.tunnel_restart import attempt_tunnel_restart
 
         runner = self.get_runner(udid)
         if runner is None or not runner.target_ip or not runner.target_port:
             return False
-        ok = await _attempt_tunnel_restart(
-            udid, runner.target_ip, runner.target_port, None, runner
+
+        collaborators = self._restart_collaborators()
+        ok = await attempt_tunnel_restart(
+            udid, runner.target_ip, runner.target_port, None, runner,
+            **collaborators,
         )
         return bool(ok)

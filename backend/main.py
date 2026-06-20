@@ -79,6 +79,28 @@ logging.basicConfig(level=logging.INFO, format=_log_fmt, handlers=_handlers, for
 logger = logging.getLogger("locwarp")
 
 
+def _tunnel_restart_collaborators() -> dict:
+    """Composition-root resolver for infra's attempt_tunnel_restart.
+
+    Called lazily (per restart) by WifiTunnelRegistry so infra imports zero
+    api/main modules. main.py is the ONLY ring allowed to import api + infra
+    + main, so it owns this wiring. Reads the live globals at call time —
+    ``app_state`` is assigned at module bottom, well after construction."""
+    from api.websocket import broadcast
+    from api.device import _per_tunnel_watchdog
+
+    def _watchdog_factory(udid: str, runner):
+        return asyncio.create_task(_per_tunnel_watchdog(udid, runner))
+
+    return {
+        "engine_registry": app_state,
+        "device_manager": app_state.device_manager,
+        "broadcast": broadcast,
+        "auto_sync": _auto_sync_new_device_to_primary,
+        "watchdog_factory": _watchdog_factory,
+    }
+
+
 class AppState:
     """Central application state — shared across API endpoints."""
 
@@ -86,7 +108,9 @@ class AppState:
         from api.websocket import broadcast as _ws_broadcast
         self.device_manager = DeviceManager(
             event_publisher=WsEventPublisher(broadcast=_ws_broadcast),
-            tunnel_registry=WifiTunnelRegistry(),
+            tunnel_registry=WifiTunnelRegistry(
+                restart_collaborators=_tunnel_restart_collaborators
+            ),
         )
         # Per-udid simulation engines (group mode, max 3). The legacy
         # `simulation_engine` attribute still returns the most-recently-

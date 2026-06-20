@@ -737,131 +737,21 @@ async def _attempt_tunnel_restart(
     snapshot: dict | None,
     original_runner: TunnelRunner,
 ) -> bool:
-    """Try one restart of the tunnel. On success, swaps in the new runner,
-    rebuilds dm._connections + sim engine (since the new RSD interface gets
-    a fresh address), and resumes any captured snapshot. Returns True on
-    success, False otherwise. Caller decides whether to retry."""
-    new_runner = TunnelRunner()
-    try:
-        info = await new_runner.start(udid, ip, port, timeout=10.0)
-    except Exception as exc:
-        _tunnel_logger.warning(
-            "Tunnel restart failed for %s: %s: %s",
-            udid, type(exc).__name__, exc,
-        )
-        return False
+    """Thin api-layer wrapper: resolves the live collaborators and delegates to
+    the relocated infra implementation. Behavior is identical to the
+    pre-relocation function; see infra/device/tunnel_restart."""
+    from main import app_state, _auto_sync_new_device_to_primary
+    from api.websocket import broadcast
+    from infra.device.tunnel_restart import attempt_tunnel_restart
 
-    new_rsd_address = info.get("rsd_address")
-    new_rsd_port = info.get("rsd_port")
-    if not new_rsd_address or not new_rsd_port:
-        _tunnel_logger.warning(
-            "Tunnel restart for %s returned no RSD info; treating as failure",
-            udid,
-        )
-        try:
-            await new_runner.stop()
-        except Exception:
-            pass
-        return False
+    def _watchdog_factory(u: str, runner: TunnelRunner):
+        return asyncio.create_task(_per_tunnel_watchdog(u, runner))
 
-    from main import app_state
-    try:
-        async with _tunnels_lock:
-            # User may have stopped this tunnel during our async window.
-            if _tunnels.get(udid) is not original_runner:
-                _tunnel_logger.info(
-                    "Tunnel restart for %s racing user stop; discarding new runner",
-                    udid,
-                )
-                try:
-                    await new_runner.stop()
-                except Exception:
-                    pass
-                return True  # not really success, but caller should NOT retry
-            _tunnels[udid] = new_runner
-
-        # connect_wifi_tunnel internally calls disconnect(udid) if udid
-        # already exists, so the old (now-dead) RSD lockdown gets torn
-        # down correctly.
-        dm = _dm()
-        dev_info = await dm.connect_wifi_tunnel(new_rsd_address, new_rsd_port)
-
-        # Rebuild the sim engine bound to the new location service. The
-        # old engine pointed at the dead RSD and would throw
-        # ConnectionTerminatedError on the next teleport / position push.
-        await app_state.create_engine_for_device(dev_info.udid, force=True)
-
-        # Re-arm the watchdog on the new runner so subsequent blips get
-        # the same recovery treatment.
-        old_wd = _tunnel_watchdogs.pop(udid, None)
-        if old_wd is not None and old_wd is not asyncio.current_task() and not old_wd.done():
-            old_wd.cancel()
-        _tunnel_watchdogs[udid] = asyncio.create_task(
-            _per_tunnel_watchdog(udid, new_runner)
-        )
-
-        # Resume any in-flight simulation (navigate / loop / multi-stop /
-        # random_walk) so the iPhone keeps moving instead of stopping at
-        # the blip point. Snapshot only exists when this device was the
-        # one driving the sim — followers don't capture one.
-        if snapshot is not None:
-            new_eng = app_state.simulation_engines.get(dev_info.udid)
-            if new_eng is not None:
-                _tunnel_logger.info(
-                    "Resuming sim from snapshot after tunnel restart for %s (kind=%s)",
-                    dev_info.udid, snapshot.get("kind"),
-                )
-                asyncio.create_task(new_eng.resume_from_snapshot(snapshot))
-        else:
-            # Group-mode: if this WiFi device was a follower of some other
-            # primary (USB or WiFi), restart broke the follower task. Re-
-            # arm the same teleport-to-primary + attach-as-follower flow
-            # the USB watchdog uses for re-plugged USB devices, so dual /
-            # triple-device groups stay locked together across a blip.
-            try:
-                from main import _auto_sync_new_device_to_primary
-                asyncio.create_task(_auto_sync_new_device_to_primary(dev_info.udid))
-            except Exception:
-                _tunnel_logger.exception(
-                    "Auto-sync after tunnel restart failed for %s", dev_info.udid,
-                )
-
-        try:
-            from api.websocket import broadcast
-            await broadcast("tunnel_recovered", {
-                "udid": dev_info.udid,
-                "rsd_address": new_rsd_address,
-                "rsd_port": new_rsd_port,
-            })
-            await broadcast("device_connected", {
-                "udid": dev_info.udid,
-                "name": dev_info.name,
-                "ios_version": dev_info.ios_version,
-                "connection_type": "Network",
-            })
-        except Exception:
-            _tunnel_logger.exception("Failed to broadcast tunnel_recovered for %s", udid)
-
-        _tunnel_logger.info(
-            "Tunnel restart succeeded for %s (rsd %s:%d)",
-            udid, new_rsd_address, new_rsd_port,
-        )
-        return True
-    except Exception:
-        _tunnel_logger.exception(
-            "Tunnel restart for %s started but post-setup failed; rolling back",
-            udid,
-        )
-        # Roll back the new runner we registered. Leave the old runner
-        # entry empty so the outer retry loop tries a fresh new one.
-        async with _tunnels_lock:
-            if _tunnels.get(udid) is new_runner:
-                _tunnels.pop(udid, None)
-        try:
-            await new_runner.stop()
-        except Exception:
-            pass
-        return False
+    return await attempt_tunnel_restart(
+        udid, ip, port, snapshot, original_runner,
+        engine_registry=app_state, device_manager=_dm(), broadcast=broadcast,
+        auto_sync=_auto_sync_new_device_to_primary, watchdog_factory=_watchdog_factory,
+    )
 
 
 async def _per_tunnel_watchdog(udid: str, runner: TunnelRunner) -> None:
