@@ -20,10 +20,12 @@ def test_enable_disable_emit_unchanged_events(monkeypatch, tmp_path):
             etype, data = event
             captured.append((etype, {**data}))
 
+    import services.cloud_sync_service as css_mod
     monkeypatch.setattr(app.state.container, "event_publisher", _CapPublisher())
-    monkeypatch.setattr(cloud_sync_mod, "detect_icloud_path", lambda: tmp_path)
-    monkeypatch.setattr(cloud_sync_mod, "setup_sync_folder", lambda *a, **k: tmp_path / "LocWarp")
-    monkeypatch.setattr(cloud_sync_mod, "migrate_pair", lambda *a, **k: (0, 0))
+    # The endpoint bodies (and these stubbed helpers) live in CloudSyncService.
+    monkeypatch.setattr(css_mod, "detect_icloud_path", lambda: tmp_path)
+    monkeypatch.setattr(css_mod, "setup_sync_folder", lambda *a, **k: tmp_path / "LocWarp")
+    monkeypatch.setattr(css_mod, "migrate_pair", lambda *a, **k: (0, 0))
 
     client = TestClient(app)
     resp = client.post("/api/cloud-sync/enable", json={})

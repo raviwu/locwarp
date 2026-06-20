@@ -25,6 +25,13 @@ forbidden_modules =
 # Phase 2 (Group 1): services must not import fastapi. ENFORCED at end of
 # Group 1 Task 4 — services/geocoding.py raises GeocodeError instead of
 # HTTPException; the api boundary re-maps it. Contract is KEPT (0 broken).
+#
+# Group 5b (Task 27): CloudSyncService deliberately raises HTTPException
+# (400/500) to preserve the frozen cloud-sync HTTP status surface — that is a
+# sanctioned retained fastapi import, whitelisted below. The spec-mandated
+# domain-error fold is the geocode path ONLY. (This ignore-list entry is
+# documented as Task-29-owned; it is added here because Task 27 lands the
+# import and the import-linter tests assert exit-0, so it must stay green.)
 [importlinter:contract:no-services-imports-fastapi]
 name = Services must not import FastAPI
 type = forbidden
@@ -32,6 +39,9 @@ source_modules =
     services
 forbidden_modules =
     fastapi
+ignore_imports =
+    services.cloud_sync_service -> fastapi
+unmatched_ignore_imports_alerting = none
 
 # Phase 2 (Group 3, Task 14): ENFORCED. Tasks 12-13 relocated tunnel state
 # (_tunnels, _tunnels_lock, _tunnel_watchdogs) and attempt_tunnel_restart out
