@@ -88,7 +88,14 @@ const App: React.FC = () => {
   // setters only react to the primary's WS events in dual-device mode,
   // stopping the map marker from ping-ponging between both devices'
   // independently-jittered positions.
-  const sim = useSimulation(router, device.primaryDevice?.udid)
+  // 3rd arg: positive "WiFi tunnel restored" toast on recovery. showToast is
+  // declared below; the closure only reads it when a tunnel_recovered event
+  // fires (post-mount), so the TDZ binding is resolved by then.
+  const sim = useSimulation(
+    router,
+    device.primaryDevice?.udid,
+    () => showToast(t('wifi.tunnel_recovered')),
+  )
   const joystick = useJoystick(sendMessage, sim.mode === SimMode.Joystick)
   const bm = useBookmarks()
   const categoryDatesByName = useMemo(
@@ -2543,6 +2550,22 @@ const App: React.FC = () => {
             onClick={sim.clearError}
           >
             {sim.error}
+          </div>
+        )}
+        {/* Transient amber "reconnecting…" banner for the backend's tunnel
+            retry window. Naturally exclusive with the red error banner
+            (degraded → reconnecting; recovered → clear; lost → error), but
+            gate on !sim.error so a terminal banner always wins. */}
+        {sim.tunnelReconnecting && !sim.error && (
+          <div
+            style={{
+              position: 'absolute', top: 12, left: '50%', transform: 'translateX(-50%)',
+              zIndex: 2000, background: '#f59e0b', color: '#1a1d22', padding: '8px 20px',
+              borderRadius: 6, fontSize: 13, fontWeight: 600,
+              boxShadow: '0 4px 12px rgba(0,0,0,0.4)', maxWidth: '80%', textAlign: 'center',
+            }}
+          >
+            {t('wifi.tunnel_reconnecting')}
           </div>
         )}
         <StatusBar

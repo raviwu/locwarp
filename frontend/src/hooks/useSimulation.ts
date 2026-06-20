@@ -103,7 +103,11 @@ export function summarizeResults<T>(
   return { ok, failed }
 }
 
-export function useSimulation(ws?: WsRouter, primaryUdid?: string | null) {
+export function useSimulation(
+  ws?: WsRouter,
+  primaryUdid?: string | null,
+  onTunnelRecovered?: () => void,
+) {
   // In dual-device mode every position_update carries a udid. Without a
   // filter, the legacy single-device setters below run for BOTH devices
   // and the global currentPosition ping-pongs between each device's
@@ -111,6 +115,11 @@ export function useSimulation(ws?: WsRouter, primaryUdid?: string | null) {
   // Keep a ref so WS handler reads the latest primary synchronously.
   const primaryUdidRef = useRef<string | null>(primaryUdid ?? null)
   useEffect(() => { primaryUdidRef.current = primaryUdid ?? null }, [primaryUdid])
+
+  // Stable ref for the recovery toast callback so the WS effect (keyed on
+  // [ws, updateRuntime]) never re-subscribes when App passes a fresh closure.
+  const onTunnelRecoveredRef = useRef(onTunnelRecovered)
+  useEffect(() => { onTunnelRecoveredRef.current = onTunnelRecovered }, [onTunnelRecovered])
   const [mode, _setMode] = useState<SimMode>(SimMode.Teleport)
   const [moveMode, setMoveMode] = useState<MoveMode>(MoveMode.Walking)
   const [status, setStatus] = useState<SimulationStatus>({
@@ -184,6 +193,11 @@ export function useSimulation(ws?: WsRouter, primaryUdid?: string | null) {
   const setPauseLoop = (v: PauseSetting) => { setPauseLoopRaw(v); savePause('locwarp.pause.loop', v) }
   const setPauseRandomWalk = (v: PauseSetting) => { setPauseRandomWalkRaw(v); savePause('locwarp.pause.random_walk', v) }
   const [error, setError] = useState<string | null>(null)
+  // Transient "WiFi tunnel dropped, reconnecting…" state for the up-to-~21s
+  // backend retry window (tunnel_degraded → retry×3 → tunnel_recovered | tunnel_lost).
+  // Distinct from `error` (the terminal red banner) so a recovery doesn't get
+  // conflated with a real failure. Primary-device focused, like `error`.
+  const [tunnelReconnecting, setTunnelReconnecting] = useState(false)
   // Random-walk pause countdown (unix epoch seconds of when pause ends)
   const [pauseEndAt, setPauseEndAt] = useState<number | null>(null)
   const [pauseRemaining, setPauseRemaining] = useState<number | null>(null)
@@ -429,10 +443,39 @@ export function useSimulation(ws?: WsRouter, primaryUdid?: string | null) {
       setDdiStage(null)
     })
 
+    // ── WiFi-tunnel three-state lifecycle (per-udid, primary-filtered) ──
+    // The backend watchdog runs degraded → retry×3 (~3/6/12s) → recovered,
+    // or → lost (terminal) if every retry fails. We mirror that as a transient
+    // "reconnecting…" indicator + a terminal banner, kept separate so a
+    // recovery is never conflated with a real failure.
+    const offTunnelDegraded = ws.subscribe('tunnel_degraded', (e: WsEvent) => {
+      const msgUdid = e.udid as string | undefined
+      const primary = primaryUdidRef.current
+      if (primary && msgUdid && msgUdid !== primary) return
+      // Entering the backend retry/backoff window — show "reconnecting…".
+      setTunnelReconnecting(true)
+    })
+
+    const offTunnelRecovered = ws.subscribe('tunnel_recovered', (e: WsEvent) => {
+      const msgUdid = e.udid as string | undefined
+      const primary = primaryUdidRef.current
+      if (primary && msgUdid && msgUdid !== primary) return
+      // Back online. Drop the reconnecting indicator and any stale banner,
+      // then fire the positive "restored" toast. (setError(null) unconditional
+      // to match the sibling device_connected/device_reconnected handlers,
+      // which the backend emits one frame after this anyway.)
+      setTunnelReconnecting(false)
+      setError(null)
+      onTunnelRecoveredRef.current?.()
+    })
+
     const offTunnelLost = ws.subscribe('tunnel_lost', (e: WsEvent) => {
       const msgUdid = e.udid as string | undefined
       const primary = primaryUdidRef.current
       if (primary && msgUdid && msgUdid !== primary) return
+      // Retries exhausted → terminal: drop the transient reconnecting state
+      // and raise the persistent banner.
+      setTunnelReconnecting(false)
       // Uses localStorage to get current language (hooks don't have i18n context easily here)
       setError((typeof localStorage !== 'undefined' && localStorage.getItem('locwarp.lang') === 'en')
         ? 'Wi-Fi tunnel dropped, please reconnect'
@@ -474,6 +517,7 @@ export function useSimulation(ws?: WsRouter, primaryUdid?: string | null) {
       // Auto-reconnected by the usbmux watchdog after a re-plug, clear
       // the banner; the success is already visible via DeviceStatus.
       setError(null)
+      setTunnelReconnecting(false)
     })
 
     const offConnected = ws.subscribe('device_connected', (e: WsEvent) => {
@@ -490,6 +534,7 @@ export function useSimulation(ws?: WsRouter, primaryUdid?: string | null) {
       const primary = primaryUdidRef.current
       if (primary && msgUdid && msgUdid !== primary) return
       setError(null)
+      setTunnelReconnecting(false)
     })
 
     const handlePauseStart = (e: WsEvent) => {
@@ -576,7 +621,8 @@ export function useSimulation(ws?: WsRouter, primaryUdid?: string | null) {
     return () => {
       offPos(); offSimState(); offSimComplete(); offNavComplete(); offMultiComplete(); offLoopComplete()
       offWpProgress(); offLapComplete(); offDdiMounting(); offDdiMounted(); offDdiMountFailed()
-      offDdiNotMounted(); offTunnelLost(); offDisc(); offReconn(); offConnected()
+      offDdiNotMounted(); offTunnelDegraded(); offTunnelRecovered(); offTunnelLost()
+      offDisc(); offReconn(); offConnected()
       offPauseCountdown(); offRandomWalkPause(); offPauseCountdownEnd(); offRandomWalkPauseEnd()
       offRoutePath(); offStateChange(); offSimError()
     }
@@ -1028,6 +1074,7 @@ export function useSimulation(ws?: WsRouter, primaryUdid?: string | null) {
     applySpeed,
     error,
     clearError,
+    tunnelReconnecting,
     teleport,
     stop,
     navigate,

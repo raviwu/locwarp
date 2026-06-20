@@ -78,11 +78,9 @@ const CANONICAL_BACKEND_EVENT_TYPES = [
 // EXPLICITLY (not silently dropped) so that if one ever gains a UI consumer,
 // removing it from this list re-arms the subset assertion.
 const UI_IGNORED_BY_DESIGN = new Set<string>([
-  'tunnel_degraded', // status telemetry only; tunnel_lost drives the UI banner
-  'tunnel_recovered', // emitted by api/device.py:832 but NO real hook subscribes
-  // today (only router.test.ts references it as a stand-in). Listed here as the
-  // documented as-is reality; if a hook ever consumes it, delete this line to
-  // re-arm the subset assertion for tunnel_recovered.
+  // tunnel_degraded / tunnel_recovered are now consumed by useSimulation (the
+  // three-state WiFi-tunnel indicator: degraded → "reconnecting…", recovered →
+  // clear + toast, lost → terminal banner) — so they are REQUIRED, not ignored.
   'device_error', // logged server-side; no renderer banner for it
   'connection_lost', // random-walk internal recovery signal
   'random_walk_arrived', // intermediate mover progress, not surfaced

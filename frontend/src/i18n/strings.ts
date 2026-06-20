@@ -256,6 +256,8 @@ export const STRINGS = {
   'wifi.repair_failed': { zh: '配對失敗', en: 'Pairing failed' },
   'wifi.repair_cancel': { zh: '取消', en: 'Cancel' },
   'wifi.repair_ok': { zh: '開始配對', en: 'Start pairing' },
+  'wifi.tunnel_reconnecting': { zh: 'WiFi Tunnel 連線中斷,重新連線中…', en: 'Wi-Fi tunnel dropped, reconnecting…' },
+  'wifi.tunnel_recovered': { zh: 'WiFi Tunnel 已恢復', en: 'Wi-Fi tunnel restored' },
   'device.pair_chip_trust': { zh: '需要信任', en: 'Trust required' },
   'device.pair_chip_error': { zh: '無法連線', en: 'Cannot connect' },
   'device.pair_repair_button': { zh: '重新信任', en: 'Re-trust' },
