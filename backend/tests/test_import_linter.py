@@ -1,11 +1,12 @@
 """
-Import-linter enforcement test — ENFORCED (Phase 1 + Phase 2 Groups 1-4).
+Import-linter enforcement test — ENFORCED (Phase 1 + Phase 2 Groups 1-4 + Task 29).
 
 All contracts are now enforced; lint-imports must exit 0.
 
 Currently enforced:
   - no-core-imports-api  (Phase 1 Task 8)
-  - no-services-imports-fastapi  (Phase 2 Group 1 Task 4)
+  - no-services-imports-fastapi  (Phase 2 Group 1 Task 4; cloud_sync_service
+    HTTPException whitelisted in ignore_imports — Task 29)
   - no-infra-imports-api  (Phase 2 Group 3 Task 14)
   - no-api-imports-api  (Phase 2 Group 4 Task 19)
 
@@ -15,6 +16,7 @@ removing the last infra->api import edge.
 Task 14 flips no-infra->api from report-only to enforced.
 Tasks 15-18 removed all api->api cross-imports (only api.deps DI shim remains).
 Task 19 enforces no-api-imports-api with api.deps exempt.
+Task 29 adds the ignore_imports whitelist and asserts all four contracts KEPT.
 """
 
 import os
@@ -37,14 +39,17 @@ if not LINT_IMPORTS.exists():
 
 def test_import_linter_enforced():
     """
-    ENFORCED: both no-core->api and no-infra->api contracts must be KEPT.
+    ENFORCED (Task 29): all four established contracts must be present and KEPT.
 
-    Runs ALL contracts so the full report is visible. Asserts that both
-    enforced contracts are KEPT and that lint-imports exits 0 (no broken
-    contracts).
+    Runs ALL contracts so the full report is visible. Asserts that:
+      - Core must not import API         (no-core-imports-api)
+      - Services must not import FastAPI (no-services-imports-fastapi;
+        cloud_sync_service HTTPException is whitelisted — retained to
+        preserve the frozen cloud-sync 400/500 HTTP status surface)
+      - Infra must not import API        (no-infra-imports-api)
+      - API modules must not import each other (no-api-imports-api)
 
-    Any `from api.*` or `import api.*` introduced into the `core` or `infra`
-    packages will cause this test to FAIL.
+    And that lint-imports exits 0 (no broken contracts).
     """
     result = subprocess.run(
         [
@@ -61,15 +66,20 @@ def test_import_linter_enforced():
     print(report)
     print("--- end report (exit code:", result.returncode, ") ---\n")
 
-    # ENFORCED: both contracts must be KEPT.
+    # All four established contracts must be KEPT.
     assert "Core must not import API" in report, (
         f"Expected 'Core must not import API' in lint-imports output. Got:\n{report}")
+    assert "Services must not import FastAPI" in report, (
+        f"Expected 'Services must not import FastAPI' in lint-imports output. Got:\n{report}")
     assert "Infra must not import API" in report, (
         f"Expected 'Infra must not import API' in lint-imports output. Got:\n{report}")
+    assert "API modules must not import each other" in report, (
+        f"Expected 'API modules must not import each other' in lint-imports output. Got:\n{report}")
     # ENFORCED: exit 0 means all contracts kept, 0 broken.
     assert result.returncode == 0, (
-        "lint-imports reported broken contracts — either the no-core->api cycle "
-        "or the no-infra->api edge has been re-introduced.")
+        "lint-imports reported broken contracts — one of the four enforced "
+        "contracts (no-core->api, no-services->fastapi, no-infra->api, "
+        f"no-api->api) is BROKEN. Report:\n{report}")
 
 
 def test_no_api_imports_api_contract_enforced():
