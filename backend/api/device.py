@@ -54,13 +54,12 @@ async def wifi_tunnel_connect(req: WifiTunnelConnectRequest):
         info = await dm.connect_wifi_tunnel(req.rsd_address, req.rsd_port)
         await app_state.create_engine_for_device(info.udid)
         try:
-            from api.websocket import broadcast
-            await broadcast("device_connected", {
+            await dm._events.publish(("device_connected", {
                 "udid": info.udid,
                 "name": info.name,
                 "ios_version": info.ios_version,
                 "connection_type": "Network",
-            })
+            }))
         except Exception:
             pass
         return {
@@ -672,13 +671,12 @@ async def _cleanup_wifi_connection_for(udid: str, *, caller: str) -> bool:
         _tunnel_logger.exception("[%s] Failed to disconnect %s", caller, udid)
     await app_state.remove_engine(udid)
     try:
-        from api.websocket import broadcast
-        await broadcast("device_disconnected", {
+        await dm._events.publish(("device_disconnected", {
             "udid": udid,
             "udids": [udid],
             "reason": "wifi_tunnel_stopped",
             "remaining_count": len(dm._connections),
-        })
+        }))
     except Exception:
         _tunnel_logger.exception("[%s] WiFi cleanup broadcast failed", caller)
     return True
@@ -741,15 +739,19 @@ async def _attempt_tunnel_restart(
     the relocated infra implementation. Behavior is identical to the
     pre-relocation function; see infra/device/tunnel_restart."""
     from main import app_state, _auto_sync_new_device_to_primary
-    from api.websocket import broadcast
     from infra.device.tunnel_restart import attempt_tunnel_restart
+
+    dm = _dm()
+
+    async def broadcast(event_type, payload):
+        await dm._events.publish((event_type, payload))
 
     def _watchdog_factory(u: str, runner: TunnelRunner):
         return asyncio.create_task(_per_tunnel_watchdog(u, runner))
 
     return await attempt_tunnel_restart(
         udid, ip, port, snapshot, original_runner,
-        engine_registry=app_state, device_manager=_dm(), broadcast=broadcast,
+        engine_registry=app_state, device_manager=dm, broadcast=broadcast,
         auto_sync=_auto_sync_new_device_to_primary, watchdog_factory=_watchdog_factory,
     )
 
@@ -761,6 +763,7 @@ async def _per_tunnel_watchdog(udid: str, runner: TunnelRunner) -> None:
     rebuilds the device manager connection (the new TUN interface gets a
     fresh RSD address) and resumes the sim from snapshot so the iPhone
     keeps moving across the blip. Other tunnels stay isolated."""
+    dm = _dm()
     try:
         task = runner.task
         if task is None:
@@ -785,8 +788,7 @@ async def _per_tunnel_watchdog(udid: str, runner: TunnelRunner) -> None:
             udid, ip, port, len(_TUNNEL_RESTART_BACKOFF),
         )
         try:
-            from api.websocket import broadcast
-            await broadcast("tunnel_degraded", {"udid": udid, "reason": "task_exited"})
+            await dm._events.publish(("tunnel_degraded", {"udid": udid, "reason": "task_exited"}))
         except Exception:
             _tunnel_logger.exception("Failed to emit tunnel_degraded event")
 
@@ -881,8 +883,7 @@ async def _per_tunnel_watchdog(udid: str, runner: TunnelRunner) -> None:
                 wd.cancel()
             await _cleanup_wifi_connection_for(udid, caller="watchdog_tunnel_died")
             try:
-                from api.websocket import broadcast
-                await broadcast("tunnel_lost", {"udid": udid, "reason": "task_exited"})
+                await dm._events.publish(("tunnel_lost", {"udid": udid, "reason": "task_exited"}))
             except Exception:
                 _tunnel_logger.exception("Failed to emit tunnel_lost event")
     except asyncio.CancelledError:
@@ -1170,12 +1171,11 @@ async def wifi_tunnel_stop(req: WifiTunnelStopRequest | None = None):
                     pass
                 await app_state.remove_engine(usb_dev.udid)
                 try:
-                    from api.websocket import broadcast
-                    await broadcast("device_error", {
+                    await dm._events.publish(("device_error", {
                         "udid": usb_dev.udid,
                         "stage": "usb_fallback",
                         "error": "USB fallback engine creation failed",
-                    })
+                    }))
                 except Exception:
                     pass
     except Exception:
@@ -1372,15 +1372,14 @@ async def connect_device(udid: str, device_service=Depends(get_device_service)):
     try:
         await device_service.connect(udid)
         try:
-            from api.websocket import broadcast
             devs = await dm.discover_devices()
             info = next((d for d in devs if d.udid == udid), None)
-            await broadcast("device_connected", {
+            await dm._events.publish(("device_connected", {
                 "udid": udid,
                 "name": info.name if info else "",
                 "ios_version": info.ios_version if info else "",
                 "connection_type": info.connection_type if info else "USB",
-            })
+            }))
         except Exception:
             pass
         return {"status": "connected", "udid": udid}
@@ -1407,8 +1406,9 @@ async def disconnect_device(udid: str, device_service=Depends(get_device_service
     # Drop the per-udid engine + dm connection via the service.
     await device_service.disconnect(udid)
     try:
-        from api.websocket import broadcast
-        await broadcast("device_disconnected", {"udid": udid, "udids": [udid], "reason": "user"})
+        await device_service._dm._events.publish(
+            ("device_disconnected", {"udid": udid, "udids": [udid], "reason": "user"})
+        )
     except Exception:
         pass
     return {"status": "disconnected", "udid": udid}
@@ -1472,11 +1472,10 @@ async def forget_device(udid: str):
 
     # 5. Notify the frontend.
     try:
-        from api.websocket import broadcast
-        await broadcast("device_disconnected", {
+        await dm._events.publish(("device_disconnected", {
             "udid": udid, "udids": [udid], "reason": "forgotten",
             "remaining_count": len(dm._connections),
-        })
+        }))
     except Exception:
         pass
 
