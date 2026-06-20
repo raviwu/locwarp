@@ -33,10 +33,10 @@ source_modules =
 forbidden_modules =
     fastapi
 
-# Phase 2 (Group 3, Task 11): REPORT-ONLY. infra/device/wifi_tunnel.py still
-# holds two lazy `from api.device import …` statements (lines 16, 25). This
-# contract makes that violation visible without failing the build yet. Flipped
-# to enforced in Task 14 once the relocation (Tasks 12-13) is complete.
+# Phase 2 (Group 3, Task 14): ENFORCED. Tasks 12-13 relocated tunnel state
+# (_tunnels, _tunnels_lock, _tunnel_watchdogs) and attempt_tunnel_restart out
+# of infra/device/wifi_tunnel.py, removing the last infra->api import edge.
+# Contract flipped from report-only to enforced here (Task 14). 3 kept, 0 broken.
 [importlinter:contract:no-infra-imports-api]
 name = Infra must not import API
 type = forbidden

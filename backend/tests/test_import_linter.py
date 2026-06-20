@@ -1,26 +1,19 @@
 """
-Import-linter enforcement test — ENFORCED (Phase 1 + Phase 2 report-only).
+Import-linter enforcement test — ENFORCED (Phase 1 + Phase 2 Group 3).
 
-Runs lint-imports against backend/.importlinter checking ONLY the ENFORCED
-contracts one at a time. Report-only contracts (added in Phase 2) are
-intentionally excluded from the returncode-0 assertion — they are expected to
-be BROKEN until the corresponding migration task completes.
+Both contracts are now enforced; lint-imports must exit 0.
 
 Currently enforced:
   - no-core-imports-api  (Phase 1 Task 8)
   - no-services-imports-fastapi  (Phase 2 Group 1 Task 4)
-
-Report-only (not yet enforced):
-  - no-infra-imports-api  (Phase 2 Group 3 Task 11, broken until Task 14)
+  - no-infra-imports-api  (Phase 2 Group 3 Task 14)
 
 Tasks 3-4 broke the core->api cycle in device_manager.py.
-This test is the regression gate: any future import of `api.*`
-from within the `core` package will make lint-imports exit non-zero
-and this test will FAIL.
-
-No infra->api contract is enforced here because infra/device/wifi_tunnel.py
-still contains lazy imports of api.device (Task-11-deferred intermediate).
-That contract will be enforced in Phase 2 Group 3 Task 14.
+Tasks 12-13 relocated tunnel state + restart fn out of wifi_tunnel.py,
+removing the last infra->api import edge.
+Task 14 flips no-infra->api from report-only to enforced and tightens
+this test to assert both no-core->api AND no-infra->api are KEPT with
+lint-imports exit code 0.
 """
 
 import os
@@ -43,17 +36,14 @@ if not LINT_IMPORTS.exists():
 
 def test_import_linter_enforced():
     """
-    ENFORCED: the no-core->api contract must be KEPT.
+    ENFORCED: both no-core->api and no-infra->api contracts must be KEPT.
 
-    Runs ALL contracts so the full report is visible, but only asserts
-    on the enforced no-core->api contract. Report-only contracts (e.g.
-    no-infra->api, added in Task 11) are expected to be BROKEN until
-    their corresponding migration tasks complete; their breakage does NOT
-    fail this test.
+    Runs ALL contracts so the full report is visible. Asserts that both
+    enforced contracts are KEPT and that lint-imports exits 0 (no broken
+    contracts).
 
-    Any `from api.*` or `import api.*` introduced into the `core` package
-    will cause "Core must not import API KEPT" to disappear from the report
-    and this test will FAIL.
+    Any `from api.*` or `import api.*` introduced into the `core` or `infra`
+    packages will cause this test to FAIL.
     """
     result = subprocess.run(
         [
@@ -70,11 +60,12 @@ def test_import_linter_enforced():
     print(report)
     print("--- end report (exit code:", result.returncode, ") ---\n")
 
-    # ENFORCED (Phase 1): the no-core->api contract must be KEPT.
-    assert "Core must not import API KEPT" in report, (
-        "The no-core->api contract is no longer KEPT — the cycle has been "
-        "re-introduced. See the report above for the offending import chain."
-    )
-    # Phase 2 Task 11 (report-only): no-infra->api is intentionally BROKEN here.
-    # Flipped to enforced (and this assertion tightened back to a full 0-broken
-    # check) in Task 14. Until then we assert ONLY the core contract.
+    # ENFORCED: both contracts must be KEPT.
+    assert "Core must not import API" in report, (
+        f"Expected 'Core must not import API' in lint-imports output. Got:\n{report}")
+    assert "Infra must not import API" in report, (
+        f"Expected 'Infra must not import API' in lint-imports output. Got:\n{report}")
+    # ENFORCED: exit 0 means all contracts kept, 0 broken.
+    assert result.returncode == 0, (
+        "lint-imports reported broken contracts — either the no-core->api cycle "
+        "or the no-infra->api edge has been re-introduced.")
