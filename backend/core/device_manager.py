@@ -535,7 +535,7 @@ class DeviceManager:
         kernel routes that IPv6 address via the helper-owned TUN, so
         plain TCP works from this unprivileged process.
         """
-        from core.wifi_tunnel import _helper_client
+        from core.wifi_tunnel import _helper_client, open_tunnel_with_reconcile
 
         logger.debug("Requesting USB tunnel from helper for %s (iOS %s)", udid, ios_version)
         if _helper_client is None:
@@ -545,7 +545,7 @@ class DeviceManager:
             )
 
         try:
-            info = await _helper_client.open_usb_tunnel(udid=udid)
+            info = await open_tunnel_with_reconcile("open_usb_tunnel", udid)
             logger.info(
                 "Tunnel established for %s: %s:%s (helper-owned)",
                 udid, info.get("rsd_address"), info.get("rsd_port"),

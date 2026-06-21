@@ -19,7 +19,7 @@ import asyncio
 import logging
 from typing import Optional
 
-from services.tunnel_helper_client import TunnelHelperClient
+from services.tunnel_helper_client import TunnelHelperClient, HelperError
 
 logger = logging.getLogger("wifi_tunnel")
 
@@ -46,6 +46,40 @@ def set_helper_client(client: Optional[TunnelHelperClient]) -> None:
     _helper_client = client
 
 
+async def open_tunnel_with_reconcile(method: str, udid: str, **kwargs) -> dict:
+    """Open a helper tunnel, self-healing a stale "tunnel already exists"
+    (-32003). The elevated helper persists its tunnels across backend restarts
+    (separate root process), so a reconnect — or a USB<->WiFi switch — can find a
+    leftover tunnel for this udid and refuse to open a second one. Rather than
+    surfacing that as a misleading 500 ("請以系統管理員身份執行"), close the stale
+    tunnel and retry the open exactly once.
+
+    ``method`` is the TunnelHelperClient coroutine name ("open_usb_tunnel" or
+    "open_wifi_tunnel"); ``kwargs`` carries its extra args (ip/port for WiFi).
+    """
+    if _helper_client is None:
+        raise RuntimeError("tunnel helper client is not configured")
+    open_fn = getattr(_helper_client, method)
+    try:
+        return await open_fn(udid=udid, **kwargs)
+    except HelperError as exc:
+        if getattr(exc, "code", None) != -32003:
+            raise
+        logger.info(
+            "Helper already holds a tunnel for %s (-32003); closing the stale "
+            "tunnel and retrying %s once",
+            udid, method,
+        )
+        try:
+            await _helper_client.close_tunnel(udid=udid)
+        except Exception:
+            logger.warning(
+                "close_tunnel(%s) before retry failed; retrying open anyway",
+                udid, exc_info=True,
+            )
+        return await open_fn(udid=udid, **kwargs)
+
+
 class TunnelRunner:
     """Proxy facade — see module docstring."""
 
@@ -63,7 +97,7 @@ class TunnelRunner:
     async def start(self, udid: str, ip: str, port: int, timeout: float = 20.0) -> dict:
         if _helper_client is None:
             raise RuntimeError("tunnel helper client is not configured")
-        info = await _helper_client.open_wifi_tunnel(udid=udid, ip=ip, port=port)
+        info = await open_tunnel_with_reconcile("open_wifi_tunnel", udid, ip=ip, port=port)
         self.info = info
         self.target_ip = ip
         self.target_port = port
