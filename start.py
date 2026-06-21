@@ -279,6 +279,25 @@ def check_admin():
         return False
 
 
+def _restore_terminal():
+    """Reset the controlling TTY to sane line discipline.
+
+    The tunnel-helper ``sudo`` prompt puts the terminal into no-echo/raw mode
+    (ONLCR off) to read the password. Because the helper is spawned in the
+    background while the backend/frontend then stream their output to the SAME
+    TTY, an un-restored terminal makes every subsequent line print without a
+    carriage return — the output "staircases" down-and-right. Resetting once the
+    elevation prompt is done keeps the logs left-aligned.
+    """
+    if os.name == "nt":
+        return
+    try:
+        if sys.stdin.isatty() or sys.stdout.isatty():
+            subprocess.run(["stty", "sane"], check=False)
+    except Exception:
+        pass
+
+
 def main():
     if os.name == "nt":
         os.system("title LocWarp")  # noqa: S605 - static string, no user input
@@ -318,6 +337,7 @@ def main():
     if sys.platform == "darwin":
         print("  [3a/4] 啟動 elevated tunnel helper...")
         spawn_tunnel_helper()
+        _restore_terminal()  # sudo's password prompt leaves the TTY in raw mode
         print()
 
     # 啟動服務

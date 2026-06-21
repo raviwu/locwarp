@@ -44,7 +44,7 @@ from services.tunnel_helper_client import TunnelHelperClient, HelperError
 # is configured, skip the file handler entirely so tests don't pollute
 # the user's real backend log. Tests that explicitly want file logging
 # can still opt in via ``LOCWARP_LOG_DIR``.
-_log_fmt = "%(asctime)s [%(name)s] %(levelname)s: %(message)s"
+_log_fmt = "%(asctime)s [%(name)-26s] %(levelname)-8s %(message)s"
 _log_override = os.environ.get("LOCWARP_LOG_DIR")
 _under_pytest = "PYTEST_CURRENT_TEST" in os.environ or "PYTEST_VERSION" in os.environ
 if _log_override:
