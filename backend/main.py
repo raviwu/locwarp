@@ -1143,10 +1143,30 @@ def _release_stale_backend(host: str, port: int) -> None:
     raise SystemExit(3)
 
 
+# Force the stdlib asyncio event loop instead of uvloop. uvloop's datagram
+# transport (libuv) BUSY-RETRIES a send that fails with ENOBUFS — e.g. an mDNS
+# multicast to a torn-down WiFi-tunnel utun interface (via pymobiledevice3
+# browse_remotepairing, behind GET /wifi/tunnel/discover) — pegging a core at
+# 100% CPU and starving the whole event loop. stdlib asyncio drops such datagrams
+# (error_received, no retry). See tests/test_event_loop_asyncio.py.
+UVICORN_LOOP = "asyncio"
+
+
+def _run_server() -> None:
+    uvicorn.run(
+        "main:app",
+        host=API_HOST,
+        port=API_PORT,
+        reload=False,
+        access_log=True,
+        loop=UVICORN_LOOP,
+    )
+
+
 if __name__ == "__main__":
     _release_stale_backend(API_HOST, API_PORT)
 
     uvicorn_access = logging.getLogger("uvicorn.access")
     uvicorn_access.setLevel(logging.INFO)
     uvicorn_access.propagate = True
-    uvicorn.run("main:app", host=API_HOST, port=API_PORT, reload=False, access_log=True)
+    _run_server()
