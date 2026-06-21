@@ -96,18 +96,18 @@ def spawn_tunnel_helper() -> bool:
         # Keep stdin attached so sudo can prompt for the password.
     )
 
-    # Wait up to 30s for /tmp/locwarp-helper.status to flip to READY.
-    # If the user cancels the sudo prompt or types the wrong password,
-    # this loop simply times out and the backend's own startup probe
-    # will surface a clearer error.
+    # Wait up to 30s for the helper to actually ANSWER A PING on its socket.
+    # Do NOT trust HELPER_STATUS alone: an ungraceful prior shutdown (e.g. a
+    # SIGKILL) can leave a root-owned "READY" status file behind a dead socket.
+    # This non-root launcher cannot unlink that file (sticky /tmp), so reading it
+    # yields a false-positive READY that races startup ahead of the real,
+    # still-authenticating sudo helper — the genuine password prompt then fires
+    # too late into a contended terminal and fails. _is_existing_helper_alive()
+    # pings the live socket, so a stale status can never short-circuit the wait.
     for _ in range(60):
-        if HELPER_STATUS.exists():
-            try:
-                if HELPER_STATUS.read_text().strip() == "READY":
-                    print("      tunnel helper READY ✓")
-                    return True
-            except OSError:
-                pass
+        if _is_existing_helper_alive():
+            print("      tunnel helper READY ✓")
+            return True
         time.sleep(0.5)
 
     print(
