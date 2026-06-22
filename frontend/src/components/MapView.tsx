@@ -10,16 +10,11 @@ import { useDestinationLayer } from '../hooks/useDestinationLayer';
 import { useRandomWalkCircleLayer } from '../hooks/useRandomWalkCircleLayer';
 import { usePreviewPinLayer } from '../hooks/usePreviewPinLayer';
 import { useWaypointMarkersLayer } from '../hooks/useWaypointMarkersLayer';
+import { useBookmarkMarkersLayer } from '../hooks/useBookmarkMarkersLayer';
 import { cellsInBounds, approxCellSizeMeters } from '../services/s2grid';
 import type { S2CellPolygon } from '../services/s2grid';
 import { parseCoord } from '../utils/coords';
 import { isSubmitEnter } from '../utils/keyboard';
-import { clusterByPixelDistance } from '../utils/pinCluster';
-import {
-  buildBookmarkPinHtml,
-  buildBookmarkClusterHtml,
-  buildBookmarkClusterPopupHtml,
-} from '../utils/mapIconHtml';
 import { BookmarkGeoLine } from './BookmarkGeoLine';
 import { useLeafletBarButton } from './LeafletBarButton';
 
@@ -353,7 +348,9 @@ const MapView: React.FC<MapViewProps> = ({
   // waypointSigRef) are owned by useWaypointMarkersLayer now (task p4b2bi);
   // called below after the other layer hooks. The mini-menu state (wpMenu) +
   // its JSX stay here — only the marker-rebuild effect moved.
-  const bookmarkMarkersRef = useRef<L.Marker[]>([]);
+  // The small bookmark pins + their marker ref (bookmarkMarkersRef) + the
+  // zoomend rebuild listener are owned by useBookmarkMarkersLayer now (task
+  // p4b2bi); called below after the other layer hooks.
   // The route polyline (base line + flowing-arrow dash overlay) + its two refs
   // are owned by useRoutePolylineLayer now (task p4b2bi); called below after
   // useMapInstance / useBaseLayers.
@@ -705,111 +702,15 @@ const MapView: React.FC<MapViewProps> = ({
 
   // Render/clear small bookmark pins on the map when the user toggles
   // 'show all bookmarks on map'. Each pin is clickable and teleports to
-  // that bookmark's position.
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map) return;
-    bookmarkMarkersRef.current.forEach((m) => m.remove());
-    bookmarkMarkersRef.current = [];
-    if (!showBookmarkPins || !bookmarkPins || bookmarkPins.length === 0) return;
-
-    // Cluster bookmarks that fall within ~40 px of each other at the current
-    // zoom. One teardrop pin represents the group; clicking a cluster opens a
-    // popup list the user can tap to choose which exact bookmark to jump to.
-    // This stops a dozen pins stacking into what looks like a single dot when
-    // the user zooms out to see all of Taiwan.
-    const rebuild = () => {
-      bookmarkMarkersRef.current.forEach((m) => m.remove());
-      bookmarkMarkersRef.current = [];
-      const THRESHOLD_PX = 40;
-      const clusters = clusterByPixelDistance(
-        bookmarkPins!,
-        (item) => map.latLngToLayerPoint([item.lat, item.lng]),
-        THRESHOLD_PX,
-      );
-
-      clusters.forEach((c) => {
-        if (c.members.length === 1) {
-          const bm = c.members[0];
-          // Design 5 — Neon glass bubble. Frosted capsule with purple glow,
-          // flag + name inside, tiny pointing nub underneath pinning the
-          // coordinate. Max width 180px, name truncates with ellipsis.
-          const icon = L.divIcon({
-            className: 'bookmark-pin',
-            // Outer div fills the Leaflet divIcon container, flex column
-            // bottom-center so the glowing dot at the bottom sits exactly
-            // on the (lat, lng) coordinate (matches iconAnchor below).
-            html: buildBookmarkPinHtml(bm.name, bm.country_code),
-            iconSize: [200, 56],
-            // Anchor = bottom-center of the icon = the glowing dot = exact
-            // (lat, lng) coordinate. Previously the flex-inline column was
-            // sitting at top-left so the whole pin rendered above-left of
-            // the real point.
-            iconAnchor: [100, 56],
-          });
-          const marker = L.marker([bm.lat, bm.lng], {
-            icon,
-            pane: 'markerPane',
-            // Sit above the blue person marker (zIndexOffset 1000) so the
-            // pin stays clickable when the user is standing on it.
-            zIndexOffset: 2000,
-          });
-          marker.on('click', () => onTeleport(bm.lat, bm.lng));
-          marker.addTo(map);
-          bookmarkMarkersRef.current.push(marker);
-        } else {
-          // Design 4 — Polaroid stack cluster. Three overlapping mini cards
-          // with rotation, top one shows the count. Click = open list popup.
-          const count = c.members.length;
-          const icon = L.divIcon({
-            className: 'bookmark-cluster-pin',
-            html: buildBookmarkClusterHtml(count),
-            iconSize: [52, 46],
-            iconAnchor: [26, 23],
-          });
-          const clusterLat = c.members.reduce((s, m) => s + m.lat, 0) / count;
-          const clusterLng = c.members.reduce((s, m) => s + m.lng, 0) / count;
-          const marker = L.marker([clusterLat, clusterLng], {
-            icon,
-            pane: 'markerPane',
-            // Above blue person so the cluster card is always clickable.
-            zIndexOffset: 2000,
-          });
-          // Click on a cluster opens a popup with a clickable list so the
-          // user can pick which specific bookmark to teleport to. Solves the
-          // 'zoom out to see whole country, markers overlap into one dot'
-          // usability issue.
-          const popup = L.popup({
-            className: 'bookmark-cluster-popup',
-            maxWidth: 240,
-            offset: [0, -12],
-          }).setContent(buildBookmarkClusterPopupHtml(c.members));
-          marker.bindPopup(popup);
-          marker.on('popupopen', () => {
-            document.querySelectorAll('.bm-cluster-row').forEach((el) => {
-              el.addEventListener('click', () => {
-                const lat = parseFloat((el as HTMLElement).dataset.lat || '');
-                const lng = parseFloat((el as HTMLElement).dataset.lng || '');
-                if (Number.isFinite(lat) && Number.isFinite(lng)) {
-                  map.closePopup();
-                  onTeleport(lat, lng);
-                }
-              });
-            });
-          });
-          marker.addTo(map);
-          bookmarkMarkersRef.current.push(marker);
-        }
-      });
-    };
-    rebuild();
-
-    // Rebuild clusters when the zoom level changes — what's 'overlapping'
-    // at world-scale is not overlapping at street-scale.
-    const onZoom = () => rebuild();
-    map.on('zoomend', onZoom);
-    return () => { map.off('zoomend', onZoom); };
-  }, [bookmarkPins, showBookmarkPins, onTeleport]);
+  // that bookmark's position. Owns the marker ref (bookmarkMarkersRef) + the
+  // zoomend rebuild listener internally (task p4b2bi); the screen-pixel
+  // clustering + icon-HTML are the unit-tested pure helpers. The single-pin
+  // click and the cluster-popup row click both teleport via onTeleport.
+  useBookmarkMarkersLayer(mapRef, {
+    bookmarkPins,
+    showBookmarkPins,
+    onTeleport,
+  });
 
   // The random-walk radius circle effect was moved into useRandomWalkCircleLayer
   // (task p4b2bi) — see the hook call above, after useDestinationLayer.
