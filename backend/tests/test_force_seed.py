@@ -72,8 +72,9 @@ def test_force_seed_resurrects_on_disk(manager):
     # Also alive in the live store
     assert any(b.id == bm_id for b in manager.store.bookmarks)
 
-    # Sensible return value — at least a dict
-    assert isinstance(result, dict)
+    # Return contract: the resurrected id was absent from the live list
+    # (deleted -> tombstoned), so force_seed counts it as an add.
+    assert result == {"added": 1, "updated": 0}
 
 
 def test_naive_append_stays_dead_on_disk(manager):

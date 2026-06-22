@@ -689,6 +689,11 @@ class BookmarkManager:
         encoding the empty-updated_at pitfall so callers don't have to know
         about it.
 
+        This is the public force-seed entry point (e.g. for a future
+        bulk/catalog-seed caller). ``import_catalog`` does its own upsert
+        (with enrich + a richer return shape) and calls the shared
+        ``force_seed_items`` primitive directly rather than this method.
+
         Returns ``{'added': N, 'updated': N}`` where *added* counts items
         that were new to the store and *updated* counts items that replaced
         an existing entry.
