@@ -1,7 +1,8 @@
 import React, { useRef, useEffect, useLayoutEffect, useState, useCallback, useMemo } from 'react';
 import { useT } from '../i18n';
-import { reverseGeocode } from '../services/api';
+import { reverseGeocode, getInitialPosition } from '../services/api';
 import L from 'leaflet';
+import { useMapInstance } from '../hooks/useMapInstance';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import maplibregl from 'maplibre-gl';
 import '@maplibre/maplibre-gl-leaflet';
@@ -315,7 +316,9 @@ const MapView: React.FC<MapViewProps> = ({
   useEffect(() => { onMapClickRef.current = onMapClick; }, [onMapClick]);
   tRef.current = t;
   const mapContainerRef = useRef<HTMLDivElement>(null);
-  const mapRef = useRef<L.Map | null>(null);
+  // mapRef is owned by useMapInstance now (the once-per-mount lifecycle hook);
+  // it's destructured from the hook call below and consumed by every other
+  // effect in this component exactly as before.
   const currentMarkerRef = useRef<L.CircleMarker | null>(null);
   const prevPositionRef = useRef<Position | null>(null);
   const destMarkerRef = useRef<L.Marker | null>(null);
@@ -498,38 +501,72 @@ const MapView: React.FC<MapViewProps> = ({
     setReverseGeo({ loading: false, address: null, error: null, key: '' });
   }, []);
 
-  // Initialize map
-  useEffect(() => {
-    if (!mapContainerRef.current || mapRef.current) return;
+  // Map lifecycle (creation + control-corner offsets + map-level events +
+  // persisted initial-position fetch + onMapReady + teardown) lives in
+  // useMapInstance now. mapRef is returned and consumed by every effect below
+  // exactly as before. The map-level events route to MapView's existing logic
+  // through the callbacks here, which read the same *Ref mirrors the once-per-
+  // mount handlers always did — so toggling a prop mid-session still takes
+  // effect without re-creating the map.
+  const { mapRef } = useMapInstance(mapContainerRef, {
+    // Left-click: dismiss any open context menu / waypoint menu, then forward
+    // to onMapClick (the "left-click to add waypoint" toggle). Identical to the
+    // original once-per-mount click handler.
+    onMapClick: (lat, lng) => {
+      closeContextMenu();
+      setWpMenu((prev) => prev.visible ? { ...prev, visible: false } : prev);
+      try {
+        onMapClickRef.current?.(lat, lng);
+      } catch { /* ignore handler errors */ }
+    },
+    // Right-click: open the shared context menu at the click point. The
+    // hook already called preventDefault on the original event.
+    onContextMenu: (lat, lng, oe) => {
+      setContextMenu({
+        visible: true,
+        x: oe.clientX,
+        y: oe.clientY,
+        lat,
+        lng,
+      });
+    },
+    // moveend (+ once on mount): feed the center up to App via the ref mirror.
+    onMapCenterChange: (lat, lng) => {
+      if (!onMapCenterChangeRef.current) return;
+      try {
+        onMapCenterChangeRef.current(lat, lng);
+      } catch { /* ignore */ }
+    },
+    // dragstart: auto-disable follow mode (only when it's currently on, read
+    // via followStateRef so this sees the latest state) + toast. Programmatic
+    // panTo / setView do not fire dragstart, so the auto-pan loop is safe.
+    onDragStart: () => {
+      if (!followStateRef.current) return;
+      setFollowMode(false);
+      try {
+        onShowToastRef.current?.(tRef.current('map.follow_disabled_toast'));
+      } catch { /* ignore */ }
+    },
+    onMapReady,
+    // Injected api — only getInitialPosition is read, for the persisted
+    // initial-position pan on mount. Race-guarded by prevPositionRef so the
+    // saved-position pan still loses to a real position_update that arrived.
+    api: { getInitialPosition },
+    prevPositionRef,
+  });
 
-    const map = L.map(mapContainerRef.current, {
-      center: [25.033, 121.5654],
-      zoom: 13,
-      // Keep Leaflet's default control off so we can position our own
-      // zoom control below the EtaBar on the left (default top-left
-      // would collide with the overlay).
-      zoomControl: false,
-      // Snap wheel zoom to integer levels + require a full notch per step,
-      // so one wheel tick = one tile-load batch instead of cascading
-      // intermediate zooms that all fire tile requests and bomb OSM's
-      // rate limiter with black-tile fallout.
-      zoomSnap: 1,
-      wheelPxPerZoomLevel: 120,
-      wheelDebounceTime: 60,
-    });
-    const zoomCtrl = L.control.zoom({ position: 'topleft' });
-    zoomCtrl.addTo(map);
-    // Nudge the top-left and top-right control clusters down so they sit
-    // below the EtaBar (full-width, absolute-positioned at top:0) instead
-    // of being partially covered by it.
+  // Custom leaflet-bar buttons (recenter → follow → library → S2) + base-layer
+  // setup, RELOCATED out of the monolithic map-init effect into their own
+  // mapRef-dependent effect (awaiting their own extraction in Tasks 5/6). Runs
+  // once per mount AFTER useMapInstance has created the map + nudged the
+  // control corners — preserving the documented init ORDER (corners → button
+  // stack order → base layers) so the "Taipei-flash-then-jump" / control-
+  // layout bugs don't return. Behavior is unchanged; the only difference is
+  // these read `mapRef.current` instead of the local `map` const.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
     const topLeftEl = (map as any)._controlCorners?.topleft as HTMLElement | undefined;
-    if (topLeftEl) {
-      topLeftEl.style.marginTop = '56px';
-    }
-    const topRightEl = (map as any)._controlCorners?.topright as HTMLElement | undefined;
-    if (topRightEl) {
-      topRightEl.style.marginTop = '56px';
-    }
 
     // Recenter button as a second leaflet-bar in the topleft corner. This
     // way Leaflet's layout (margin-left: 10px on each control + 10px gap
@@ -658,34 +695,6 @@ const MapView: React.FC<MapViewProps> = ({
       s2GridBtnRef.current = btn;
     }
 
-    // User-initiated drag disables follow mode so they can pan freely. We
-    // only react when follow is currently on (read via ref so the handler
-    // wired once at mount sees the latest state). dragstart fires only on
-    // pointer drag — programmatic panTo / setView do not trigger it, so
-    // the auto-pan loop won't accidentally turn itself off.
-    map.on('dragstart', () => {
-      if (!followStateRef.current) return;
-      setFollowMode(false);
-      try {
-        onShowToastRef.current?.(tRef.current('map.follow_disabled_toast'));
-      } catch { /* ignore */ }
-    });
-
-    // Map center change — fed up to App so the GoldDitto panel can offer
-    // "use map center" as a one-click B-coord setter. Fire once on mount
-    // with the initial center so the parent state is never stale-null.
-    try {
-      const c0 = map.getCenter();
-      onMapCenterChangeRef.current?.(c0.lat, c0.lng);
-    } catch { /* ignore */ }
-    map.on('moveend', () => {
-      if (!onMapCenterChangeRef.current) return;
-      try {
-        const c = map.getCenter();
-        onMapCenterChangeRef.current(c.lat, c.lng);
-      } catch { /* ignore */ }
-    });
-
     // Tile layer tuning (shared across all providers):
     //   updateWhenIdle=false    — load during pan, not only on idle
     //   updateWhenZooming=true  — fetch target-level tiles during zoom so
@@ -807,61 +816,6 @@ const MapView: React.FC<MapViewProps> = ({
         localStorage.setItem('locwarp.tile_layer', key);
       } catch { /* storage disabled */ }
     });
-
-    // Left-click on the map dismisses any open context menu.
-    // If the parent wires `onMapClick` (currently used by the "left-click
-    // to add waypoint" toggle in Loop / MultiStop modes), forward the
-    // coordinates there too.
-    map.on('click', (e: L.LeafletMouseEvent) => {
-      closeContextMenu();
-      setWpMenu((prev) => prev.visible ? { ...prev, visible: false } : prev);
-      try {
-        onMapClickRef.current?.(e.latlng.lat, e.latlng.lng);
-      } catch { /* ignore handler errors */ }
-    });
-
-    map.on('contextmenu', (e: L.LeafletMouseEvent) => {
-      e.originalEvent.preventDefault();
-      setContextMenu({
-        visible: true,
-        x: e.originalEvent.clientX,
-        y: e.originalEvent.clientY,
-        lat: e.latlng.lat,
-        lng: e.latlng.lng,
-      });
-    });
-
-    mapRef.current = map;
-
-    // Hand the parent an imperative panTo so it can move the view without
-    // touching React state (used by the StatusBar's Locate-PC pan-only flow).
-    if (onMapReady) {
-      try {
-        onMapReady({
-          panTo: (lat: number, lng: number, zoom?: number) => {
-            const m = mapRef.current;
-            if (!m) return;
-            const targetZoom = zoom ?? Math.max(m.getZoom(), 16);
-            m.setView([lat, lng], targetZoom, { animate: true });
-          },
-        });
-      } catch { /* non-fatal */ }
-    }
-
-    // Fetch the user-saved initial position from the backend (once, on mount).
-    // If set, pan the map to it. Brief Taipei flash is acceptable.
-    import('../services/api').then(({ getInitialPosition }) => {
-      getInitialPosition().then(({ position }) => {
-        if (!position || !mapRef.current) return;
-        if (prevPositionRef.current) return; // a real device position already arrived
-        mapRef.current.setView([position.lat, position.lng], mapRef.current.getZoom());
-      }).catch(() => { /* default center stays */ });
-    });
-
-    return () => {
-      map.remove();
-      mapRef.current = null;
-    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
