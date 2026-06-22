@@ -10,8 +10,19 @@ def test_cloud_sync_has_no_toplevel_websocket_import():
 
 
 def test_enable_disable_emit_unchanged_events(monkeypatch, tmp_path):
+    import main
     from main import app
     from fastapi.testclient import TestClient
+
+    # CONFIG ISOLATION (load-bearing): /enable calls AppState.save_settings(),
+    # which writes SETTINGS_FILE. Without redirecting it to tmp_path, the test
+    # persists `sync_folder = <tmp>/LocWarp` into the user's REAL
+    # ~/.locwarp/settings.json — a tmp path that outlives the test and corrupts
+    # the real cloud-sync state. save_settings writes main.SETTINGS_FILE;
+    # get_bookmarks_path reads config.SETTINGS_FILE — patch both, plus DATA_DIR.
+    monkeypatch.setattr("main.SETTINGS_FILE", tmp_path / "settings.json")
+    monkeypatch.setattr("config.SETTINGS_FILE", tmp_path / "settings.json")
+    monkeypatch.setattr("config.DATA_DIR", tmp_path)
 
     captured = []
 
@@ -27,8 +38,14 @@ def test_enable_disable_emit_unchanged_events(monkeypatch, tmp_path):
     monkeypatch.setattr(css_mod, "setup_sync_folder", lambda *a, **k: tmp_path / "LocWarp")
     monkeypatch.setattr(css_mod, "migrate_pair", lambda *a, **k: (0, 0))
 
-    client = TestClient(app)
-    resp = client.post("/api/cloud-sync/enable", json={})
-    assert resp.status_code == 200, resp.text
-    assert ("bookmarks_changed", {"reason": "cloud_sync_enabled"}) in captured
-    assert ("routes_changed", {"reason": "cloud_sync_enabled"}) in captured
+    try:
+        client = TestClient(app)
+        resp = client.post("/api/cloud-sync/enable", json={})
+        assert resp.status_code == 200, resp.text
+        assert ("bookmarks_changed", {"reason": "cloud_sync_enabled"}) in captured
+        assert ("routes_changed", {"reason": "cloud_sync_enabled"}) in captured
+    finally:
+        # /enable mutates the shared AppState in place; reset so this test is
+        # order-independent and leaves no dirty sync state for later tests.
+        main.app_state._sync_folder = None
+        main.app_state._cloud_sync_dismissed = False
