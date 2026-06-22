@@ -86,26 +86,36 @@ def test_legacy_file_without_categories_injects_default_and_reparents(tmp_path, 
     )
 
 
-def test_load_store_or_empty_does_not_inject_default_category(tmp_path, monkeypatch):
-    """_load_store_or_empty must NOT inject a default category.
+def test_repo_load_or_empty_does_not_inject_default_category(tmp_path):
+    """JsonStore.load_or_empty() (the LIVE merge-snapshot read) must NOT inject
+    a default category.
 
-    The merge snapshot read path is a pure read helper used inside _save to
-    fold concurrent on-disk writes into the current store.  It must return
-    the raw store as parsed — without the post_load default-injection that
-    _load() does — otherwise merging against an empty file would silently
-    add a phantom 'default' category.
+    The merge snapshot read path is used inside save() to fold concurrent
+    on-disk writes into the current store.  It must return the raw store as
+    parsed — without the post_load default-injection that load() does —
+    otherwise merging against an empty file would silently add a phantom
+    'default' category.
 
-    This asymmetry (post_load hook in _load vs. raw parse in _load_store_or_empty)
-    is load-bearing for Task 4; if the repository layer's read path accidentally
-    applies the injection everywhere, this test goes red.
+    This asymmetry (post_load hook in load() vs. raw parse in load_or_empty())
+    is load-bearing for Task 4; if the repository read path accidentally applies
+    the injection everywhere, this test goes red. Pins the LIVE JsonStore path
+    (post_load passed to load(), never load_or_empty()).
     """
+    from infra.persistence.json_store import JsonStore
+    from models.schemas import RouteStore
+    from services.route_store import _inject_default_category
+
     routes_file = tmp_path / "routes.json"
     # A file with no categories field at all.
     routes_file.write_text(json.dumps({"routes": []}), encoding="utf-8")
 
-    from services.route_store import _load_store_or_empty
-    store = _load_store_or_empty(routes_file)
+    repo = JsonStore(RouteStore, lambda: routes_file, post_load=_inject_default_category)
+    store = repo.load_or_empty()
 
     assert store.categories == [], (
-        f"_load_store_or_empty should not inject 'default'; got categories: {store.categories}"
+        f"load_or_empty should not inject 'default'; got categories: {store.categories}"
+    )
+    # Control: load() (with the same post_load) DOES inject — proving the asymmetry.
+    assert any(c.id == "default" for c in repo.load().categories), (
+        "load() must inject the default category via post_load"
     )

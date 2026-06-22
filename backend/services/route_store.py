@@ -47,21 +47,6 @@ def _tombstone(obj_id: str, kind: str) -> Tombstone:
     return Tombstone(id=obj_id, kind=kind, deleted_at=_now_iso())
 
 
-def _load_store_or_empty(path: Path) -> RouteStore:
-    """Read a RouteStore from disk, tolerating a missing or corrupt file.
-
-    Returns an empty store on any failure so merge_stores can treat it as
-    "the other side had nothing" — never raises, never loses our in-memory
-    copy in response to a transient read error."""
-    raw = safe_load_json(path)
-    if not isinstance(raw, dict):
-        return RouteStore(categories=[], routes=[], tombstones=[])
-    try:
-        return RouteStore(**raw)
-    except Exception:
-        return RouteStore(categories=[], routes=[], tombstones=[])
-
-
 def _default_category() -> RouteCategory:
     return RouteCategory(
         id="default",

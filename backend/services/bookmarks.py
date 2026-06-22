@@ -38,21 +38,6 @@ def _tombstone(obj_id: str, kind: str) -> Tombstone:
     return Tombstone(id=obj_id, kind=kind, deleted_at=_now_iso())
 
 
-def _load_store_or_empty(path: Path) -> BookmarkStore:
-    """Read a BookmarkStore from disk, tolerating a missing or corrupt file.
-
-    Returns an empty store on any failure so merge_stores can treat it as
-    "the other side had nothing" — never raises, never loses our in-memory
-    copy in response to a transient read error."""
-    raw = safe_load_json(path)
-    if not isinstance(raw, dict):
-        return BookmarkStore(categories=[], bookmarks=[], tombstones=[])
-    try:
-        return BookmarkStore(**raw)
-    except Exception:
-        return BookmarkStore(categories=[], bookmarks=[], tombstones=[])
-
-
 def _bookmarks_path_default() -> Path:
     """Resolve the bookmarks file path, honouring test monkeypatches.
 
