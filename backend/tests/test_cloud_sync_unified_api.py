@@ -44,10 +44,9 @@ def _client(tmp_path, monkeypatch):
     # runs (only inside the FastAPI lifespan; TestClient without `with` does
     # not trigger it). Initialize them directly so the router's
     # _build_status() has non-None managers to call.
-    from services.bookmarks import BookmarkManager
-    from services.route_store import RouteManager
-    main.app_state.bookmark_manager = BookmarkManager()
-    main.app_state.route_manager = RouteManager()
+    from bootstrap.factories import make_bookmark_manager, make_route_manager
+    main.app_state.bookmark_manager = make_bookmark_manager()
+    main.app_state.route_manager = make_route_manager()
     # Write an initial settings.json so tests that read it after a failed
     # operation can rely on the file existing (even if sync_folder is absent).
     main.app_state.save_settings()

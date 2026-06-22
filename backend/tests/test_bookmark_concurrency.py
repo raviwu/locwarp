@@ -6,7 +6,7 @@
 from datetime import datetime, timezone
 from pathlib import Path
 
-from services.bookmarks import BookmarkManager
+from bootstrap.factories import make_bookmark_manager
 
 
 def _patch_paths(tmp_path, monkeypatch):
@@ -21,14 +21,14 @@ def test_manager_records_mtime_after_load(tmp_path, monkeypatch):
         '{"categories":[{"id":"default","name":"x","color":"#fff","sort_order":0,"created_at":"2026-01-01T00:00:00+00:00"}],"bookmarks":[]}',
         encoding="utf-8",
     )
-    mgr = BookmarkManager()
+    mgr = make_bookmark_manager()
     assert mgr._last_loaded_mtime == bookmarks.stat().st_mtime
     assert len(mgr.store.categories) == 1
 
 
 def test_manager_records_mtime_after_save(tmp_path, monkeypatch):
     _patch_paths(tmp_path, monkeypatch)
-    mgr = BookmarkManager()
+    mgr = make_bookmark_manager()
     bm = mgr.create_bookmark(name="A", lat=1.0, lng=2.0)
     assert (tmp_path / "bookmarks.json").exists()
     assert mgr._last_loaded_mtime == (tmp_path / "bookmarks.json").stat().st_mtime
@@ -43,7 +43,7 @@ def test_save_merges_when_disk_changed_externally(tmp_path, monkeypatch):
     bookmarks = tmp_path / "bookmarks.json"
 
     # Manager A creates a bookmark
-    mgr_a = BookmarkManager()
+    mgr_a = make_bookmark_manager()
     mgr_a.create_bookmark(name="A1", lat=1.0, lng=1.0)
 
     # Simulate device B writing a different bookmark to disk
@@ -80,11 +80,11 @@ def test_save_merges_concurrent_external_addition(tmp_path, monkeypatch):
     Reproduces symptom 2: B's _save must read-merge-write so A's
     already-written bookmark is not clobbered."""
     _patch_paths(tmp_path, monkeypatch)
-    a = BookmarkManager()
-    b = BookmarkManager()
+    a = make_bookmark_manager()
+    b = make_bookmark_manager()
     a.create_bookmark(name="from-A", lat=1.0, lng=1.0)   # a._save writes file
     b.create_bookmark(name="from-B", lat=2.0, lng=2.0)   # b._save must keep from-A
-    names = {bm.name for bm in BookmarkManager().list_bookmarks()}
+    names = {bm.name for bm in make_bookmark_manager().list_bookmarks()}
     assert names == {"from-A", "from-B"}
 
 
@@ -92,12 +92,12 @@ def test_delete_propagates_and_does_not_resurrect(tmp_path, monkeypatch):
     """Reproduces symptom 3: a category deleted on A must stay deleted even
     after B (which still had it) read-merge-writes an unrelated change."""
     _patch_paths(tmp_path, monkeypatch)
-    a = BookmarkManager()
+    a = make_bookmark_manager()
     cat = a.create_category("Trip")
-    b = BookmarkManager()                        # b loads the file, also has "Trip"
+    b = make_bookmark_manager()                        # b loads the file, also has "Trip"
     a.delete_category(cat.id)                    # a writes file w/ tombstone
     b.create_bookmark(name="unrelated", lat=1.0, lng=1.0)  # b read-merge-writes
-    cats = {c.id for c in BookmarkManager().list_categories()}
+    cats = {c.id for c in make_bookmark_manager().list_categories()}
     assert cat.id not in cats
 
 
@@ -106,7 +106,7 @@ def test_reconcile_loads_external_bookmark(tmp_path, monkeypatch):
     _patch_paths(tmp_path, monkeypatch)
     bookmarks = tmp_path / "bookmarks.json"
 
-    mgr = BookmarkManager()
+    mgr = make_bookmark_manager()
     mgr.create_bookmark(name="local", lat=1.0, lng=1.0)
 
     payload = _json.loads(bookmarks.read_text(encoding="utf-8"))
@@ -133,7 +133,7 @@ def test_reconcile_loads_external_bookmark(tmp_path, monkeypatch):
 def test_reconcile_ignores_zero_byte_placeholder(tmp_path, monkeypatch):
     _patch_paths(tmp_path, monkeypatch)
     bookmarks = tmp_path / "bookmarks.json"
-    mgr = BookmarkManager()
+    mgr = make_bookmark_manager()
     mgr.create_bookmark(name="local", lat=1.0, lng=1.0)
     bookmarks.write_text("", encoding="utf-8")  # iCloud placeholder
     mgr._reconcile_from_disk()
@@ -143,7 +143,7 @@ def test_reconcile_ignores_zero_byte_placeholder(tmp_path, monkeypatch):
 def test_watcher_tick_reloads_and_fires_callback(tmp_path, monkeypatch):
     _patch_paths(tmp_path, monkeypatch)
     bookmarks = tmp_path / "bookmarks.json"
-    mgr = BookmarkManager()
+    mgr = make_bookmark_manager()
     mgr.create_bookmark(name="A", lat=1.0, lng=1.0)
 
     payload = _json.loads(bookmarks.read_text(encoding="utf-8"))
@@ -168,7 +168,7 @@ def test_watcher_tick_reloads_and_fires_callback(tmp_path, monkeypatch):
 
 def test_watcher_tick_ignores_self_echo(tmp_path, monkeypatch):
     _patch_paths(tmp_path, monkeypatch)
-    mgr = BookmarkManager()
+    mgr = make_bookmark_manager()
     mgr.create_bookmark(name="A", lat=1.0, lng=1.0)
     called = []
     mgr._on_external_change = lambda: called.append(True)
@@ -192,7 +192,7 @@ def test_watcher_handler_triggers_on_moved_to_target(tmp_path, monkeypatch):
     """
     _patch_paths(tmp_path, monkeypatch)
     bookmarks = tmp_path / "bookmarks.json"
-    mgr = BookmarkManager()
+    mgr = make_bookmark_manager()
     mgr.create_bookmark(name="local", lat=1.0, lng=1.0)
 
     from unittest.mock import MagicMock, sentinel
@@ -235,10 +235,10 @@ def test_two_managers_on_same_file_converge(tmp_path, monkeypatch):
     _patch_paths(tmp_path, monkeypatch)
     bookmarks = tmp_path / "bookmarks.json"
 
-    mgr_a = BookmarkManager()
+    mgr_a = make_bookmark_manager()
     mgr_a.create_bookmark(name="from-A-1", lat=1.0, lng=1.0)
 
-    mgr_b = BookmarkManager()
+    mgr_b = make_bookmark_manager()
     # B has loaded what A wrote
     assert any(b.name == "from-A-1" for b in mgr_b.list_bookmarks())
 

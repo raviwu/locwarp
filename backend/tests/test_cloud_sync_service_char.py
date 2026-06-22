@@ -98,20 +98,20 @@ class _CapBroadcast:
 def _patch_managers(monkeypatch, app, log):
     """Make the service rebuild new fake managers (and record the swap)."""
 
-    def _new_bm():
+    def _new_bm(path_provider=None):
         log.append("new:bm")
         m = _FakeManager("bm-new", log, app._tmp / "bm.json")
         return m
 
-    def _new_rm():
+    def _new_rm(path_provider=None):
         log.append("new:rm")
         m = _FakeManager("rm-new", log, app._tmp / "rm.json")
         return m
 
-    # The service lazily imports these inside enable()/disable(), so patch the
-    # source modules rather than the service module namespace.
-    monkeypatch.setattr("services.bookmarks.BookmarkManager", _new_bm)
-    monkeypatch.setattr("services.route_store.RouteManager", _new_rm)
+    # The service now imports make_bookmark_manager/make_route_manager from
+    # bootstrap.factories inside enable()/disable(), so patch the factory.
+    monkeypatch.setattr("bootstrap.factories.make_bookmark_manager", _new_bm)
+    monkeypatch.setattr("bootstrap.factories.make_route_manager", _new_rm)
 
 
 async def test_enable_orders_stop_before_restart_saves_new_folder_broadcasts(

@@ -5,17 +5,17 @@ resolve concurrent cloud-sync edits without clobbering or resurrecting.
 
 import pytest
 
-from services.bookmarks import BookmarkManager
+from bootstrap.factories import make_bookmark_manager
 
 
 @pytest.fixture
 def mgr(tmp_path, monkeypatch):
-    # _bookmarks_path() returns Path(BOOKMARKS_FILE) when the module-level
+    # _bookmarks_path_default() returns Path(BOOKMARKS_FILE) when the module-level
     # name differs from the import-time default — point both so the manager
     # reads/writes an isolated tmp file.
     monkeypatch.setattr("services.bookmarks.BOOKMARKS_FILE", tmp_path / "bookmarks.json")
     monkeypatch.setattr("services.bookmarks._CONFIG_DEFAULT_BOOKMARKS_FILE", object())
-    return BookmarkManager()
+    return make_bookmark_manager()
 
 
 def test_create_bookmark_stamps_updated_at(mgr):

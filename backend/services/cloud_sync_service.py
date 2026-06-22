@@ -96,10 +96,9 @@ class CloudSyncService:
             self._app.bookmark_manager.stop_watcher()
         if self._app.route_manager is not None:
             self._app.route_manager.stop_watcher()
-        from services.bookmarks import BookmarkManager
-        from services.route_store import RouteManager
-        self._app.bookmark_manager = BookmarkManager()
-        self._app.route_manager = RouteManager()
+        from bootstrap.factories import make_bookmark_manager, make_route_manager
+        self._app.bookmark_manager = make_bookmark_manager()
+        self._app.route_manager = make_route_manager()
         # restart_*_watcher calls asyncio.get_running_loop() which requires a
         # running event loop. Under FastAPI in production this is always present.
         # Under TestClient (which uses a sync ASGI transport without a live loop)
@@ -134,10 +133,9 @@ class CloudSyncService:
         self._app._sync_folder = None
         self._app.save_settings()
 
-        from services.bookmarks import BookmarkManager
-        from services.route_store import RouteManager
-        self._app.bookmark_manager = BookmarkManager()
-        self._app.route_manager = RouteManager()
+        from bootstrap.factories import make_bookmark_manager, make_route_manager
+        self._app.bookmark_manager = make_bookmark_manager()
+        self._app.route_manager = make_route_manager()
         try:
             self._app.restart_bookmark_watcher()
         except RuntimeError:

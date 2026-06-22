@@ -24,6 +24,7 @@ from watchdog.events import FileSystemEventHandler
 from watchdog.observers.api import ObservedWatch
 
 from config import ROUTES_FILE, get_routes_path
+from domain.ports.route_repository import RouteRepository
 from models.schemas import RouteCategory, RouteStore, SavedRoute, Tombstone
 from services.file_watcher import schedule as _watcher_schedule, unschedule as _watcher_unschedule
 from services.json_safe import safe_load_json, safe_write_json
@@ -71,19 +72,46 @@ def _default_category() -> RouteCategory:
     )
 
 
+def _routes_path_default() -> Path:
+    """Resolve the routes file path, honouring test monkeypatches.
+
+    Kept as a module-level function so the ROUTES_FILE monkeypatch seam
+    (used by test fixtures) is preserved when this is passed as the
+    path_provider to JsonStore via bootstrap.factories.
+    """
+    if ROUTES_FILE is not _CONFIG_DEFAULT_ROUTES_FILE:
+        return Path(ROUTES_FILE)
+    return get_routes_path()
+
+
+def _inject_default_category(store: RouteStore) -> RouteStore:
+    """Post-load hook: ensure a default category exists and reparent orphans.
+
+    Applied only in load() (full read), NOT in load_or_empty() (merge snapshot).
+    This asymmetry is load-bearing: the merge snapshot must return the raw
+    parsed store so merging against an empty file does not add phantom categories.
+    """
+    if not any(c.id == "default" for c in store.categories):
+        store.categories.insert(0, _default_category())
+    valid_ids = {c.id for c in store.categories}
+    for r in store.routes:
+        if r.category_id not in valid_ids:
+            r.category_id = "default"
+    return store
+
+
 class RouteManager:
     """CRUD manager for saved routes and route categories.
 
-    State is persisted to :data:`ROUTES_FILE` on every write.
+    State is persisted via the injected RouteRepository on every write.
+    The watcher state machine and mtime tracking stay on this manager.
+    (No _store_lock — route _watcher_tick never writes to disk, so there
+    is no Timer-vs-event-loop race; YAGNI per Phase-4a adversarial review.)
     """
 
-    def __init__(self) -> None:
+    def __init__(self, repo: RouteRepository) -> None:
         self.store = RouteStore(categories=[_default_category()], routes=[])
-        # Eagerly materialise iCloud placeholder (if any) so the first _load
-        # below returns the real content instead of falling back to defaults
-        # and relying on the watcher to catch up several seconds later.
-        from services.cloud_sync import materialize_if_placeholder
-        materialize_if_placeholder(self._routes_path())
+        self._repo = repo
         self._load()
         self._last_loaded_mtime: float = self._stat_mtime()
         # Handle to the watch on the shared file_watcher Observer; set
@@ -91,71 +119,31 @@ class RouteManager:
         self._watch: ObservedWatch | None = None
         self._watcher_debounce_timer: threading.Timer | None = None
         self._on_external_change: Callable[[], None] | None = None
-        # No _last_loaded_snapshot: routes don't support diff-merge on external
-        # change — _watcher_tick just reloads from disk.
 
     # ------------------------------------------------------------------
     # Persistence
     # ------------------------------------------------------------------
 
     def _routes_path(self) -> Path:
-        # Tests may monkeypatch the module-level ROUTES_FILE; if it differs
-        # from the import-time default, honour the test override.
-        if ROUTES_FILE is not _CONFIG_DEFAULT_ROUTES_FILE:
-            return Path(ROUTES_FILE)
-        return get_routes_path()
+        return self._repo.path()
 
     def _load(self) -> None:
-        data = safe_load_json(self._routes_path())
-        if data is None:
-            logger.info("No routes file (or unreadable); using defaults")
-            return
-
-        # Two file shapes are accepted:
-        #   - new:  {"routes": [...], "categories": [...]}
-        #   - old:  {"routes": [...]}
-        # In both cases pydantic fills missing fields with defaults.
-        try:
-            store = RouteStore(**data)
-        except Exception as exc:
-            logger.warning("Route payload failed schema validation: %s", exc)
-            return
-
-        # Guarantee a default category exists. Old files won't have one,
-        # and even new files might if a user manually deleted everything.
-        if not any(c.id == "default" for c in store.categories):
-            store.categories.insert(0, _default_category())
-
-        # Any route whose category_id points at a deleted category falls
-        # back to default. Keeps the UI from rendering ghost groups.
-        valid_ids = {c.id for c in store.categories}
-        for r in store.routes:
-            if r.category_id not in valid_ids:
-                r.category_id = "default"
-
-        self.store = store
-        logger.info(
-            "Loaded %d routes in %d categories",
-            len(self.store.routes),
-            len(self.store.categories),
-        )
+        self.store = self._repo.load()
 
     def _save(self) -> None:
-        """Persist via unconditional read-merge-write.
+        """Persist via unconditional read-merge-write delegated to the repo.
 
         Reads the current on-disk file and runs the commutative merge_stores
         against it before writing, so a concurrent write from another device
         (delivered through iCloud since our last load) is folded in rather
         than clobbered. Merging an unchanged file is a no-op (merge is
         idempotent)."""
-        path = self._routes_path()
-        self.store = merge_stores(self.store, _load_store_or_empty(path))
-        safe_write_json(path, json.loads(self.store.model_dump_json()))
+        self.store = self._repo.save(self.store)
         self._last_loaded_mtime = self._stat_mtime()
 
     def _stat_mtime(self) -> float:
         try:
-            return self._routes_path().stat().st_mtime
+            return self._repo.path().stat().st_mtime
         except FileNotFoundError:
             return 0.0
 
@@ -168,7 +156,7 @@ class RouteManager:
         via run_coroutine_threadsafe).
         """
         self.stop_watcher()
-        path = self._routes_path()
+        path = self._repo.path()
         parent = path.parent
         if not parent.exists():
             logger.warning("Routes folder does not exist; watcher not started: %s", parent)
@@ -214,7 +202,7 @@ class RouteManager:
 
     def _watcher_tick(self) -> None:
         try:
-            path = self._routes_path()
+            path = self._repo.path()
             try:
                 current_mtime = path.stat().st_mtime
             except FileNotFoundError:
@@ -225,7 +213,7 @@ class RouteManager:
             # Merge the external write into our in-memory store instead of
             # the old whole-file _load() replace — a blind reload dropped any
             # local edit not yet flushed to disk.
-            self.store = merge_stores(self.store, _load_store_or_empty(path))
+            self.store = merge_stores(self.store, self._repo.load_or_empty())
             after = self.store.model_dump_json()
             self._last_loaded_mtime = current_mtime
             if before != after and self._on_external_change is not None:

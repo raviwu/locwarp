@@ -2,7 +2,8 @@
 import pytest
 
 from models.schemas import Bookmark
-from services.bookmarks import BookmarkManager, enrich_bookmark
+from services.bookmarks import enrich_bookmark
+from bootstrap.factories import make_bookmark_manager
 
 
 def test_enrich_fills_blank_fields():
@@ -91,7 +92,7 @@ def manager(tmp_path, monkeypatch):
     """
     monkeypatch.setattr("services.bookmarks.BOOKMARKS_FILE", tmp_path / "bookmarks.json")
     monkeypatch.setattr("services.bookmarks._CONFIG_DEFAULT_BOOKMARKS_FILE", object())
-    return BookmarkManager()
+    return make_bookmark_manager()
 
 
 def test_create_bookmark_enriches(manager):

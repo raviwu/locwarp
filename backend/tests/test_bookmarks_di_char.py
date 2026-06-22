@@ -21,9 +21,9 @@ def _fresh_client(tmp_path, monkeypatch):
         tmp_path / "bookmarks.json",
     )
     import main
-    from services.bookmarks import BookmarkManager
+    from bootstrap.factories import make_bookmark_manager
 
-    monkeypatch.setattr(main.app_state, "bookmark_manager", BookmarkManager())
+    monkeypatch.setattr(main.app_state, "bookmark_manager", make_bookmark_manager())
     return TestClient(main.app)
 
 

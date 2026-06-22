@@ -12,8 +12,8 @@ def manager(tmp_path, monkeypatch):
         "services.bookmarks.BOOKMARKS_FILE",
         tmp_path / "bookmarks.json",
     )
-    from services.bookmarks import BookmarkManager
-    return BookmarkManager()
+    from bootstrap.factories import make_bookmark_manager
+    return make_bookmark_manager()
 
 
 def test_delete_category_cascade_false_keeps_bookmarks(manager):

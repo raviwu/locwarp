@@ -11,22 +11,21 @@ import pytest
 from models.schemas import (
     Bookmark, BookmarkCategory, Coordinate, RouteCategory, SavedRoute,
 )
-from services.bookmarks import BookmarkManager
-from services.route_store import RouteManager
+from bootstrap.factories import make_bookmark_manager, make_route_manager
 
 
 @pytest.fixture
 def bm(tmp_path, monkeypatch):
     monkeypatch.setattr("services.bookmarks.BOOKMARKS_FILE", tmp_path / "bookmarks.json")
     monkeypatch.setattr("services.bookmarks._CONFIG_DEFAULT_BOOKMARKS_FILE", object())
-    return BookmarkManager()
+    return make_bookmark_manager()
 
 
 @pytest.fixture
 def rm(tmp_path, monkeypatch):
     monkeypatch.setattr("services.route_store.ROUTES_FILE", tmp_path / "routes.json")
     monkeypatch.setattr("services.route_store._CONFIG_DEFAULT_ROUTES_FILE", object())
-    return RouteManager()
+    return make_route_manager()
 
 
 def _b(id, name, cat, created_at):

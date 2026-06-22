@@ -6,14 +6,14 @@ concurrent cloud-sync edits without clobbering or resurrecting routes.
 import pytest
 
 from models.schemas import Coordinate, SavedRoute
-from services.route_store import RouteManager
+from bootstrap.factories import make_route_manager
 
 
 @pytest.fixture
 def mgr(tmp_path, monkeypatch):
     monkeypatch.setattr("services.route_store.ROUTES_FILE", tmp_path / "routes.json")
     monkeypatch.setattr("services.route_store._CONFIG_DEFAULT_ROUTES_FILE", object())
-    return RouteManager()
+    return make_route_manager()
 
 
 def _route(name="R", category_id="default"):

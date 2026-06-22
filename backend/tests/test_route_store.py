@@ -19,8 +19,8 @@ def test_route_manager_writes_to_sync_folder_when_configured(tmp_path, monkeypat
         json.dumps({"sync_folder": str(sync_dir)})
     )
 
-    from services.route_store import RouteManager
-    rm = RouteManager()
+    from bootstrap.factories import make_route_manager
+    rm = make_route_manager()
     cat = rm.create_category(name="Test")
     expected_path = sync_dir / "routes.json"
     assert expected_path.exists()
@@ -42,8 +42,8 @@ def test_route_manager_reads_from_sync_folder(tmp_path, monkeypatch):
         "routes": [],
     }))
 
-    from services.route_store import RouteManager
-    rm = RouteManager()
+    from bootstrap.factories import make_route_manager
+    rm = make_route_manager()
     assert len(rm.list_categories()) == 1
 
 
@@ -71,8 +71,8 @@ def test_legacy_file_without_categories_injects_default_and_reparents(tmp_path, 
         ],
     }), encoding="utf-8")
 
-    from services.route_store import RouteManager
-    rm = RouteManager()
+    from bootstrap.factories import make_route_manager
+    rm = make_route_manager()
 
     category_ids = {c.id for c in rm.list_categories()}
     assert "default" in category_ids, (

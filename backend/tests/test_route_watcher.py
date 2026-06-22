@@ -58,8 +58,8 @@ def test_external_modification_triggers_callback(tmp_path):
     routes_file = tmp_path / "routes.json"
     _write_routes(routes_file, "initial")
 
-    from services.route_store import RouteManager
-    rm = RouteManager()
+    from bootstrap.factories import make_route_manager
+    rm = make_route_manager()
     assert len(rm.list_routes()) == 1
 
     fired: list[None] = []
@@ -81,8 +81,8 @@ def test_self_write_does_not_trigger_callback(tmp_path):
     routes_file = tmp_path / "routes.json"
     _write_routes(routes_file, "r0")
 
-    from services.route_store import RouteManager
-    rm = RouteManager()
+    from bootstrap.factories import make_route_manager
+    rm = make_route_manager()
     fired: list[None] = []
     rm.start_watcher(lambda: fired.append(None))
     try:
@@ -94,8 +94,8 @@ def test_self_write_does_not_trigger_callback(tmp_path):
 
 
 def test_stop_watcher_idempotent(tmp_path):
-    from services.route_store import RouteManager
-    rm = RouteManager()
+    from bootstrap.factories import make_route_manager
+    rm = make_route_manager()
     rm.stop_watcher()  # never started
     rm.start_watcher(lambda: None)
     rm.stop_watcher()
@@ -113,11 +113,10 @@ def test_route_watcher_fires_when_bookmark_watcher_shares_dir(tmp_path):
     routes_file = tmp_path / "routes.json"
     _write_routes(routes_file, "initial")
 
-    from services.bookmarks import BookmarkManager
-    from services.route_store import RouteManager
+    from bootstrap.factories import make_bookmark_manager, make_route_manager
 
-    bm = BookmarkManager()
-    rm = RouteManager()
+    bm = make_bookmark_manager()
+    rm = make_route_manager()
 
     bm_fired: list[None] = []
     rm_fired: list[None] = []
@@ -141,7 +140,7 @@ def test_two_route_managers_converge_without_clobber(tmp_path):
     Reproduces symptom 2 for routes: the second _save must read-merge-write
     so the first manager's route survives instead of being overwritten."""
     from models.schemas import Coordinate, SavedRoute
-    from services.route_store import RouteManager
+    from bootstrap.factories import make_route_manager
 
     def _r(name):
         return SavedRoute(
@@ -150,9 +149,9 @@ def test_two_route_managers_converge_without_clobber(tmp_path):
             profile="walking",
         )
 
-    a = RouteManager()
-    b = RouteManager()
+    a = make_route_manager()
+    b = make_route_manager()
     a.create_route(_r("from-A"))
     b.create_route(_r("from-B"))
-    names = {r.name for r in RouteManager().list_routes()}
+    names = {r.name for r in make_route_manager().list_routes()}
     assert names == {"from-A", "from-B"}

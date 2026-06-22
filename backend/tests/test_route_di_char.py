@@ -20,9 +20,9 @@ def _fresh_client(tmp_path, monkeypatch):
         tmp_path / "routes.json",
     )
     import main
-    from services.route_store import RouteManager
+    from bootstrap.factories import make_route_manager
 
-    main.app_state.route_manager = RouteManager()
+    main.app_state.route_manager = make_route_manager()
     return TestClient(main.app)
 
 

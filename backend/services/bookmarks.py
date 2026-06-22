@@ -14,6 +14,7 @@ from watchdog.events import FileSystemEventHandler
 from watchdog.observers.api import ObservedWatch
 
 from config import BOOKMARKS_FILE, get_bookmarks_path
+from domain.ports.bookmark_repository import BookmarkRepository
 from models.schemas import Bookmark, BookmarkCategory, BookmarkStore, Tombstone
 from services.file_watcher import schedule as _watcher_schedule, unschedule as _watcher_unschedule
 from services.json_safe import safe_load_json, safe_write_json
@@ -22,7 +23,7 @@ from services.geo_offline import resolve as _geo_resolve
 
 logger = logging.getLogger(__name__)
 
-# Keep a reference to the config default so _bookmarks_path() can detect
+# Keep a reference to the config default so _bookmarks_path_default() can detect
 # when tests (or other callers) have monkeypatched the module-level name.
 _CONFIG_DEFAULT_BOOKMARKS_FILE = BOOKMARKS_FILE
 
@@ -50,6 +51,18 @@ def _load_store_or_empty(path: Path) -> BookmarkStore:
         return BookmarkStore(**raw)
     except Exception:
         return BookmarkStore(categories=[], bookmarks=[], tombstones=[])
+
+
+def _bookmarks_path_default() -> Path:
+    """Resolve the bookmarks file path, honouring test monkeypatches.
+
+    Kept as a module-level function so the BOOKMARKS_FILE monkeypatch seam
+    (used by ~16 test fixtures) is preserved when this is passed as the
+    path_provider to JsonStore via bootstrap.factories.
+    """
+    if BOOKMARKS_FILE is not _CONFIG_DEFAULT_BOOKMARKS_FILE:
+        return Path(BOOKMARKS_FILE)
+    return get_bookmarks_path()
 
 
 def enrich_bookmark(bm: Bookmark, *, force: bool = False) -> bool:
@@ -95,11 +108,12 @@ def enrich_bookmark(bm: Bookmark, *, force: bool = False) -> bool:
 class BookmarkManager:
     """CRUD manager for bookmarks and categories.
 
-    State is persisted to :data:`BOOKMARKS_FILE` (JSON) on every write
-    operation.
+    State is persisted via the injected BookmarkRepository (JSON) on every
+    write operation. The watcher state machine, threading.Lock, and mtime
+    tracking all stay on this manager.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, repo: BookmarkRepository) -> None:
         self.store = BookmarkStore(
             categories=[
                 BookmarkCategory(
@@ -117,12 +131,6 @@ class BookmarkManager:
         # merge correctness — merge_stores is commutative — just an
         # optimisation to avoid redundant reconcile work.
         self._last_loaded_mtime: float = 0.0
-        # Eagerly materialise iCloud placeholder (if any) so the first _load
-        # below returns the real content instead of falling back to defaults
-        # and relying on the watcher to catch up several seconds later.
-        from services.cloud_sync import materialize_if_placeholder
-        materialize_if_placeholder(self._bookmarks_path())
-        self._load()
         # Serialise cross-thread store read-modify-write.  _save runs on the
         # asyncio event-loop thread; _watcher_tick runs on a daemon
         # threading.Timer thread.  asyncio.Lock cannot be used here because
@@ -136,6 +144,8 @@ class BookmarkManager:
         # stress test in test_bookmarks_thread_race.py does.  A refactor that
         # changes thread boundaries must add or extend that test accordingly.
         self._store_lock = threading.Lock()
+        self._repo = repo
+        self._load()
         # Handle to the watch on the shared file_watcher Observer; set
         # by start_watcher, cleared by stop_watcher.
         self._watch: ObservedWatch | None = None
@@ -147,82 +157,45 @@ class BookmarkManager:
     # ------------------------------------------------------------------
 
     def _load(self) -> None:
-        """Load bookmarks from the JSON file, if it exists.
-
-        Uses ``safe_load_json`` so a parse failure does not silently
-        discard the user's data: the corrupt file is renamed aside as
-        ``bookmarks.json.bak-<timestamp>`` before we fall back to the
-        default empty store. Otherwise the next ``_save()`` would
-        overwrite the original file with an empty bookmark list.
-        """
-        data = safe_load_json(self._bookmarks_path())
-        if data is None:
-            logger.info("No bookmark file (or unreadable); using defaults")
-            return
-        try:
-            self.store = BookmarkStore(**data)
-            logger.info(
-                "Loaded %d bookmarks in %d categories",
-                len(self.store.bookmarks),
-                len(self.store.categories),
-            )
-            self._record_disk_mtime()
-        except Exception as exc:
-            logger.warning("Bookmark payload failed schema validation: %s", exc)
+        self.store = self._repo.load()
+        self._record_disk_mtime()
 
     def _save(self) -> None:
         """Persist the current store to disk via unconditional read-merge-write.
 
-        Every save reads the current on-disk file and runs the commutative
-        merge_stores against it before writing. This closes the cross-device
-        clobber window: even if another device wrote the file (through iCloud)
-        since our last load — a write the old mtime guard could not see,
-        because iCloud propagation is asynchronous — its items and tombstones
-        are folded in here instead of being overwritten. Merging against an
-        unchanged file is a verified no-op (merge is idempotent).
-
-        The full read-merge-write sequence is held under ``_store_lock`` so
-        that a concurrent ``_watcher_tick`` (Timer daemon thread) cannot
-        interleave its own rebind of ``self.store`` mid-sequence.
+        Delegates the read-merge-write to the injected repo. Holds _store_lock
+        across the call so a concurrent _watcher_tick cannot interleave.
         """
-        path = self._bookmarks_path()
         with self._store_lock:
-            self.store = merge_stores(self.store, _load_store_or_empty(path))
-            payload = json.loads(self.store.model_dump_json())
-            safe_write_json(path, payload)
+            self.store = self._repo.save(self.store)
             self._record_disk_mtime()
 
     def _reconcile_from_disk(self) -> None:
         """Merge external on-disk changes into self.store via merge_stores.
 
         No-op when the on-disk file is empty/missing (transient iCloud
-        eviction) — _load_store_or_empty yields an empty store and merging
+        eviction) — load_or_empty yields an empty store and merging
         with empty leaves self.store untouched.
         """
-        path = self._bookmarks_path()
+        path = self._repo.path()
         try:
             if path.stat().st_size == 0:
                 return
         except FileNotFoundError:
             return
-        self.store = merge_stores(self.store, _load_store_or_empty(path))
+        self.store = merge_stores(self.store, self._repo.load_or_empty())
 
     def _record_disk_mtime(self) -> None:
         """Record the file's mtime at the moment self.store is known in sync
         with disk. Used only by the watcher to skip self-echo events."""
-        path = self._bookmarks_path()
+        path = self._repo.path()
         try:
             self._last_loaded_mtime = path.stat().st_mtime
         except FileNotFoundError:
             self._last_loaded_mtime = 0.0
 
     def _bookmarks_path(self) -> Path:
-        # Allow tests to override by patching the module-level BOOKMARKS_FILE.
-        # _CONFIG_DEFAULT_BOOKMARKS_FILE holds the value captured at import
-        # time; if tests have patched the module-level name, it will differ.
-        if BOOKMARKS_FILE is not _CONFIG_DEFAULT_BOOKMARKS_FILE:
-            return Path(BOOKMARKS_FILE)
-        return get_bookmarks_path()
+        return self._repo.path()
 
     # ------------------------------------------------------------------
     # File watcher
@@ -237,7 +210,7 @@ class BookmarkManager:
         via run_coroutine_threadsafe).
         """
         self.stop_watcher()
-        path = self._bookmarks_path()
+        path = self._repo.path()
         parent = path.parent
         if not parent.exists():
             logger.warning("Bookmark folder does not exist; watcher not started: %s", parent)
@@ -285,7 +258,7 @@ class BookmarkManager:
 
     def _watcher_tick(self) -> None:
         try:
-            path = self._bookmarks_path()
+            path = self._repo.path()
             try:
                 current_mtime = path.stat().st_mtime
             except FileNotFoundError:

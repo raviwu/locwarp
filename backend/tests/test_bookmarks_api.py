@@ -14,8 +14,8 @@ def client(tmp_path, monkeypatch):
     )
     # Force a fresh BookmarkManager so the patched path takes effect.
     import main
-    from services.bookmarks import BookmarkManager
-    main.app_state.bookmark_manager = BookmarkManager()
+    from bootstrap.factories import make_bookmark_manager
+    main.app_state.bookmark_manager = make_bookmark_manager()
     return TestClient(main.app)
 
 

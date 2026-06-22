@@ -12,8 +12,8 @@ def client(tmp_path, monkeypatch):
         tmp_path / "bookmarks.json",
     )
     import main
-    from services.bookmarks import BookmarkManager
-    main.app_state.bookmark_manager = BookmarkManager()
+    from bootstrap.factories import make_bookmark_manager
+    main.app_state.bookmark_manager = make_bookmark_manager()
     return TestClient(main.app)
 
 
@@ -113,8 +113,8 @@ def _make_manager(tmp_path, monkeypatch):
         "services.bookmarks.BOOKMARKS_FILE",
         tmp_path / "bookmarks.json",
     )
-    from services.bookmarks import BookmarkManager
-    return BookmarkManager()
+    from bootstrap.factories import make_bookmark_manager
+    return make_bookmark_manager()
 
 
 def test_create_category_persists_event_dates(tmp_path, monkeypatch):
@@ -129,8 +129,8 @@ def test_create_category_persists_event_dates(tmp_path, monkeypatch):
     assert cat.end_date == "2026-06-07"
 
     # Reload from disk to confirm persistence
-    from services.bookmarks import BookmarkManager
-    reloaded = BookmarkManager()
+    from bootstrap.factories import make_bookmark_manager
+    reloaded = make_bookmark_manager()
     found = next(c for c in reloaded.list_categories() if c.id == cat.id)
     assert found.start_date == "2026-02-06"
     assert found.end_date == "2026-06-07"

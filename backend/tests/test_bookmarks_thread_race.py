@@ -30,7 +30,7 @@ import time
 
 import pytest
 
-from services.bookmarks import BookmarkManager
+from bootstrap.factories import make_bookmark_manager
 
 
 def _make_manager(tmp_path, monkeypatch):
@@ -40,7 +40,7 @@ def _make_manager(tmp_path, monkeypatch):
         "services.bookmarks._CONFIG_DEFAULT_BOOKMARKS_FILE",
         tmp_path / "bookmarks.json",
     )
-    mgr = BookmarkManager()
+    mgr = make_bookmark_manager()
     return mgr, tmp_path / "bookmarks.json"
 
 
