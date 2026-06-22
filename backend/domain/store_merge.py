@@ -65,6 +65,15 @@ def _merge_tombstones(left: list[Tombstone], right: list[Tombstone]) -> list[Tom
     return [out[k] for k in sorted(out) if out[k].deleted_at >= cutoff]
 
 
+def force_seed_items(items: list, now_iso: str) -> list:
+    """Stamp updated_at=now on each item so a force-seed/import beats any
+    pre-existing real-timestamp tombstone in merge_stores (the empty-updated_at
+    pitfall). Pure: mutates + returns the given items. Caller supplies the time."""
+    for it in items:
+        it.updated_at = now_iso
+    return items
+
+
 def merge_stores(a: StoreT, b: StoreT) -> StoreT:
     """Merge two stores of the same type into one. Commutative and idempotent."""
     items_attr = _items_attr(a)

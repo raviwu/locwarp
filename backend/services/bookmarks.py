@@ -18,6 +18,7 @@ from domain.ports.bookmark_repository import BookmarkRepository
 from models.schemas import Bookmark, BookmarkCategory, BookmarkStore, Tombstone
 from services.file_watcher import schedule as _watcher_schedule, unschedule as _watcher_unschedule
 from services.json_safe import safe_load_json, safe_write_json
+from domain.store_merge import force_seed_items
 from services.store_merge import merge_stores
 from services.geo_offline import resolve as _geo_resolve
 
@@ -626,10 +627,12 @@ class BookmarkManager:
         catalog_ids = {c.id for c in incoming.categories} | {b.id for b in incoming.bookmarks}
         resurrected = sum(1 for t in self.store.tombstones if t.id in catalog_ids)
 
+        force_seed_items(incoming.categories, now)
+        force_seed_items(incoming.bookmarks, now)
+
         existing_cats = {c.id: c for c in self.store.categories}
         added_cats = updated_cats = 0
         for cat in incoming.categories:
-            cat.updated_at = now
             if cat.id in existing_cats:
                 old = existing_cats[cat.id]
                 old.name = cat.name
@@ -650,7 +653,6 @@ class BookmarkManager:
         for bm in incoming.bookmarks:
             if bm.category_id not in valid_cat_ids:
                 bm.category_id = "default"
-            bm.updated_at = now
             if bm.id in existing_bms:
                 old = existing_bms[bm.id]
                 old.name = bm.name
@@ -678,3 +680,41 @@ class BookmarkManager:
             "updated": updated_cats + updated_bms,
             "resurrected": resurrected,
         }
+
+    def force_seed(self, items: list) -> dict:
+        """Upsert a list of Bookmark items, stamping each with the current time.
+
+        Uses ``force_seed_items`` to guarantee every item's ``updated_at``
+        beats any pre-existing real-timestamp tombstone in the CRDT merge —
+        encoding the empty-updated_at pitfall so callers don't have to know
+        about it.
+
+        Returns ``{'added': N, 'updated': N}`` where *added* counts items
+        that were new to the store and *updated* counts items that replaced
+        an existing entry.
+        """
+        now = _now_iso()
+        force_seed_items(items, now)
+
+        existing = {b.id: b for b in self.store.bookmarks}
+        added = updated = 0
+        for bm in items:
+            if bm.id in existing:
+                old = existing[bm.id]
+                old.name = bm.name
+                old.lat = bm.lat
+                old.lng = bm.lng
+                old.address = bm.address
+                old.category_id = bm.category_id
+                old.country_code = bm.country_code
+                old.updated_at = bm.updated_at
+                enrich_bookmark(old, force=True)
+                updated += 1
+            else:
+                enrich_bookmark(bm)
+                self.store.bookmarks.append(bm)
+                existing[bm.id] = bm
+                added += 1
+
+        self._save()
+        return {"added": added, "updated": updated}
