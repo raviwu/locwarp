@@ -1,4 +1,4 @@
-"""All five import-linter contracts must be ENFORCED and pass (the architecture gate)."""
+"""All required import-linter contracts must be ENFORCED and pass (the architecture gate)."""
 import subprocess
 import sys
 from pathlib import Path
@@ -7,11 +7,11 @@ BACKEND = Path(__file__).resolve().parent.parent
 
 REQUIRED_CONTRACTS = {
     "no-core-imports-api", "no-services-imports-fastapi", "no-infra-imports-api",
-    "no-api-imports-api", "no-api-imports-main",
+    "no-api-imports-api", "no-api-imports-main", "no-domain-imports-outer",
 }
 
 
-def test_importlinter_config_declares_all_five_contracts():
+def test_importlinter_config_declares_all_required_contracts():
     cfg = (BACKEND / ".importlinter").read_text()
     for name in REQUIRED_CONTRACTS:
         assert f"contract:{name}]" in cfg, f"missing contract: {name}"

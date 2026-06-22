@@ -106,3 +106,22 @@ source_modules =
     api
 forbidden_modules =
     main
+
+# Phase 3 (Task 1): ENFORCED from the start of Phase 3. domain/ is the pure
+# inner ring (movement.py + events.py + errors.py + ports/) and must import
+# stdlib + pydantic ONLY. `models` is intentionally NOT forbidden — it is pure
+# pydantic schema and is an allowed inward dep until models relocate into
+# domain/ in a later phase. This gate guards the Phase-3 extractions: any
+# accidental domain -> core/services/api/infra/fastapi import fails CI.
+# domain shares no descendants with the forbidden set, so `forbidden` is correct.
+[importlinter:contract:no-domain-imports-outer]
+name = Domain must not import outer rings
+type = forbidden
+source_modules =
+    domain
+forbidden_modules =
+    core
+    services
+    api
+    infra
+    fastapi
