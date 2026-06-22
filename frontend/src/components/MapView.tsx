@@ -6,13 +6,13 @@ import { useMapInstance } from '../hooks/useMapInstance';
 import { useBaseLayers } from '../hooks/useBaseLayers';
 import { useRoutePolylineLayer } from '../hooks/useRoutePolylineLayer';
 import { useCurrentPositionLayer } from '../hooks/useCurrentPositionLayer';
+import { useDestinationLayer } from '../hooks/useDestinationLayer';
 import { cellsInBounds, approxCellSizeMeters } from '../services/s2grid';
 import type { S2CellPolygon } from '../services/s2grid';
 import { parseCoord } from '../utils/coords';
 import { isSubmitEnter } from '../utils/keyboard';
 import { clusterByPixelDistance } from '../utils/pinCluster';
 import {
-  buildDestinationHtml,
   buildPreviewHtml,
   buildWaypointHtml,
   buildBookmarkPinHtml,
@@ -342,7 +342,9 @@ const MapView: React.FC<MapViewProps> = ({
   // useMapInstance. prevPositionRef stays here — it's shared with useMapInstance
   // (the persisted-initial-position race guard) and passed into both hooks.
   const prevPositionRef = useRef<Position | null>(null);
-  const destMarkerRef = useRef<L.Marker | null>(null);
+  // The red destination marker + its two refs (destMarkerRef, destSigRef) are
+  // owned by useDestinationLayer now (task p4b2bi); called below after
+  // useMapInstance / useBaseLayers / useRoutePolylineLayer / useCurrentPositionLayer.
   const previewMarkerRef = useRef<L.Marker | null>(null);
   const waypointMarkersRef = useRef<L.Marker[]>([]);
   const bookmarkMarkersRef = useRef<L.Marker[]>([]);
@@ -655,37 +657,12 @@ const MapView: React.FC<MapViewProps> = ({
   // in so the saved-position pan still loses to a real position_update.
   useCurrentPositionLayer(mapRef, { currentPosition, userAvatarHtml, followMode, prevPositionRef });
 
-  // Update destination marker
-  const destSigRef = useRef<string | null>(null);
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map) return;
-
-    const sig = destination ? `${destination.lat.toFixed(7)},${destination.lng.toFixed(7)}` : null;
-    if (sig === destSigRef.current) return;
-    destSigRef.current = sig;
-
-    if (destMarkerRef.current) {
-      destMarkerRef.current.remove();
-      destMarkerRef.current = null;
-    }
-
-    if (destination) {
-      const redIcon = L.divIcon({
-        className: 'dest-marker',
-        html: buildDestinationHtml(),
-        iconSize: [36, 50],
-        iconAnchor: [18, 47],
-      });
-
-      const marker = L.marker([destination.lat, destination.lng], {
-        icon: redIcon,
-      }).addTo(map);
-
-      marker.bindTooltip(t('map.destination'), { direction: 'top', offset: [0, -48] });
-      destMarkerRef.current = marker;
-    }
-  }, [destination]);
+  // Red destination teardrop marker (signature-gated create/move/remove),
+  // extracted into its own mapRef-dependent hook (task p4b2bi). Called after
+  // useMapInstance / useBaseLayers / useRoutePolylineLayer / useCurrentPositionLayer
+  // so it runs on the already-created map. Owns the layer's two refs
+  // (destMarkerRef, destSigRef) internally; `t` is passed in for the tooltip.
+  useDestinationLayer(mapRef, { destination, t });
 
   // Preview pin (camera-only fly target). Amber teardrop with an eye icon
   // to convey "you're peeking at this coordinate, GPS hasn't actually
