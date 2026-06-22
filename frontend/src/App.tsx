@@ -6,6 +6,9 @@ import { useSimulation } from './hooks/useSimulation'
 import { useJoystick } from './hooks/useJoystick'
 import { useBookmarks } from './hooks/useBookmarks'
 import { useRoutes } from './hooks/useRoutes'
+import { useRecentPlaces } from './hooks/useRecentPlaces'
+import { useLocationMeta } from './hooks/useLocationMeta'
+import { useCatalog } from './hooks/useCatalog'
 import { useExternalChangeSubscriptions } from './hooks/useExternalChangeSubscriptions'
 import { useGoldDittoSubscription } from './hooks/useGoldDittoSubscription'
 import { useServices } from './contexts/ServicesContext'
@@ -145,31 +148,10 @@ const App: React.FC = () => {
     setCustomPng(nextCustom)
     saveCustomPng(nextCustom)
   }, [])
-  // Reverse-geo-derived state used by the status bar: country-code flag and
-  // (later) timezone tag. Populated debounced from sim.currentPosition so we
-  // don't hit Nominatim/Photon every position_update tick.
-  const [locMeta, setLocMeta] = useState<{
-    countryCode: string;
-    // Reverse-geocoded city / POI / road name (whatever Photon-or-Nominatim's
-    // short_name returns). Used by the timezone-detail modal in StatusBar
-    // to print "Country City" alongside the IANA zone, and may be empty
-    // if the lookup failed or the spot is mid-ocean.
-    cityName: string;
-    timezoneZone: string | null;
-    gmtOffsetSeconds: number | null;
-    // Weather at the current virtual location. Fetched from Open-Meteo when
-    // the position moves >=100m and the sim is quiescent (same gate as
-    // reverse-geocode + timezone). Null = unknown / not yet fetched.
-    weatherCode: number | null;
-    tempC: number | null;
-  }>({
-    countryCode: '', cityName: '', timezoneZone: null, gmtOffsetSeconds: null,
-    weatherCode: null, tempC: null,
-  })
-  // Last position we successfully looked up reverse-geo/timezone for. Used
-  // to suppress redundant lookups when jitter nudges the coordinate but the
-  // user hasn't actually moved.
-  const lastLookedUpPosRef = useRef<{ lat: number; lng: number } | null>(null)
+  // Reverse-geo / timezone / weather enrichment for the status bar lives in
+  // useLocationMeta (api injected from useServices). The >=100m + sim-quiescent
+  // gate + lastLookedUpPosRef debounce are preserved exactly inside the hook.
+  const { locMeta } = useLocationMeta(api, sim.currentPosition, sim.status?.state)
 
   // Auto-refresh bookmarks / routes when the backend signals an external
   // change (cloud-sync watchdog picked up a file written by another device).
@@ -276,61 +258,7 @@ const App: React.FC = () => {
   // (Saved routes + categories load on mount inside useRoutes.)
 
 
-  // Reverse-geocode + timezone lookup, tied to the current virtual location
-  // but GATED so it only fires on discrete user-initiated moves (teleport,
-  // bookmark tap, manual coord entry). During active navigate / loop /
-  // multi-stop / random-walk the simulation engine emits a position update
-  // every tick, which used to spam Nominatim + TimezoneDB every second and
-  // contend with the USB DVT channel — contributed to users seeing random
-  // walk 'freeze' (see backend log 2026-04-16 user report).
-  //
-  // Rule: only look up when the sim state is idle / teleporting / disconnected
-  // (i.e. no route animation in flight), AND the position actually moved
-  // >=100m from the last looked-up point.
-  useEffect(() => {
-    const pos = sim.currentPosition
-    if (!pos) return
-    const state = sim.status?.state ?? 'idle'
-    const isQuiescent = state === 'idle' || state === 'teleporting' || state === 'disconnected'
-    if (!isQuiescent) return
-    // Skip redundant lookups when the user stays at the same spot (jitter
-    // within 100m of the last resolved position).
-    const last = lastLookedUpPosRef.current
-    if (last) {
-      const dLat = (pos.lat - last.lat) * 111320
-      const dLng = (pos.lng - last.lng) * 111320 * Math.cos(pos.lat * Math.PI / 180)
-      if (dLat * dLat + dLng * dLng < 100 * 100) return
-    }
-    let cancelled = false
-    const tid = setTimeout(async () => {
-      lastLookedUpPosRef.current = { lat: pos.lat, lng: pos.lng }
-      let geoRes: any = null
-      try {
-        geoRes = await api.reverseGeocode(pos.lat, pos.lng)
-        if (cancelled) return
-        const cc = String(geoRes?.country_code ?? '').toLowerCase()
-        const city = String(geoRes?.short_name ?? '').trim()
-        setLocMeta((prev) =>
-          (prev.countryCode === cc && prev.cityName === city)
-            ? prev
-            : { ...prev, countryCode: cc, cityName: city }
-        )
-      } catch { /* offline / rate-limited — keep previous */ }
-      try {
-        const tz = await api.lookupTimezone(pos.lat, pos.lng)
-        if (cancelled || !tz) return
-        setLocMeta((prev) => ({ ...prev, timezoneZone: tz.zone, gmtOffsetSeconds: tz.gmt_offset_seconds }))
-      } catch { /* ignore */ }
-      try {
-        const wx = await api.lookupWeather(pos.lat, pos.lng)
-        if (cancelled || !wx) return
-        setLocMeta((prev) => prev.weatherCode === wx.code && prev.tempC === wx.tempC
-          ? prev
-          : { ...prev, weatherCode: wx.code, tempC: wx.tempC })
-      } catch { /* ignore */ }
-    }, 600)
-    return () => { cancelled = true; clearTimeout(tid) }
-  }, [sim.currentPosition?.lat, sim.currentPosition?.lng, sim.status?.state])
+  // (Reverse-geo / timezone / weather enrichment lives in useLocationMeta above.)
 
   // Auto-scan devices when WebSocket (re)connects (e.g. after backend restart)
   useEffect(() => {
@@ -557,44 +485,14 @@ const App: React.FC = () => {
   }
   const clampLat = (lat: number): number => Math.max(-90, Math.min(90, lat))
 
-  // Recent places list (last 20 destinations the user flew to). Loaded
-  // once on mount; refreshed after each push so the map's recent-button
-  // popover is always current.
-  const [recentPlaces, setRecentPlaces] = useState<api.RecentEntry[]>([])
-  const refreshRecent = useCallback(async () => {
-    try { setRecentPlaces(await api.getRecent()) } catch { /* silent */ }
-  }, [])
-  // Re-fetch on initial mount AND whenever the backend WebSocket becomes
-  // reachable. Without the connected dep, a slow/racing backend boot
-  // could blow the only fetch attempt and the recent list would stay empty
-  // for the rest of the session (silent catch in refreshRecent above).
-  useEffect(() => { void refreshRecent() }, [refreshRecent, connected])
-  const pushRecent = useCallback(async (lat: number, lng: number, kind: api.RecentKind, name?: string) => {
-    try {
-      await api.pushRecent({ lat, lng, kind, name: name || null })
-      void refreshRecent()
-      // When the caller didn't supply a name (right-click teleport /
-      // navigate, coord-input fly), reverse-geocode in the background
-      // and push again with a resolved short_name. Backend dedupe then
-      // bumps the top entry and fills in its name field, so the list
-      // stops showing the raw coord twice.
-      if (!name) {
-        void (async () => {
-          try {
-            const geo = await api.reverseGeocode(lat, lng)
-            const resolved = String(geo?.short_name || geo?.display_name || '').trim()
-            if (!resolved) return
-            await api.pushRecent({ lat, lng, kind, name: resolved })
-            void refreshRecent()
-          } catch { /* offline / rate-limited — keep the unnamed entry */ }
-        })()
-      }
-    } catch { /* silent */ }
-  }, [refreshRecent])
-  const clearRecentList = useCallback(async () => {
-    try { await api.clearRecent() } catch { /* silent */ }
-    setRecentPlaces([])
-  }, [])
+  // Recent-destinations history (last 20 places the user flew to) lives in
+  // useRecentPlaces (api injected from useServices). The background
+  // reverse-geocode-and-re-push behavior + the mount/connected refresh gate are
+  // preserved inside the hook.
+  const recent = useRecentPlaces(api, connected)
+  const recentPlaces = recent.recentPlaces
+  const pushRecent = recent.pushRecent
+  const clearRecentList = recent.clearRecentList
 
   // `source` lets the caller tag this flight for the recent-places
   // history: 'menu' (map right-click) is the default, 'coord' when the
@@ -1176,54 +1074,24 @@ const App: React.FC = () => {
     }
   }, [bm, showToast, t])
 
-  // Bundled public-event catalog. Fetched once on mount; the "Refresh
-  // public events" button in the Library header reads from this state to
-  // decide whether there are new entries to pull, and the refresh handler
-  // pipes the catalog through the existing import endpoint.
-  type CatalogStatus = 'loading' | 'ok' | 'missing' | 'failed'
-
-  const [catalog, setCatalog] = useState<api.CatalogPayload | null>(null)
-  const [catalogStatus, setCatalogStatus] = useState<CatalogStatus>('loading')
-  const [catalogError, setCatalogError] = useState<string | null>(null)
-
-  const fetchCatalog = useCallback(async () => {
-    try {
-      const data = await api.getCatalog()
-      setCatalog(data)
-      setCatalogStatus('ok')
-      setCatalogError(null)
-    } catch (err: unknown) {
-      setCatalog(null)
-      const status = err instanceof api.HttpError ? err.status : 0
-      if (status === 404) {
-        setCatalogStatus('missing')
-      } else {
-        setCatalogStatus('failed')
-        setCatalogError(err instanceof Error ? err.message : 'unknown')
-      }
-    }
-  }, [])
-
-  useEffect(() => {
-    void fetchCatalog()
-  }, [fetchCatalog])
-
-  const catalogNewCount = useMemo(() => {
-    if (!catalog) return 0
-    const existingIds = new Set(bm.bookmarks.map((b) => b.id))
-    return catalog.bookmarks.filter((cb) => !existingIds.has(cb.id)).length
-  }, [catalog, bm.bookmarks])
-
-  const [catalogRefreshing, setCatalogRefreshing] = useState(false)
+  // Bundled public-event catalog state + force-sync live in useCatalog (api
+  // injected from useServices). The mount fetch, catalogNewCount diff vs the
+  // current bookmarks, and the re-entrancy guard are preserved inside the hook;
+  // App keeps the toast / i18n / post-sync bm.refresh wrapper below (matching the
+  // useRoutes convention of keeping user-facing messaging in App).
+  const cat = useCatalog(api, bm.bookmarks)
+  const catalogStatus = cat.catalogStatus
+  const catalogError = cat.catalogError
+  const catalogNewCount = cat.catalogNewCount
+  const catalogRefreshing = cat.catalogRefreshing
 
   const handleCatalogRefresh = useCallback(async () => {
-    if (!catalog || catalogRefreshing) return
-    setCatalogRefreshing(true)
     try {
-      // Force-sync — catalog ids are authoritative. Resurrects entries the
-      // user previously deleted from a catalog-seeded category and propagates
-      // any lat/lng/name corrections from the bundled file.
-      const res = await api.syncCatalog()
+      // refresh() is a no-op (returns null) when there's no catalog loaded or a
+      // sync is already in flight — same guard the inline handler had, so no
+      // toast fires in those cases.
+      const res = await cat.refresh()
+      if (!res) return
       await bm.refresh()
       showToast(t('bm.catalog.synced', {
         added: res.added,
@@ -1232,10 +1100,8 @@ const App: React.FC = () => {
       }))
     } catch (err: unknown) {
       showToast(err instanceof Error ? err.message : t('bm.catalog.failed'))
-    } finally {
-      setCatalogRefreshing(false)
     }
-  }, [catalog, catalogRefreshing, bm, showToast, t])
+  }, [cat, bm, showToast, t])
 
   const handleRouteRename = useCallback(async (id: string, name: string) => {
     try {
