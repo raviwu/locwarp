@@ -125,3 +125,15 @@ forbidden_modules =
     api
     infra
     fastapi
+
+# Phase 4a (Task 7): ENFORCED. infra/ adapters (device, events, persistence)
+# are I/O edges, never HTTP routers — they must not import FastAPI. Passes as-is
+# (the new infra/persistence/json_store.py imports stdlib + services.json_safe +
+# domain.store_merge only). 7 kept, 0 broken.
+[importlinter:contract:no-infra-imports-fastapi]
+name = Infra must not import FastAPI
+type = forbidden
+source_modules =
+    infra
+forbidden_modules =
+    fastapi

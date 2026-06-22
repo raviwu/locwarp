@@ -8,6 +8,7 @@ BACKEND = Path(__file__).resolve().parent.parent
 REQUIRED_CONTRACTS = {
     "no-core-imports-api", "no-services-imports-fastapi", "no-infra-imports-api",
     "no-api-imports-api", "no-api-imports-main", "no-domain-imports-outer",
+    "no-infra-imports-fastapi",
 }
 
 
