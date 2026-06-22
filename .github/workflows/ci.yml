@@ -56,9 +56,13 @@ jobs:
         working-directory: frontend
         run: npx vitest run --coverage
 
-      - name: Layering gate (report-only)
+      - name: Layering gate (BookmarkList tree enforced; broad rules report-only)
         working-directory: frontend
-        run: npx depcruise src --config .dependency-cruiser.cjs || true
+        # depcruise exits 0 on warnings-only and 1 on an "error"-severity rule,
+        # so the broad view-rule warnings stay non-blocking while the scoped
+        # bookmarklist-no-direct-api error fails CI on a regression. Do NOT add
+        # `|| true` — it would swallow that exit code and make the gate inert.
+        run: npx depcruise src --config .dependency-cruiser.cjs
 
   e2e:
     name: Playwright e2e
