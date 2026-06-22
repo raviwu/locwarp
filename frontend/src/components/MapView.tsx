@@ -8,13 +8,13 @@ import { useRoutePolylineLayer } from '../hooks/useRoutePolylineLayer';
 import { useCurrentPositionLayer } from '../hooks/useCurrentPositionLayer';
 import { useDestinationLayer } from '../hooks/useDestinationLayer';
 import { useRandomWalkCircleLayer } from '../hooks/useRandomWalkCircleLayer';
+import { usePreviewPinLayer } from '../hooks/usePreviewPinLayer';
 import { cellsInBounds, approxCellSizeMeters } from '../services/s2grid';
 import type { S2CellPolygon } from '../services/s2grid';
 import { parseCoord } from '../utils/coords';
 import { isSubmitEnter } from '../utils/keyboard';
 import { clusterByPixelDistance } from '../utils/pinCluster';
 import {
-  buildPreviewHtml,
   buildWaypointHtml,
   buildBookmarkPinHtml,
   buildBookmarkClusterHtml,
@@ -346,7 +346,9 @@ const MapView: React.FC<MapViewProps> = ({
   // The red destination marker + its two refs (destMarkerRef, destSigRef) are
   // owned by useDestinationLayer now (task p4b2bi); called below after
   // useMapInstance / useBaseLayers / useRoutePolylineLayer / useCurrentPositionLayer.
-  const previewMarkerRef = useRef<L.Marker | null>(null);
+  // The amber preview pin + its two refs (previewMarkerRef, previewSigRef) are
+  // owned by usePreviewPinLayer now (task p4b2bi); called below after the other
+  // layer hooks.
   const waypointMarkersRef = useRef<L.Marker[]>([]);
   const bookmarkMarkersRef = useRef<L.Marker[]>([]);
   // The route polyline (base line + flowing-arrow dash overlay) + its two refs
@@ -672,44 +674,12 @@ const MapView: React.FC<MapViewProps> = ({
   // already-created map. Owns the layer's single ref (radiusCircleRef) internally.
   useRandomWalkCircleLayer(mapRef, { randomWalkRadius, currentPosition });
 
-  // Preview pin (camera-only fly target). Amber teardrop with an eye icon
-  // to convey "you're peeking at this coordinate, GPS hasn't actually
-  // moved here". Click the marker to dismiss the pin.
-  const previewSigRef = useRef<string | null>(null);
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map) return;
-
-    const sig = previewPin ? `${previewPin.lat.toFixed(7)},${previewPin.lng.toFixed(7)}` : null;
-    if (sig === previewSigRef.current) return;
-    previewSigRef.current = sig;
-
-    if (previewMarkerRef.current) {
-      previewMarkerRef.current.remove();
-      previewMarkerRef.current = null;
-    }
-
-    if (previewPin) {
-      const amberIcon = L.divIcon({
-        className: 'preview-marker',
-        html: buildPreviewHtml(),
-        iconSize: [36, 50],
-        iconAnchor: [18, 47],
-      });
-
-      const marker = L.marker([previewPin.lat, previewPin.lng], {
-        icon: amberIcon,
-        zIndexOffset: 500,
-      }).addTo(map);
-
-      const tip = `${tRef.current('map.preview_pin')} · ${previewPin.lat.toFixed(5)}, ${previewPin.lng.toFixed(5)}`;
-      marker.bindTooltip(tip, { direction: 'top', offset: [0, -48] });
-      if (onPreviewPinClear) {
-        marker.on('click', () => onPreviewPinClear());
-      }
-      previewMarkerRef.current = marker;
-    }
-  }, [previewPin, onPreviewPinClear]);
+  // Amber preview pin (camera-only fly target — signature-gated create/move/
+  // remove + click-to-dismiss), extracted into its own mapRef-dependent hook
+  // (task p4b2bi). Called after the other layer hooks so it runs on the
+  // already-created map. Owns the layer's two refs (previewMarkerRef,
+  // previewSigRef) internally; `tRef` is passed in for the tooltip.
+  usePreviewPinLayer(mapRef, { previewPin, onPreviewPinClear, tRef });
 
   // Update waypoint markers
   const waypointSigRef = useRef<string>('');
