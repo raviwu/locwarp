@@ -16,7 +16,7 @@ This round (P4b-2b-i) extracts the **per-layer hooks**; the popovers/menus are d
 | Decision | Choice |
 |----------|--------|
 | **Scope (this round)** | P4b-2b-i: the 8 per-layer Leaflet hooks. Popovers/menus (RecentPlacesPopover, MapContextMenu, CoordInputStrip, S2LevelPicker, WaypointMenu) → P4b-2b-ii. |
-| **Test net** | Verbatim ref-move per layer (move the ref + its cleanup together). e2e net covers `current-pos`/`dest`/`route`; the **prop-driven overlays (bookmark/preview/waypoint/radius) have no e2e net** and rely on verbatim moves + the existing pure-helper units (clustering, icon-html). No fragile jsdom Leaflet mock. |
+| **Test net** | Verbatim ref-move per layer (move the ref + its cleanup together). e2e net covers `current-pos`/`dest`/`route`, **plus the bookmark cluster-popup teleport bridge** (`e2e/bookmark-cluster.spec.ts` — `popupopen → .bm-cluster-row click → closePopup + teleport`). The remaining **prop-driven overlays (preview/waypoint/radius) have no e2e net** and rely on verbatim moves + the existing pure-helper units (icon-html). No fragile jsdom Leaflet mock. |
 
 ## Goals
 
@@ -56,7 +56,7 @@ api-clean + error-gated from P4b-2a). dependency-cruiser stays 0 errors.
 4. `useRandomWalkCircleLayer(mapRef, currentPosition, randomWalkRadius, isRandomWalk, …)` — the `L.circle`. Tiny, verbatim.
 5. `usePreviewPinLayer(mapRef, previewPin, onDismiss, …)` — amber pin + click-to-dismiss. Uses `buildPreviewHtml`. Verbatim.
 6. `useWaypointMarkersLayer(mapRef, waypoints, …, onWaypointMenu)` — marker rebuild + per-marker click that opens the waypoint mini-menu. Uses `buildWaypointHtml`. The mini-menu JSX (`WaypointMenu`) + its `wpMenu` state STAY inline in MapView (→ P4b-2b-ii); the layer's click handler sets that lifted state. Verbatim move of the marker rebuild.
-7. `useBookmarkMarkersLayer(mapRef, bookmarkPins, showBookmarkPins, onTeleport, …)` — the largest: px-distance clustering (`clusterByPixelDistance`, already unit-tested) + single/cluster icon builders (pure, unit-tested) + cluster popup + zoomend rebuild. Verbatim ref-move; the algorithm is the unit-test net.
+7. `useBookmarkMarkersLayer(mapRef, bookmarkPins, showBookmarkPins, onTeleport, …)` — the largest: px-distance clustering (`clusterByPixelDistance`, already unit-tested) + single/cluster icon builders (pure, unit-tested) + cluster popup + zoomend rebuild. Verbatim ref-move; the algorithm is the unit-test net. **The cluster-popup teleport bridge (`popupopen → .bm-cluster-row click → closePopup + onTeleport`) — which the unit tests do NOT cover — is now additionally e2e-covered by `e2e/bookmark-cluster.spec.ts`** (see Risks table).
 8. `useS2Grid(mapRef, …)` — the `s2Enabled`/`s2Level`/`s2Suppressed` state + localStorage (`locwarp.s2_enabled`/`s2_level`) + the paint-on-moveend/zoomend effect (the grid overlay layer). The S2 **level-picker popover** + the S2 toggle button (already a `LeafletBarButton` from 2a) stay/were-handled elsewhere; the picker JSX → P4b-2b-ii. Verbatim.
 
 After this round MapView is a thin shell of layer-hook calls + the still-inline popovers/menus (the P4b-2b-ii targets).
@@ -80,7 +80,8 @@ same pattern as P4b-3's `BookmarkContextMenu`), `CoordInputStrip`, `S2LevelPicke
 | Risk | Mitigation |
 |------|-----------|
 | Leaflet ref double-remove/orphan on extraction | Move each ref + its cleanup together as one unit; one owner per layer; e2e for current-pos/dest/route |
-| No e2e net for bookmark/preview/waypoint/radius | Verbatim ref-move; the clustering + icon-html algorithms are unit-tested; keep the effect bodies byte-identical |
+| No e2e net for preview/waypoint/radius (prop-driven overlays) | Verbatim ref-move; the icon-html algorithms are unit-tested; keep the effect bodies byte-identical. **Bookmark is no longer in this row — see below.** |
+| Bookmark cluster-popup teleport bridge (`popupopen → .bm-cluster-row click → map.closePopup() + onTeleport(lat,lng)`) — the runtime DOM-query glue that the clustering/icon UNIT tests do NOT cover | **NOW e2e-covered** by `e2e/bookmark-cluster.spec.ts`: mocks `GET /api/bookmarks` with 2 near-coincident coords → asserts they collapse into one `.bookmark-cluster-pin` → clicks it → asserts the popup + `.bm-cluster-row` rows → clicks a row → asserts the popup CLOSES **and** `POST /api/location/teleport` fires with the row's `data-lat`/`data-lng`. Mutation-verified (renaming the `dataset.lat` key makes the spec fail). The earlier "verbatim move + unit-tested algorithms" claim overstated safety for this bridge; it is now net-covered. |
 | 500m auto-center / follow auto-pan regression (current-position) | Move the heuristic verbatim; e2e pins `.current-pos-marker` presence + marker-effect independence |
 | zoomend-rebuild clustering regression | Verbatim; the `clusterByPixelDistance` unit test pins the algorithm |
 | MapView prop interface drift → ripples to App | Freeze the prop interface; App.tsx untouched |
