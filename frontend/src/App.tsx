@@ -5,6 +5,7 @@ import { useDevice } from './hooks/useDevice'
 import { useSimulation } from './hooks/useSimulation'
 import { useJoystick } from './hooks/useJoystick'
 import { useBookmarks } from './hooks/useBookmarks'
+import { useRoutes } from './hooks/useRoutes'
 import { useExternalChangeSubscriptions } from './hooks/useExternalChangeSubscriptions'
 import { useGoldDittoSubscription } from './hooks/useGoldDittoSubscription'
 import { useServices } from './contexts/ServicesContext'
@@ -63,7 +64,7 @@ const SPEED_MAP: Record<MoveMode, number> = {
 const App: React.FC = () => {
   const t = useT()
   useCloudSyncDiscovery()
-  const { ws: router, sendMessage, connected } = useServices()
+  const { api, ws: router, sendMessage, connected } = useServices()
   // Toast lives near the top so `showToast` is a stable reference BEFORE
   // useSimulation runs — its 3rd-arg callback (WiFi tunnel-recovered toast)
   // captures showToast, so it must already be declared here. No forward
@@ -92,28 +93,21 @@ const App: React.FC = () => {
     [bm.categories],
   )
 
-  const [savedRoutes, setSavedRoutes] = useState<any[]>([])
-  const [routeCategories, setRouteCategories] = useState<any[]>([])
-  const refreshRouteCategories = useCallback(async () => {
-    try {
-      const cats = await api.listRouteCategories()
-      setRouteCategories(Array.isArray(cats) ? cats : [])
-    } catch { /* leave empty so RouteList still falls back to default */ }
-  }, [])
+  // Saved-routes DATA + persistence CRUD live in useRoutes (api injected from
+  // useServices). Sim-driving route handlers (load into sim / route-paste
+  // teleport) stay in App and consume `routes.savedRoutes`.
+  const routes = useRoutes(api)
+  const savedRoutes = routes.savedRoutes
+  const routeCategories = routes.routeCategories
 
   // Keep the cloud-sync busy overlay visible until bookmark + route data
   // has been re-fetched after a toggle, so panels never flash pre-merge
-  // content.
-  const refreshRoutesAndCategories = useCallback(async () => {
-    try {
-      const rs = await api.getSavedRoutes()
-      setSavedRoutes(rs)
-    } catch { /* swallow */ }
-    await refreshRouteCategories()
-  }, [refreshRouteCategories])
+  // content. ONE combined closure (bm.refresh + routes.refresh) registered via
+  // a single useCloudSyncAfter — do NOT add a second registration (last-writer
+  // wins would clobber it).
   useCloudSyncAfter(useCallback(async () => {
-    await Promise.all([bm.refresh(), refreshRoutesAndCategories()])
-  }, [bm.refresh, refreshRoutesAndCategories]))
+    await Promise.all([bm.refresh(), routes.refresh()])
+  }, [bm.refresh, routes.refresh]))
   // Bumped every time an external trigger (currently the map topleft
   // library button) wants ControlPanel to open its library panel.
   // ControlPanel reacts on change via useEffect, so we don't have to
@@ -180,7 +174,7 @@ const App: React.FC = () => {
   // Auto-refresh bookmarks / routes when the backend signals an external
   // change (cloud-sync watchdog picked up a file written by another device).
   const onBookmarksChanged = useCallback(() => { bm.refresh(); showToast(t('cloud_sync.toast_synced')) }, [bm.refresh, showToast, t])
-  const onRoutesChanged = useCallback(() => { api.getSavedRoutes().then(setSavedRoutes).catch(() => {}); refreshRouteCategories(); showToast(t('cloud_sync.toast_routes_synced')) }, [refreshRouteCategories, showToast, t])
+  const onRoutesChanged = useCallback(() => { void routes.refresh(); showToast(t('cloud_sync.toast_routes_synced')) }, [routes.refresh, showToast, t])
   useExternalChangeSubscriptions(router, useMemo(() => ({ onBookmarks: onBookmarksChanged, onRoutes: onRoutesChanged }), [onBookmarksChanged, onRoutesChanged]))
 
   const handleRestore = useCallback(async () => {
@@ -279,11 +273,7 @@ const App: React.FC = () => {
     api.setCooldownEnabled(enabled).catch(() => setCooldownEnabled((v) => !v))
   }, [])
 
-  // Load saved routes + categories on mount
-  useEffect(() => {
-    api.getSavedRoutes().then(setSavedRoutes).catch(() => {})
-    refreshRouteCategories()
-  }, [refreshRouteCategories])
+  // (Saved routes + categories load on mount inside useRoutes.)
 
 
   // Reverse-geocode + timezone lookup, tied to the current virtual location
@@ -989,6 +979,8 @@ const App: React.FC = () => {
     setRouteLoadConfirm(null)
   }, [routeLoadConfirm, sim, device, pushRecent])
 
+  // Thin App wrapper: supplies the sim DATA (waypoints + profile) + the
+  // user-facing toasts; the persistence itself lives in routes.save.
   const handleRouteSave = useCallback(async (
     name: string,
     opts?: { categoryId?: string; overwriteId?: string },
@@ -998,137 +990,91 @@ const App: React.FC = () => {
       return
     }
     try {
-      if (opts?.overwriteId) {
-        // Find the existing route so we keep its category_id when the user
-        // doesn't explicitly choose a different one (the "save and overwrite"
-        // flow). Falls back to default if missing.
-        const prev = savedRoutes.find((r) => r.id === opts.overwriteId)
-        await api.replaceRoute(opts.overwriteId, {
-          id: opts.overwriteId,
-          name,
-          waypoints: sim.waypoints,
-          profile: sim.moveMode,
-          category_id: opts.categoryId ?? prev?.category_id ?? 'default',
-        })
-        const routes = await api.getSavedRoutes()
-        setSavedRoutes(routes)
-        showToast(t('toast.route_overwritten', { name }))
-        return
-      }
-      await api.saveRoute({
+      const { overwritten } = await routes.save({
         name,
         waypoints: sim.waypoints,
         profile: sim.moveMode,
-        category_id: opts?.categoryId ?? 'default',
+        categoryId: opts?.categoryId,
+        overwriteId: opts?.overwriteId,
       })
-      const routes = await api.getSavedRoutes()
-      setSavedRoutes(routes)
-      showToast(t('toast.route_saved', { name }))
+      showToast(overwritten
+        ? t('toast.route_overwritten', { name })
+        : t('toast.route_saved', { name }))
     } catch (err: any) {
       showToast(t('toast.route_save_failed', { msg: err.message || '' }))
     }
-  }, [sim, savedRoutes, showToast, t])
+  }, [sim, routes.save, showToast, t])
 
   const handleRoutesBulkDelete = useCallback(async (ids: string[]) => {
     try {
-      await Promise.all(ids.map((id) => api.deleteRoute(id).catch(() => null)))
-      const routes = await api.getSavedRoutes()
-      setSavedRoutes(routes)
+      await routes.bulkDelete(ids)
       showToast(t('toast.route_bulk_deleted', { n: ids.length }))
     } catch (err: any) {
       showToast(err.message || t('toast.route_delete_failed'))
     }
-  }, [showToast, t])
+  }, [routes.bulkDelete, showToast, t])
 
   const handleRouteMove = useCallback(async (ids: string[], targetCategoryId: string) => {
     try {
-      await api.moveRoutes(ids, targetCategoryId)
-      const routes = await api.getSavedRoutes()
-      setSavedRoutes(routes)
+      await routes.move(ids, targetCategoryId)
     } catch (err: any) {
       showToast(err.message || 'move failed')
     }
-  }, [showToast])
+  }, [routes.move, showToast])
 
   const handleRouteCategoryAdd = useCallback(async (name: string, color = '#6c8cff') => {
     try {
-      await api.createRouteCategory(name, color)
-      await refreshRouteCategories()
+      await routes.categoryAdd(name, color)
     } catch (err: any) {
       showToast(err.message || 'category add failed')
     }
-  }, [refreshRouteCategories, showToast])
+  }, [routes.categoryAdd, showToast])
 
   const handleRouteCategoryDelete = useCallback(async (id: string) => {
     try {
-      await api.deleteRouteCategory(id)
-      // Routes that pointed at this category were moved to default by the
-      // backend; refresh both lists so the UI reflects the regrouped state.
-      await refreshRouteCategories()
-      const routes = await api.getSavedRoutes()
-      setSavedRoutes(routes)
+      await routes.categoryDelete(id)
     } catch (err: any) {
       showToast(err.message || 'category delete failed')
     }
-  }, [refreshRouteCategories, showToast])
+  }, [routes.categoryDelete, showToast])
 
   const handleRouteCategoryRename = useCallback(async (id: string, name: string) => {
     try {
-      const cat = routeCategories.find((c) => c.id === id)
-      await api.updateRouteCategory(id, { name, color: cat?.color || '#6c8cff' })
-      await refreshRouteCategories()
+      await routes.categoryRename(id, name)
     } catch (err: any) {
       showToast(err.message || 'category rename failed')
     }
-  }, [routeCategories, refreshRouteCategories, showToast])
+  }, [routes.categoryRename, showToast])
 
   const handleRouteCategoryRecolor = useCallback(async (id: string, color: string) => {
     try {
-      const cat = routeCategories.find((c) => c.id === id)
-      await api.updateRouteCategory(id, { name: cat?.name || '', color })
-      await refreshRouteCategories()
+      await routes.categoryRecolor(id, color)
     } catch (err: any) {
       showToast(err.message || 'category recolor failed')
     }
-  }, [routeCategories, refreshRouteCategories, showToast])
+  }, [routes.categoryRecolor, showToast])
 
   const handleGpxImport = useCallback(async (file: File) => {
     try {
-      const res = await api.importGpx(file)
-      const routes = await api.getSavedRoutes()
-      setSavedRoutes(routes)
+      const res = await routes.importGpx(file)
       showToast(t('toast.gpx_imported', { n: res.points }))
     } catch (err: any) {
       showToast(t('toast.gpx_import_failed', { msg: err.message || '' }))
     }
-  }, [showToast])
+  }, [routes.importGpx, showToast, t])
 
   const handleGpxExport = useCallback((id: string) => {
-    const url = api.exportGpxUrl(id)
-    window.open(url, '_blank')
-  }, [])
+    routes.exportGpx(id)
+  }, [routes.exportGpx])
 
   const handleRoutesImportAll = useCallback(async (file: File) => {
     try {
-      const text = await file.text()
-      const data = JSON.parse(text)
-      if (!Array.isArray(data?.routes)) {
-        throw new Error('invalid file: missing routes array')
-      }
-      // Pass categories through too if present (post-v0.2.133 export shape).
-      // Old exports without this field still import fine.
-      const res = await api.importAllRoutes({
-        routes: data.routes,
-        categories: Array.isArray(data?.categories) ? data.categories : [],
-      })
-      const routes = await api.getSavedRoutes()
-      setSavedRoutes(routes)
-      await refreshRouteCategories()
+      const res = await routes.importAll(file)
       showToast(t('toast.routes_imported', { n: res.imported }))
     } catch (err: any) {
       showToast(t('toast.routes_import_failed', { msg: err.message || '' }))
     }
-  }, [showToast, refreshRouteCategories, t])
+  }, [routes.importAll, showToast, t])
 
   const handleApplySpeed = useCallback(async () => {
     const udids = device.connectedDevices.map((d) => d.udid)
@@ -1293,24 +1239,20 @@ const App: React.FC = () => {
 
   const handleRouteRename = useCallback(async (id: string, name: string) => {
     try {
-      await api.renameRoute(id, name)
-      const routes = await api.getSavedRoutes()
-      setSavedRoutes(routes)
+      await routes.rename(id, name)
     } catch (err: any) {
       showToast(err.message || t('toast.route_rename_failed'))
     }
-  }, [showToast])
+  }, [routes.rename, showToast, t])
 
   const handleRouteDelete = useCallback(async (id: string) => {
     try {
-      await api.deleteRoute(id)
-      const routes = await api.getSavedRoutes()
-      setSavedRoutes(routes)
+      await routes.remove(id)
       showToast(t('toast.route_deleted'))
     } catch (err: any) {
       showToast(err.message || t('toast.route_delete_failed'))
     }
-  }, [showToast])
+  }, [routes.remove, showToast, t])
 
   // Build props for components
   const currentPos = sim.currentPosition
