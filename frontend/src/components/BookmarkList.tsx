@@ -1,5 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { isSubmitEnter } from '../utils/keyboard';
+import React, { useState, useRef } from 'react';
 import { BookmarkRow } from './BookmarkRow';
 import { CategorySection } from './CategorySection';
 import BookmarkContextMenu from './BookmarkContextMenu';
@@ -7,9 +6,11 @@ import AddBookmarkDialog from './AddBookmarkDialog';
 import CustomBookmarkDialog from './CustomBookmarkDialog';
 import EditBookmarkDialog from './EditBookmarkDialog';
 import EditCategoryModal from './EditCategoryModal';
+import CategoryManagerPanel from './CategoryManagerPanel';
 import { useT, useI18n } from '../i18n';
 import { useServices } from '../contexts/ServicesContext';
 import { useBookmarkUiState } from '../hooks/useBookmarkUiState';
+import { useBookmarkSelection } from '../hooks/useBookmarkSelection';
 import { sortBookmarks, sortCategoryEntries, type SortMode } from '../utils/bookmarkSort';
 import { makeResolveColor } from '../utils/categoryColor';
 import {
@@ -200,30 +201,18 @@ const BookmarkList: React.FC<BookmarkListProps> = ({
   const [customCategory, setCustomCategory] = useState(categories[0] || 'Default');
   const [search, setSearch] = useState('');
   // Multi-select mode: tick rows and batch-delete. When active, row clicks
-  // toggle selection instead of teleporting.
-  const [multiSelect, setMultiSelect] = useState(false);
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const toggleSelected = (id: string) => {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
-      return next;
-    });
-  };
-  const exitMultiSelect = () => {
-    setMultiSelect(false);
-    setSelectedIds(new Set());
-  };
-  const handleBulkDelete = async () => {
-    if (selectedIds.size === 0) return;
-    const msg = t('bm.delete_confirm').replace('{n}', String(selectedIds.size));
-    if (!window.confirm(msg)) return;
-    const ids = Array.from(selectedIds);
-    await Promise.all(ids.map((id) => {
-      try { return Promise.resolve(onBookmarkDelete(id)); } catch { return Promise.resolve(); }
-    }));
-    exitMultiSelect();
-  };
+  // toggle selection instead of teleporting. State + bulk-delete logic lives in
+  // a dedicated hook so the confirm/fan-out semantics stay in one place.
+  const {
+    multiSelect,
+    selectedIds,
+    toggleSelected,
+    setSelectedIds,
+    enterMultiSelect,
+    exitMultiSelect,
+    toggleSelectAll,
+    handleBulkDelete,
+  } = useBookmarkSelection({ bookmarks, onBookmarkDelete, t });
   // "Click also flies GPS" toggle persisted in localStorage so the choice
   // survives restart. Default true = legacy behavior (clicking a bookmark
   // teleports iPhone). When false, click only pans the map view (preview).
@@ -441,7 +430,7 @@ const BookmarkList: React.FC<BookmarkListProps> = ({
               // Opening multi-select closes any other mutually-exclusive
               // panel that'd otherwise stack on top and confuse the user.
               setShowCategoryMgr(false);
-              setMultiSelect(true);
+              enterMultiSelect();
             }
           }}
           style={{
@@ -586,104 +575,21 @@ const BookmarkList: React.FC<BookmarkListProps> = ({
 
       {/* Category manager */}
       {showCategoryMgr && (
-        <div
-          style={{
-            background: '#2a2a2e',
-            border: '1px solid #444',
-            borderRadius: 6,
-            padding: 12,
-            marginBottom: 8,
-          }}
-        >
-          <div style={{ fontSize: 11, fontWeight: 600, marginBottom: 6, opacity: 0.7 }}>
-            {t('bm.manage_categories')}
-          </div>
-          {categories.map((cat) => (
-            <div
-              key={cat}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 6,
-                padding: '4px 0',
-                fontSize: 12,
-                position: 'relative',
-              }}
-            >
-              <div
-                style={{
-                  width: 14,
-                  height: 14,
-                  borderRadius: '50%',
-                  background: resolveColor(cat),
-                  border: '1.5px solid rgba(255,255,255,0.15)',
-                  flexShrink: 0,
-                  boxShadow: '0 1px 2px rgba(0,0,0,0.3)',
-                }}
-              />
-              <span style={{ flex: 1 }}>{displayCat(cat)}</span>
-              {cat !== 'Default' && cat !== '預設' && onCategoryEdit && (
-                <button
-                  onClick={() => openEditCategory(cat)}
-                  title={t('bm.cat.edit_title')}
-                  style={{
-                    background: 'none',
-                    border: 'none',
-                    color: 'var(--fg-muted, #888)',
-                    cursor: 'pointer',
-                    padding: '2px 4px',
-                    fontSize: 11,
-                  }}
-                >
-                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7" />
-                    <path d="M18.5 2.5a2.12 2.12 0 013 3L12 15l-4 1 1-4 9.5-9.5z" />
-                  </svg>
-                </button>
-              )}
-              {cat !== 'Default' && cat !== '預設' && (
-                <CategoryDeleteDropdown
-                  category={cat}
-                  bookmarkCount={(bookmarksByCategory[cat] ?? []).length}
-                  onSoftDelete={() => onCategoryDelete(cat)}
-                  onCascadeDelete={
-                    onCategoryDeleteCascade
-                      ? () => onCategoryDeleteCascade(cat, (bookmarksByCategory[cat] ?? []).length)
-                      : undefined
-                  }
-                />
-              )}
-            </div>
-          ))}
-          <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
-            <input
-              type="text"
-              className="search-input"
-              placeholder={t('bm.add_category')}
-              value={newCategoryName}
-              onChange={(e) => setNewCategoryName(e.target.value)}
-              onKeyDown={(e) => {
-                if (isSubmitEnter(e) && newCategoryName.trim()) {
-                  onCategoryAdd(newCategoryName.trim());
-                  setNewCategoryName('');
-                }
-              }}
-              style={{ flex: 1 }}
-            />
-            <button
-              className="action-btn"
-              onClick={() => {
-                if (newCategoryName.trim()) {
-                  onCategoryAdd(newCategoryName.trim());
-                  setNewCategoryName('');
-                }
-              }}
-              style={{ fontSize: 11 }}
-            >
-              {t('bm.new_category')}
-            </button>
-          </div>
-        </div>
+        <CategoryManagerPanel
+          categories={categories}
+          bookmarkCounts={categories.reduce<Record<string, number>>((acc, cat) => {
+            acc[cat] = (bookmarksByCategory[cat] ?? []).length;
+            return acc;
+          }, {})}
+          resolveColor={resolveColor}
+          displayCat={displayCat}
+          newCategoryName={newCategoryName}
+          onNewCategoryNameChange={setNewCategoryName}
+          onCategoryAdd={onCategoryAdd}
+          onCategoryDelete={onCategoryDelete}
+          onCategoryDeleteCascade={onCategoryDeleteCascade}
+          onCategoryEdit={onCategoryEdit ? openEditCategory : undefined}
+        />
       )}
 
       <EditCategoryModal
@@ -818,14 +724,7 @@ const BookmarkList: React.FC<BookmarkListProps> = ({
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11 }}>
             <button
               className="action-btn"
-              onClick={() => {
-                const allIds = bookmarks.map((b) => b.id).filter((x): x is string => !!x);
-                if (selectedIds.size === allIds.length) {
-                  setSelectedIds(new Set());
-                } else {
-                  setSelectedIds(new Set(allIds));
-                }
-              }}
+              onClick={toggleSelectAll}
               style={{ padding: '3px 8px', fontSize: 11 }}
             >
               {selectedIds.size === bookmarks.length && bookmarks.length > 0
@@ -1000,98 +899,5 @@ const BookmarkList: React.FC<BookmarkListProps> = ({
     </div>
   );
 };
-
-interface DropdownProps {
-  category: string
-  bookmarkCount: number
-  onSoftDelete: () => void
-  onCascadeDelete?: () => void
-}
-
-const CategoryDeleteDropdown: React.FC<DropdownProps> = ({
-  category, bookmarkCount, onSoftDelete, onCascadeDelete,
-}) => {
-  const t = useT()
-  const [open, setOpen] = useState(false)
-  const ref = useRef<HTMLDivElement | null>(null)
-
-  useEffect(() => {
-    if (!open) return
-    const onOutside = (e: Event) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
-    }
-    document.addEventListener('pointerdown', onOutside)
-    return () => document.removeEventListener('pointerdown', onOutside)
-  }, [open])
-
-  const confirmCascade = () => {
-    if (!onCascadeDelete) return
-    const msg = t('bm.delete.cascade_body').replace('{n}', String(bookmarkCount))
-    if (window.confirm(`${t('bm.delete.cascade_title').replace('{name}', category)}\n\n${msg}`)) {
-      onCascadeDelete()
-    }
-  }
-
-  const confirmSoft = () => {
-    const msg = t('bm.delete.soft_body').replace('{n}', String(bookmarkCount))
-    if (window.confirm(`${t('bm.delete.soft_title').replace('{name}', category)}\n\n${msg}`)) {
-      onSoftDelete()
-    }
-  }
-
-  return (
-    <div ref={ref} style={{ position: 'relative' }}>
-      <button
-        onClick={() => setOpen((v) => !v)}
-        style={{
-          background: 'none', border: 'none',
-          color: '#f44336', cursor: 'pointer',
-          padding: '2px 4px', fontSize: 11,
-        }}
-      >
-        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-          <polyline points="3,6 5,6 21,6" />
-          <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2" />
-        </svg>
-      </button>
-      {open && (
-        <div
-          style={{
-            position: 'absolute',
-            top: '100%', right: 0, zIndex: 50,
-            background: '#2a2a2e',
-            border: '1px solid rgba(255,255,255,0.15)',
-            borderRadius: 6,
-            padding: '4px 0',
-            minWidth: 240,
-            boxShadow: '0 6px 18px rgba(0,0,0,0.5)',
-          }}
-        >
-          <div
-            onClick={() => { setOpen(false); confirmSoft() }}
-            style={{ padding: '6px 12px', fontSize: 11, cursor: 'pointer' }}
-            onMouseEnter={(e) => { (e.currentTarget as HTMLDivElement).style.background = '#3a3a3e' }}
-            onMouseLeave={(e) => { (e.currentTarget as HTMLDivElement).style.background = 'transparent' }}
-          >
-            {t('bm.delete.softdelete_label')}
-          </div>
-          {onCascadeDelete && (
-            <div
-              onClick={() => { setOpen(false); confirmCascade() }}
-              style={{
-                padding: '6px 12px', fontSize: 11, cursor: 'pointer',
-                color: '#ff6b6b',
-              }}
-              onMouseEnter={(e) => { (e.currentTarget as HTMLDivElement).style.background = '#3a3a3e' }}
-              onMouseLeave={(e) => { (e.currentTarget as HTMLDivElement).style.background = 'transparent' }}
-            >
-              {t('bm.delete.cascade_label').replace('{n}', String(bookmarkCount))}
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  )
-}
 
 export default BookmarkList;
