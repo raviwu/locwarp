@@ -42,6 +42,10 @@ def _isolate_real_data_paths(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "SETTINGS_FILE", st, raising=False)
     monkeypatch.setattr(config, "_DEFAULT_BOOKMARKS_FILE", bm, raising=False)
     monkeypatch.setattr(config, "ROUTES_FILE", rt, raising=False)
+    # BACKUP_DIR is derived from DATA_DIR at import time, so patching DATA_DIR
+    # alone leaves it pointing at the real ~/.locwarp/backups. Redirect it too,
+    # or a backup test would write real user data (the exact hazard above).
+    monkeypatch.setattr(config, "BACKUP_DIR", tmp_path / "backups", raising=False)
 
     # Module-level copies captured at import time in the runtime modules.
     if "main" in sys.modules:

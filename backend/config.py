@@ -86,6 +86,17 @@ WIFI_ALIASES_FILE = DATA_DIR / "wifi_aliases.json"
 # Shape: JSON list of udid strings.
 STICKY_DENIED_FILE = DATA_DIR / "sticky_denied.json"
 
+# In-process rotating local backup of the live bookmark + route stores.
+# A lifespan-owned task snapshots every BACKUP_INTERVAL_S, archiving a
+# timestamped copy only on data change and pruning past BACKUP_RETENTION_HOURS.
+# Kept LOCAL under ~/.locwarp (never the iCloud sync_folder) so backups are
+# not themselves re-synced/clobbered. The dir is mkdir'd at runtime in the
+# lifespan (config stays import-pure). Reference config.BACKUP_DIR lazily —
+# never `from config import BACKUP_DIR` — so the test isolation guard works.
+BACKUP_DIR = DATA_DIR / "backups"
+BACKUP_INTERVAL_S = 300          # 5 minutes
+BACKUP_RETENTION_HOURS = 72      # 3 days
+
 # OSRM
 OSRM_BASE_URL = "https://router.project-osrm.org"
 
