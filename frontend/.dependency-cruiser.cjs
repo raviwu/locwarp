@@ -46,6 +46,20 @@ module.exports = {
       },
       to: { path: "^src/(services/api|adapters)" },
     },
+    {
+      // P4b-1 exit: App.tsx is fully decomposed and reaches the backend only via
+      // useServices().api / injected hooks, so it + its extracted presentational
+      // components flip to ERROR. MapView stays "warn" until P4b-2.
+      name: "app-no-direct-api",
+      severity: "error",
+      comment:
+        "App.tsx + its extracted components must reach the backend via useServices().api / injected hooks — never a direct services/api or adapters import.",
+      from: {
+        path: "^src/(App\\.tsx|components/(WaypointEditor|AppAddBookmarkDialog|BulkPasteDialog|WaypointFlyDialog|RouteLoadDialog|RoutePasteDialog))",
+        pathNot: TEST_FILES,
+      },
+      to: { path: "^src/(services/api|adapters)" },
+    },
   ],
   options: {
     doNotFollow: { path: "node_modules" },

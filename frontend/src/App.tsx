@@ -17,7 +17,7 @@ import { useServices } from './contexts/ServicesContext'
 import { useToast } from './hooks/useToast'
 import UserAvatarPicker from './components/UserAvatarPicker'
 import { UserAvatar, avatarToHtml, loadAvatar, saveAvatar, loadCustomPng, saveCustomPng } from './userAvatars'
-import * as api from './services/api'
+import type { ApiGateway } from './contract/apiGateway'
 import { parseCoord } from './utils/coords'
 import { toastForFanout } from './utils/toast'
 
@@ -44,7 +44,7 @@ import { SimMode, MoveMode } from './hooks/useSimulation'
 // One-time iCloud Drive discovery prompt. Fires on app start; skipped when
 // cloud sync is already enabled, the prompt was previously dismissed, or
 // iCloud Drive is not detected on this machine.
-function useCloudSyncDiscovery() {
+function useCloudSyncDiscovery(api: ApiGateway) {
   const t = useT()
   const { run } = useCloudSyncBusy()
   useEffect(() => {
@@ -72,8 +72,8 @@ const SPEED_MAP: Record<MoveMode, number> = {
 
 const App: React.FC = () => {
   const t = useT()
-  useCloudSyncDiscovery()
   const { api, ws: router, sendMessage, connected } = useServices()
+  useCloudSyncDiscovery(api)
   // Toast lives near the top so `showToast` is a stable reference BEFORE
   // useSimulation runs — its 3rd-arg callback (WiFi tunnel-recovered toast)
   // captures showToast, so it must already be declared here. No forward
