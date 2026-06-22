@@ -1,5 +1,4 @@
 import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react'
-import { createPortal } from 'react-dom'
 import { useT } from './i18n'
 import { useDevice } from './hooks/useDevice'
 import { useSimulation } from './hooks/useSimulation'
@@ -18,7 +17,6 @@ import UserAvatarPicker from './components/UserAvatarPicker'
 import { UserAvatar, avatarToHtml, loadAvatar, saveAvatar, loadCustomPng, saveCustomPng } from './userAvatars'
 import * as api from './services/api'
 import { parseCoord } from './utils/coords'
-import { isSubmitEnter } from './utils/keyboard'
 import { toastForFanout } from './utils/toast'
 
 import MapView from './components/MapView'
@@ -28,6 +26,11 @@ import JoystickPad from './components/JoystickPad'
 import EtaBar from './components/EtaBar'
 import WaypointEditor from './components/WaypointEditor'
 import StatusBar from './components/StatusBar'
+import AppAddBookmarkDialog from './components/AppAddBookmarkDialog'
+import BulkPasteDialog from './components/BulkPasteDialog'
+import WaypointFlyDialog from './components/WaypointFlyDialog'
+import RouteLoadDialog from './components/RouteLoadDialog'
+import RoutePasteDialog from './components/RoutePasteDialog'
 import { DeviceChipRow } from './components/DeviceChipRow'
 import {
   CloudSyncBusyProvider, useCloudSyncBusy, useCloudSyncAfter,
@@ -1589,439 +1592,46 @@ const App: React.FC = () => {
             onRelease={() => joystick.updateFromPad(0, 0)}
           />
         )}
-        {addBmDialog && createPortal(
-          <div
-            onClick={(e) => e.stopPropagation()}
-            className="anim-scale-in"
-            style={{
-              position: 'fixed', top: 60, left: '50%', transform: 'translateX(-50%)',
-              zIndex: 1000, background: 'rgba(26, 29, 39, 0.96)',
-              backdropFilter: 'blur(14px)', WebkitBackdropFilter: 'blur(14px)',
-              border: '1px solid rgba(108, 140, 255, 0.2)',
-              borderRadius: 12, padding: 16, width: 300,
-              boxShadow: '0 20px 60px rgba(12, 18, 40, 0.65), 0 0 0 1px rgba(255, 255, 255, 0.05) inset',
-            }}
-          >
-            <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>{t('bm.add')}</div>
-            <div style={{ fontSize: 11, opacity: 0.6, marginBottom: 8 }}>
-              {addBmDialog.lat.toFixed(5)}, {addBmDialog.lng.toFixed(5)}
-            </div>
-            <div style={{ position: 'relative', marginBottom: 8 }}>
-              <input
-                type="text"
-                className="search-input"
-                placeholder={addBmDialog.nameResolving ? t('bm.name_resolving') : t('bm.name_placeholder')}
-                autoFocus
-                value={addBmDialog.name}
-                onChange={(e) => setAddBmDialog({ ...addBmDialog, name: e.target.value })}
-                onKeyDown={(e) => {
-                  if (isSubmitEnter(e)) submitAddBookmark()
-                  if (e.key === 'Escape') setAddBmDialog(null)
-                }}
-                style={{ width: '100%', paddingRight: addBmDialog.nameResolving ? 30 : 8 }}
-              />
-              {addBmDialog.nameResolving && (
-                <span style={{
-                  position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)',
-                  fontSize: 10, color: '#9ac0ff', fontFamily: 'monospace',
-                  animation: 'pulse 1.2s ease-in-out infinite',
-                }}>
-                  {t('bm.name_resolving_short')}
-                </span>
-              )}
-              {addBmDialog.countryCode && !addBmDialog.nameResolving && (
-                <img
-                  src={`https://flagcdn.com/w20/${addBmDialog.countryCode}.png`}
-                  alt={addBmDialog.countryCode.toUpperCase()}
-                  width={16}
-                  height={12}
-                  style={{
-                    position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)',
-                    borderRadius: 2, boxShadow: '0 0 0 1px rgba(255,255,255,0.15)',
-                  }}
-                />
-              )}
-            </div>
-            <select
-              value={addBmDialog.category}
-              onChange={(e) => setAddBmDialog({ ...addBmDialog, category: e.target.value })}
-              style={{
-                width: '100%', marginBottom: 10, padding: '6px 8px',
-                background: '#1e1e22', color: '#e0e0e0', border: '1px solid #444',
-                borderRadius: 4, fontSize: 12,
-              }}
-            >
-              {bm.categories.map((c) => (
-                <option key={c.id} value={c.name}>{c.name}</option>
-              ))}
-            </select>
-            <div style={{ display: 'flex', gap: 6 }}>
-              <button
-                className="action-btn primary"
-                style={{ flex: 1 }}
-                disabled={!addBmDialog.name.trim()}
-                onClick={submitAddBookmark}
-              >{t('generic.add')}</button>
-              <button className="action-btn" onClick={() => setAddBmDialog(null)}>{t('generic.cancel')}</button>
-            </div>
-          </div>,
-          document.body,
-        )}
-        {bulkPasteOpen && createPortal(
-          (() => {
-            const { valid, invalidCount, totalLines } = parseBulkPaste(bulkPasteText)
-            return (
-              <div
-                onClick={() => { if (!bulkPasteBusy) setBulkPasteOpen(false) }}
-                style={{
-                  position: 'fixed', inset: 0, zIndex: 2000,
-                  background: 'rgba(8, 10, 20, 0.55)', backdropFilter: 'blur(4px)',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                }}
-              >
-                <div
-                  onClick={(e) => e.stopPropagation()}
-                  style={{
-                    width: 460, maxWidth: '92vw', maxHeight: '86vh',
-                    display: 'flex', flexDirection: 'column',
-                    background: 'rgba(26, 29, 39, 0.96)',
-                    border: '1px solid rgba(108, 140, 255, 0.25)', borderRadius: 12,
-                    padding: 22, color: '#e8eaf0',
-                    boxShadow: '0 20px 60px rgba(12, 18, 40, 0.65)',
-                    fontSize: 13,
-                  }}
-                >
-                  <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 10 }}>
-                    {t('bm.bulk_paste_title')}
-                  </div>
-                  <div style={{ fontSize: 11, opacity: 0.65, marginBottom: 10, whiteSpace: 'pre-line', lineHeight: 1.5 }}>
-                    {t('bm.bulk_paste_hint')}
-                  </div>
-                  <textarea
-                    value={bulkPasteText}
-                    onChange={(e) => setBulkPasteText(e.target.value)}
-                    placeholder="25.0478 121.5319 台北車站&#10;24.1456 120.6839 台中"
-                    style={{
-                      width: '100%', boxSizing: 'border-box',
-                      minHeight: 160, maxHeight: 240, resize: 'vertical',
-                      background: 'rgba(10, 12, 18, 0.7)',
-                      border: '1px solid rgba(108, 140, 255, 0.3)',
-                      borderRadius: 6, color: '#e8eaf0',
-                      padding: '8px 10px', fontFamily: 'monospace', fontSize: 12, lineHeight: 1.5,
-                      outline: 'none',
-                    }}
-                  />
-                  <div style={{ fontSize: 11, opacity: 0.7, marginTop: 8 }}>
-                    {totalLines > 0 && t('bm.bulk_paste_stats')
-                      .replace('{total}', String(totalLines))
-                      .replace('{valid}', String(valid.length))
-                      .replace('{invalid}', String(invalidCount))}
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10 }}>
-                    <span style={{ fontSize: 12, opacity: 0.75 }}>{t('bm.bulk_paste_category')}:</span>
-                    <select
-                      value={bulkPasteCategory}
-                      onChange={(e) => setBulkPasteCategory(e.target.value)}
-                      className="search-input"
-                      style={{ flex: 1, padding: '4px 8px', fontSize: 12 }}
-                    >
-                      {bm.categories.map((c) => (
-                        <option key={c.id} value={c.name}>{c.name}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div style={{ display: 'flex', gap: 8, marginTop: 16, justifyContent: 'flex-end' }}>
-                    <button
-                      onClick={() => { if (!bulkPasteBusy) { setBulkPasteOpen(false); setBulkPasteText('') } }}
-                      disabled={bulkPasteBusy}
-                      style={{
-                        padding: '6px 14px', fontSize: 12, cursor: bulkPasteBusy ? 'not-allowed' : 'pointer',
-                        background: 'transparent', color: '#9499ac',
-                        border: '1px solid rgba(255,255,255,0.12)', borderRadius: 6,
-                        opacity: bulkPasteBusy ? 0.6 : 1,
-                      }}
-                    >{t('generic.cancel')}</button>
-                    <button
-                      onClick={submitBulkPaste}
-                      disabled={bulkPasteBusy || valid.length === 0}
-                      style={{
-                        padding: '6px 14px', fontSize: 12, fontWeight: 600,
-                        cursor: (bulkPasteBusy || valid.length === 0) ? 'not-allowed' : 'pointer',
-                        background: valid.length === 0 ? 'rgba(108,140,255,0.3)' : '#6c8cff',
-                        color: '#fff',
-                        border: 'none', borderRadius: 6,
-                        opacity: bulkPasteBusy ? 0.6 : 1,
-                      }}
-                    >
-                      {bulkPasteBusy ? '...' : `${t('bm.bulk_paste_submit')} (${valid.length})`}
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )
-          })(),
-          document.body,
-        )}
-        {wpFlyConfirm && createPortal(
-          <div
-            onClick={() => setWpFlyConfirm(null)}
-            style={{
-              position: 'fixed', inset: 0, zIndex: 2000,
-              background: 'rgba(8, 10, 20, 0.55)', backdropFilter: 'blur(4px)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-            }}
-          >
-            <div
-              onClick={(e) => e.stopPropagation()}
-              style={{
-                width: 360, maxWidth: '92vw',
-                background: 'rgba(26, 29, 39, 0.96)',
-                border: '1px solid rgba(108, 140, 255, 0.25)', borderRadius: 12,
-                padding: 22, color: '#e8eaf0',
-                boxShadow: '0 20px 60px rgba(12, 18, 40, 0.65)',
-                fontSize: 13,
-              }}
-            >
-              <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 10 }}>
-                {t('panel.wp_fly_title')}
-              </div>
-              <div style={{ fontSize: 12, opacity: 0.8, marginBottom: 6, lineHeight: 1.6 }}>
-                {t('panel.wp_fly_hint')}
-              </div>
-              <div style={{
-                fontFamily: 'monospace', fontSize: 13,
-                padding: '8px 10px', marginBottom: 4,
-                background: 'rgba(10, 12, 18, 0.5)',
-                border: '1px solid rgba(108, 140, 255, 0.2)',
-                borderRadius: 6,
-              }}>
-                {wpFlyConfirm.lat.toFixed(6)}, {wpFlyConfirm.lng.toFixed(6)}
-              </div>
-              <div style={{ fontSize: 11, opacity: 0.55, marginBottom: 16 }}>
-                {t('panel.wp_fly_keep_mode')}
-              </div>
-              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
-                <button
-                  onClick={() => setWpFlyConfirm(null)}
-                  style={{
-                    padding: '6px 14px', fontSize: 12, cursor: 'pointer',
-                    background: 'transparent', color: '#9499ac',
-                    border: '1px solid rgba(255,255,255,0.12)', borderRadius: 6,
-                  }}
-                >{t('generic.cancel')}</button>
-                {wpFlyConfirm.index > 0 ? (
-                  <button
-                    onClick={async () => {
-                      const idx = wpFlyConfirm.index
-                      setWpFlyConfirm(null)
-                      await handleSetWpAsStart(idx)
-                    }}
-                    style={{
-                      padding: '6px 14px', fontSize: 12, fontWeight: 600, cursor: 'pointer',
-                      background: '#6c8cff', color: '#fff',
-                      border: 'none', borderRadius: 6,
-                    }}
-                    title={t('panel.waypoints_set_as_start')}
-                  >{t('panel.wp_fly_set_as_start')}</button>
-                ) : (
-                  // index 0 IS the start — no rotation possible. Fall back
-                  // to the plain teleport so clicking the start coord still
-                  // lets the user re-align the iPhone to it.
-                  <button
-                    onClick={confirmWpFly}
-                    style={{
-                      padding: '6px 14px', fontSize: 12, fontWeight: 600, cursor: 'pointer',
-                      background: '#6c8cff', color: '#fff',
-                      border: 'none', borderRadius: 6,
-                    }}
-                  >{t('panel.wp_fly_confirm')}</button>
-                )}
-              </div>
-            </div>
-          </div>,
-          document.body,
-        )}
-        {routeLoadConfirm && createPortal(
-          <div
-            onClick={() => setRouteLoadConfirm(null)}
-            style={{
-              position: 'fixed', inset: 0, zIndex: 2000,
-              background: 'rgba(8, 10, 20, 0.55)', backdropFilter: 'blur(4px)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-            }}
-          >
-            <div
-              onClick={(e) => e.stopPropagation()}
-              style={{
-                width: 380, maxWidth: '92vw',
-                background: 'rgba(26, 29, 39, 0.96)',
-                border: '1px solid rgba(108, 140, 255, 0.25)', borderRadius: 12,
-                padding: 22, color: '#e8eaf0',
-                boxShadow: '0 20px 60px rgba(12, 18, 40, 0.65)',
-                fontSize: 13,
-              }}
-            >
-              <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 10 }}>
-                {t('panel.route_load_title')}
-              </div>
-              {routeLoadConfirm.name && (
-                <div style={{
-                  fontSize: 13, marginBottom: 8, padding: '6px 10px',
-                  background: 'rgba(108, 140, 255, 0.1)',
-                  border: '1px solid rgba(108, 140, 255, 0.2)', borderRadius: 6,
-                }}>
-                  {routeLoadConfirm.name}
-                </div>
-              )}
-              <div style={{ fontSize: 12, opacity: 0.8, marginBottom: 6, lineHeight: 1.6 }}>
-                {t('panel.route_load_hint', { n: routeLoadConfirm.waypoints.length })}
-              </div>
-              {routeLoadConfirm.waypoints.length > 0 && (
-                <div style={{
-                  fontFamily: 'monospace', fontSize: 12,
-                  padding: '8px 10px', marginBottom: 16,
-                  background: 'rgba(10, 12, 18, 0.5)',
-                  border: '1px solid rgba(108, 140, 255, 0.2)', borderRadius: 6,
-                }}>
-                  {t('panel.route_load_start')} {routeLoadConfirm.waypoints[0].lat.toFixed(6)}, {routeLoadConfirm.waypoints[0].lng.toFixed(6)}
-                </div>
-              )}
-              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
-                <button
-                  onClick={() => setRouteLoadConfirm(null)}
-                  style={{
-                    padding: '6px 14px', fontSize: 12, cursor: 'pointer',
-                    background: 'transparent', color: '#9499ac',
-                    border: '1px solid rgba(255,255,255,0.12)', borderRadius: 6,
-                  }}
-                >{t('generic.cancel')}</button>
-                <button
-                  onClick={() => void confirmRouteLoad(false)}
-                  style={{
-                    padding: '6px 14px', fontSize: 12, cursor: 'pointer',
-                    background: 'transparent', color: '#e8eaf0',
-                    border: '1px solid rgba(108, 140, 255, 0.5)', borderRadius: 6,
-                  }}
-                >{t('panel.route_load_show_only')}</button>
-                <button
-                  onClick={() => void confirmRouteLoad(true)}
-                  style={{
-                    padding: '6px 14px', fontSize: 12, fontWeight: 600, cursor: 'pointer',
-                    background: '#6c8cff', color: '#fff',
-                    border: 'none', borderRadius: 6,
-                  }}
-                >{t('panel.route_load_fly_start')}</button>
-              </div>
-            </div>
-          </div>,
-          document.body,
-        )}
-        {routePasteOpen && createPortal(
-          (() => {
-            const { valid, invalidCount, totalLines } = parseRoutePaste(routePasteText)
-            return (
-              <div
-                onClick={() => setRoutePasteOpen(false)}
-                style={{
-                  position: 'fixed', inset: 0, zIndex: 2000,
-                  background: 'rgba(8, 10, 20, 0.55)', backdropFilter: 'blur(4px)',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                }}
-              >
-                <div
-                  onClick={(e) => e.stopPropagation()}
-                  style={{
-                    width: 460, maxWidth: '92vw', maxHeight: '86vh',
-                    display: 'flex', flexDirection: 'column',
-                    background: 'rgba(26, 29, 39, 0.96)',
-                    border: '1px solid rgba(108, 140, 255, 0.25)', borderRadius: 12,
-                    padding: 22, color: '#e8eaf0',
-                    boxShadow: '0 20px 60px rgba(12, 18, 40, 0.65)',
-                    fontSize: 13,
-                  }}
-                >
-                  <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 10 }}>
-                    {t('panel.route_paste_title')}
-                  </div>
-                  <div style={{ fontSize: 11, opacity: 0.65, marginBottom: 10, whiteSpace: 'pre-line', lineHeight: 1.5 }}>
-                    {t('panel.route_paste_hint')}
-                  </div>
-                  <textarea
-                    value={routePasteText}
-                    onChange={(e) => setRoutePasteText(e.target.value)}
-                    placeholder="25.0478 121.5319&#10;25.0500 121.5400&#10;25.0530 121.5500"
-                    style={{
-                      width: '100%', boxSizing: 'border-box',
-                      minHeight: 180, maxHeight: 280, resize: 'vertical',
-                      background: 'rgba(10, 12, 18, 0.7)',
-                      border: '1px solid rgba(108, 140, 255, 0.3)',
-                      borderRadius: 6, color: '#e8eaf0',
-                      padding: '8px 10px', fontFamily: 'monospace', fontSize: 12, lineHeight: 1.5,
-                      outline: 'none',
-                    }}
-                  />
-                  <div style={{ fontSize: 11, opacity: 0.7, marginTop: 8 }}>
-                    {totalLines > 0 && t('panel.route_paste_stats')
-                      .replace('{total}', String(totalLines))
-                      .replace('{valid}', String(valid.length))
-                      .replace('{invalid}', String(invalidCount))}
-                  </div>
-                  <div style={{ fontSize: 11, opacity: 0.6, marginTop: 4 }}>
-                    {t('panel.route_paste_start_hint')}
-                  </div>
-                  <div style={{ display: 'flex', gap: 8, marginTop: 16, justifyContent: 'space-between', alignItems: 'center' }}>
-                    <button
-                      onClick={async () => {
-                        try {
-                          const text = await navigator.clipboard.readText()
-                          if (text) setRoutePasteText(text)
-                        } catch {
-                          showToast(t('panel.route_paste_clipboard_blocked'))
-                        }
-                      }}
-                      title={t('panel.route_paste_from_clipboard_tooltip')}
-                      style={{
-                        padding: '6px 12px', fontSize: 12, cursor: 'pointer',
-                        background: 'rgba(108, 140, 255, 0.18)', color: '#9bb0ff',
-                        border: '1px solid rgba(108, 140, 255, 0.4)', borderRadius: 6,
-                        display: 'inline-flex', alignItems: 'center', gap: 5,
-                      }}
-                    >
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <rect x="9" y="2" width="6" height="4" rx="1"/>
-                        <path d="M9 4H6a2 2 0 00-2 2v14a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-3"/>
-                        <path d="M9 12h6M9 16h4"/>
-                      </svg>
-                      {t('panel.route_paste_from_clipboard')}
-                    </button>
-                    <div style={{ display: 'flex', gap: 8 }}>
-                    <button
-                      onClick={() => { setRoutePasteOpen(false); setRoutePasteText('') }}
-                      style={{
-                        padding: '6px 14px', fontSize: 12, cursor: 'pointer',
-                        background: 'transparent', color: '#9499ac',
-                        border: '1px solid rgba(255,255,255,0.12)', borderRadius: 6,
-                      }}
-                    >{t('generic.cancel')}</button>
-                    <button
-                      onClick={submitRoutePaste}
-                      disabled={valid.length === 0}
-                      style={{
-                        padding: '6px 14px', fontSize: 12, fontWeight: 600,
-                        cursor: valid.length === 0 ? 'not-allowed' : 'pointer',
-                        background: valid.length === 0 ? 'rgba(108,140,255,0.3)' : '#6c8cff',
-                        color: '#fff',
-                        border: 'none', borderRadius: 6,
-                      }}
-                    >{`${t('panel.route_paste_submit')} (${valid.length})`}</button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )
-          })(),
-          document.body,
-        )}
+        <AppAddBookmarkDialog
+          dialog={addBmDialog}
+          categories={bm.categories.map((c) => c.name)}
+          onNameChange={(name) => setAddBmDialog((prev) => prev ? { ...prev, name } : prev)}
+          onCategoryChange={(category) => setAddBmDialog((prev) => prev ? { ...prev, category } : prev)}
+          onSubmit={submitAddBookmark}
+          onClose={() => setAddBmDialog(null)}
+        />
+        <BulkPasteDialog
+          open={bulkPasteOpen}
+          text={bulkPasteText}
+          category={bulkPasteCategory}
+          categories={bm.categories.map((c) => c.name)}
+          busy={bulkPasteBusy}
+          parse={parseBulkPaste}
+          onTextChange={setBulkPasteText}
+          onCategoryChange={setBulkPasteCategory}
+          onSubmit={submitBulkPaste}
+          onClose={() => { setBulkPasteOpen(false); setBulkPasteText('') }}
+        />
+        <WaypointFlyDialog
+          confirm={wpFlyConfirm}
+          onSetAsStart={(idx) => { setWpFlyConfirm(null); void handleSetWpAsStart(idx) }}
+          onConfirm={confirmWpFly}
+          onClose={() => setWpFlyConfirm(null)}
+        />
+        <RouteLoadDialog
+          confirm={routeLoadConfirm}
+          onConfirm={(flyToStart) => void confirmRouteLoad(flyToStart)}
+          onClose={() => setRouteLoadConfirm(null)}
+        />
+        <RoutePasteDialog
+          open={routePasteOpen}
+          text={routePasteText}
+          parse={parseRoutePaste}
+          onTextChange={setRoutePasteText}
+          onSubmit={submitRoutePaste}
+          onClose={() => { setRoutePasteOpen(false); setRoutePasteText('') }}
+          onClipboardBlocked={() => showToast(t('panel.route_paste_clipboard_blocked'))}
+        />
         {sim.error && (
           <div
             style={{
