@@ -30,7 +30,7 @@ from core.goldditto import GoldDittoHandler
 # EtaTracker moved to domain/movement.py (Phase 3); re-exported here so
 # `core.EtaTracker`, `from core.simulation_engine import EtaTracker`, and the
 # `self.eta_tracker = EtaTracker()` construction keep working.
-from domain.movement import EtaTracker
+from domain.movement import EtaTracker, build_resume_snapshot
 
 logger = logging.getLogger(__name__)
 
@@ -459,30 +459,18 @@ class SimulationEngine:
         if not self._last_sim_kind or not self._last_sim_args:
             return None
         cur = self.current_position
-        # multi_stop / start_loop: self.segment_index gets clobbered by
-        # _move_along_route's inner step loop (which writes the
-        # densified-coord index, not the leg index). Use
-        # _user_waypoint_next - 1 instead, which is the stable leg
-        # index source. navigate / random_walk use segment_index in
-        # its densified-coord meaning, so leave them on segment_index.
-        if self._last_sim_kind in ("multi_stop", "start_loop"):
-            seg_for_resume = max(0, int(self._user_waypoint_next) - 1)
-        else:
-            seg_for_resume = int(self.segment_index)
-        snap = {
-            "kind": self._last_sim_kind,
-            "args": dict(self._last_sim_args),
-            "current_pos": (cur.lat, cur.lng) if cur else None,
-            "segment_index": seg_for_resume,
-            "lap_count": int(self.lap_count),
-            "user_waypoint_next": int(self._user_waypoint_next),
-            "distance_traveled": float(self.distance_traveled),
-            "speed_was_applied": bool(self._speed_was_applied),
-            "random_walk_count": int(self._random_walk_count),
-        }
-        if self._active_speed_profile:
-            snap["active_speed_profile"] = dict(self._active_speed_profile)
-        return snap
+        return build_resume_snapshot(
+            kind=self._last_sim_kind,
+            args=self._last_sim_args,
+            current_pos=(cur.lat, cur.lng) if cur else None,
+            segment_index=self.segment_index,
+            user_waypoint_next=self._user_waypoint_next,
+            lap_count=self.lap_count,
+            distance_traveled=self.distance_traveled,
+            speed_was_applied=self._speed_was_applied,
+            random_walk_count=self._random_walk_count,
+            active_speed_profile=self._active_speed_profile,
+        )
 
     async def resume_from_snapshot(self, snap: dict) -> None:
         """Pick up a sim where another engine left off. Teleports to

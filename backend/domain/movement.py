@@ -60,3 +60,50 @@ class EtaTracker:
     def distance_remaining(self) -> float:
         """Meters still to travel."""
         return max(self.total_distance - self.traveled, 0.0)
+
+
+def build_resume_snapshot(
+    *,
+    kind: str,
+    args: dict,
+    current_pos: tuple[float, float] | None,
+    segment_index: int,
+    user_waypoint_next: int,
+    lap_count: int,
+    distance_traveled: float,
+    speed_was_applied: bool,
+    random_walk_count: int,
+    active_speed_profile: dict | None,
+) -> dict:
+    """Pure assembly of the resume-snapshot dict.
+
+    Encodes two behaviors that used to live inline in
+    ``SimulationEngine.capture_resumable_snapshot``:
+
+    * the ``seg_for_resume`` kind rule — multi_stop / start_loop resume off
+      ``user_waypoint_next - 1`` (the stable leg index) because the inner
+      ``_move_along_route`` loop clobbers ``segment_index`` with the densified
+      coord index; navigate / random_walk keep ``segment_index``;
+    * the ``active_speed_profile`` key is present **iff** the profile is truthy
+      (preserves the exclude_unset/exclude_none deep-equal contract).
+
+    No engine / running-loop state — primitives in, dict out.
+    """
+    if kind in ("multi_stop", "start_loop"):
+        seg_for_resume = max(0, int(user_waypoint_next) - 1)
+    else:
+        seg_for_resume = int(segment_index)
+    snap = {
+        "kind": kind,
+        "args": dict(args),
+        "current_pos": current_pos,
+        "segment_index": seg_for_resume,
+        "lap_count": int(lap_count),
+        "user_waypoint_next": int(user_waypoint_next),
+        "distance_traveled": float(distance_traveled),
+        "speed_was_applied": bool(speed_was_applied),
+        "random_walk_count": int(random_walk_count),
+    }
+    if active_speed_profile:
+        snap["active_speed_profile"] = dict(active_speed_profile)
+    return snap
