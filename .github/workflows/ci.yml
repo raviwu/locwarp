@@ -56,6 +56,10 @@ jobs:
         working-directory: frontend
         run: npx vitest run --coverage
 
+      - name: Layering gate (report-only)
+        working-directory: frontend
+        run: npx depcruise src --config .dependency-cruiser.cjs || true
+
   e2e:
     name: Playwright e2e
     runs-on: ubuntu-latest
