@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { isSubmitEnter } from '../utils/keyboard';
 import { createPortal } from 'react-dom';
-import { BookmarkGeoLine } from './BookmarkGeoLine';
+import { BookmarkRow } from './BookmarkRow';
 import { useT, useI18n } from '../i18n';
 import { reverseGeocode } from '../services/api';
 import { useServices } from '../contexts/ServicesContext';
@@ -983,60 +983,22 @@ const BookmarkList: React.FC<BookmarkListProps> = ({
             {matches.map((bm) => {
               const isSelected = bm.id ? selectedIds.has(bm.id) : false;
               return (
-                <div
+                <BookmarkRow
                   key={bm.id ?? `${bm.lat}-${bm.lng}`}
-                  className="bookmark-item"
-                  style={{
-                    display: 'flex', alignItems: 'center', gap: 6,
-                    padding: '5px 6px', cursor: 'pointer',
-                    borderRadius: 4, fontSize: 12, transition: 'background 0.15s',
-                    background: bm.id && flashedBmId === bm.id
-                      ? 'rgba(34, 197, 94, 0.22)'
-                      : (multiSelect && isSelected ? 'rgba(108,140,255,0.18)' : 'transparent'),
-                  }}
-                  onClick={() => {
-                    if (multiSelect) {
-                      if (bm.id) toggleSelected(bm.id);
-                    } else {
-                      handleBookmarkClick(bm);
-                    }
-                  }}
-                  onContextMenu={(e) => { if (!multiSelect) handleContextMenu(e, bm); else e.preventDefault(); }}
-                  onMouseEnter={(e) => {
-                    if (!(multiSelect && isSelected) && !(bm.id && flashedBmId === bm.id)) (e.currentTarget as HTMLDivElement).style.background = '#3a3a3e';
-                  }}
-                  onMouseLeave={(e) => {
-                    (e.currentTarget as HTMLDivElement).style.background = bm.id && flashedBmId === bm.id
-                      ? 'rgba(34, 197, 94, 0.22)'
-                      : (multiSelect && isSelected ? 'rgba(108,140,255,0.18)' : 'transparent');
-                  }}
-                >
-                  {multiSelect && (
-                    <input
-                      type="checkbox"
-                      checked={isSelected}
-                      onChange={() => { if (bm.id) toggleSelected(bm.id); }}
-                      onClick={(e) => e.stopPropagation()}
-                      style={{ margin: 0, flexShrink: 0 }}
-                    />
-                  )}
-                  <div
-                    style={{
-                      width: 8, height: 8, borderRadius: '50%',
-                      background: resolveColor(bm.category), flexShrink: 0,
-                    }}
-                    title={displayCat(bm.category)}
-                  />
-                  <div
-                    style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', minWidth: 0 }}
-                    title={`${bm.name} · ${displayCat(bm.category)} · ${bm.lat.toFixed(5)}, ${bm.lng.toFixed(5)}${bm.region ? ` · ${bm.region}` : ''}`}
-                  >
-                    <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      {bm.name}
-                    </span>
-                    <BookmarkGeoLine countryCode={bm.country_code} city={bm.city} timezone={bm.timezone} />
-                  </div>
-                </div>
+                  bm={bm}
+                  isSelected={isSelected}
+                  multiSelect={multiSelect}
+                  flashedBmId={flashedBmId}
+                  toggleSelected={toggleSelected}
+                  onBookmarkClick={handleBookmarkClick}
+                  onContextMenu={handleContextMenu}
+                  showCategoryInTitle
+                  showCategoryDot
+                  showPinIcon={false}
+                  allowRename={false}
+                  resolveColor={resolveColor}
+                  displayCat={displayCat}
+                />
               );
             })}
           </div>
@@ -1165,89 +1127,25 @@ const BookmarkList: React.FC<BookmarkListProps> = ({
               {sortBookmarks(bms, sortMode).map((bm) => {
                 const isSelected = bm.id ? selectedIds.has(bm.id) : false;
                 return (
-                  <div
+                  <BookmarkRow
                     key={bm.id ?? `${bm.lat}-${bm.lng}`}
-                    className="bookmark-item"
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 6,
-                      padding: '5px 6px',
-                      cursor: 'pointer',
-                      borderRadius: 4,
-                      fontSize: 12,
-                      transition: 'background 0.15s',
-                      background: bm.id && flashedBmId === bm.id
-                        ? 'rgba(34, 197, 94, 0.22)'
-                        : (multiSelect && isSelected ? 'rgba(108,140,255,0.18)' : 'transparent'),
-                    }}
-                    onClick={() => {
-                      if (multiSelect) {
-                        if (bm.id) toggleSelected(bm.id);
-                      } else {
-                        handleBookmarkClick(bm);
-                      }
-                    }}
-                    onContextMenu={(e) => { if (!multiSelect) handleContextMenu(e, bm); else e.preventDefault(); }}
-                    onMouseEnter={(e) => {
-                      if (!(multiSelect && isSelected) && !(bm.id && flashedBmId === bm.id)) (e.currentTarget as HTMLDivElement).style.background = '#3a3a3e';
-                    }}
-                    onMouseLeave={(e) => {
-                      (e.currentTarget as HTMLDivElement).style.background = bm.id && flashedBmId === bm.id
-                        ? 'rgba(34, 197, 94, 0.22)'
-                        : (multiSelect && isSelected ? 'rgba(108,140,255,0.18)' : 'transparent');
-                    }}
-                  >
-                    {multiSelect && (
-                      <input
-                        type="checkbox"
-                        checked={isSelected}
-                        onChange={() => { if (bm.id) toggleSelected(bm.id); }}
-                        onClick={(e) => e.stopPropagation()}
-                        style={{ margin: 0, flexShrink: 0 }}
-                      />
-                    )}
-                    <svg
-                      width="12"
-                      height="12"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      style={{ opacity: 0.5, flexShrink: 0 }}
-                    >
-                      <path d="M19 21l-7-5-7 5V5a2 2 0 012-2h10a2 2 0 012 2z" />
-                    </svg>
-                    {editingId === bm.id ? (
-                      <input
-                        type="text"
-                        className="search-input"
-                        value={editName}
-                        onChange={(e) => setEditName(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (isSubmitEnter(e) && bm.id) {
-                            onBookmarkEdit(bm.id, { name: editName });
-                            setEditingId(null);
-                          }
-                          if (e.key === 'Escape') setEditingId(null);
-                        }}
-                        onBlur={() => setEditingId(null)}
-                        onClick={(e) => e.stopPropagation()}
-                        style={{ flex: 1, padding: '2px 4px', fontSize: 11 }}
-                        autoFocus
-                      />
-                    ) : (
-                      <div
-                        style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', minWidth: 0 }}
-                        title={`${bm.name} · ${bm.lat.toFixed(5)}, ${bm.lng.toFixed(5)}${bm.region ? ` · ${bm.region}` : ''}`}
-                      >
-                        <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                          {bm.name}
-                        </span>
-                        <BookmarkGeoLine countryCode={bm.country_code} city={bm.city} timezone={bm.timezone} />
-                      </div>
-                    )}
-                  </div>
+                    bm={bm}
+                    isSelected={isSelected}
+                    multiSelect={multiSelect}
+                    flashedBmId={flashedBmId}
+                    toggleSelected={toggleSelected}
+                    onBookmarkClick={handleBookmarkClick}
+                    onContextMenu={handleContextMenu}
+                    showCategoryInTitle={false}
+                    showCategoryDot={false}
+                    showPinIcon
+                    allowRename
+                    editingId={editingId}
+                    editName={editName}
+                    setEditingId={setEditingId}
+                    setEditName={setEditName}
+                    onBookmarkEdit={onBookmarkEdit}
+                  />
                 );
               })}
             </div>
