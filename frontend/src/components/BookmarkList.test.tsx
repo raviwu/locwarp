@@ -17,10 +17,14 @@ vi.mock('../i18n', () => ({
   useI18n: () => ({ lang: 'en', setLang: vi.fn(), t: (k: string) => k }),
 }));
 
-// Backend ports — DIRECT-imported by BookmarkList (not via useServices), so
-// we mock the module and assert on the spies. getBookmarkUiState defaults to
-// an empty persisted state; reverseGeocode resolves a fake address. Tests
-// override per-case via mockResolvedValueOnce / mockImplementationOnce.
+// Backend ports. getBookmarkUiState / setBookmarkUiState are now injected via
+// useServices().api (the DI mechanism for those two calls moved into the
+// useBookmarkUiState hook); reverseGeocode is still DIRECT-imported by
+// BookmarkList, so the module mock below remains. The SAME spies are wired
+// into the ServicesProvider's api value so tests 2 + 3 keep firing on them.
+// getBookmarkUiState defaults to an empty persisted state; reverseGeocode
+// resolves a fake address. Tests override per-case via mockResolvedValueOnce /
+// mockImplementationOnce.
 const getBookmarkUiState = vi.fn();
 const setBookmarkUiState = vi.fn();
 const reverseGeocode = vi.fn();
@@ -31,6 +35,25 @@ vi.mock('../services/api', () => ({
 }));
 
 import BookmarkList from './BookmarkList';
+import { ServicesProvider } from '../contexts/ServicesContext';
+import { createWsRouter } from '../adapters/ws/router';
+
+// Inject the same ui-state spies through useServices().api so the hook's two
+// backend calls route to them, while reverseGeocode stays on the module mock.
+function renderWithServices(ui: React.ReactElement) {
+  const api = {
+    getBookmarkUiState: (...a: any[]) => getBookmarkUiState(...a),
+    setBookmarkUiState: (...a: any[]) => setBookmarkUiState(...a),
+    reverseGeocode: (...a: any[]) => reverseGeocode(...a),
+  } as any;
+  return render(
+    <ServicesProvider
+      value={{ api, ws: createWsRouter(), sendMessage: vi.fn(), connected: true }}
+    >
+      {ui}
+    </ServicesProvider>,
+  );
+}
 
 type Bm = {
   id?: string;
@@ -140,7 +163,7 @@ describe('BookmarkList characterization', () => {
     const categories = ['Default', 'Work', 'Trips'];
 
     // 31 bookmarks => over the threshold => all collapsed.
-    const over = render(
+    const over = renderWithServices(
       <BookmarkList
         {...makeProps({
           categories,
@@ -157,7 +180,7 @@ describe('BookmarkList characterization', () => {
     over.unmount();
 
     // 30 bookmarks => exactly AT the threshold => NOT over => expanded.
-    render(
+    renderWithServices(
       <BookmarkList
         {...makeProps({
           categories,
@@ -177,7 +200,7 @@ describe('BookmarkList characterization', () => {
   //    getBookmarkUiState load is NOT echoed back as a write (load gate).
   // ---------------------------------------------------------------------------
   it('persists hidden categories as a partial POST (no expanded_categories key) and does not echo the initial fetch', async () => {
-    render(<BookmarkList {...makeProps({ categories: ['Default', 'Work'] })} />);
+    renderWithServices(<BookmarkList {...makeProps({ categories: ['Default', 'Work'] })} />);
 
     // Wait for the initial ui-state fetch to complete (gates the persist
     // effects). After load, NO write should have happened yet.
@@ -206,7 +229,7 @@ describe('BookmarkList characterization', () => {
     // Fetch resolves synchronously (already-resolved promise) but the effect
     // chain still needs a flush; use real timers for the await, then fake
     // timers for the debounce window.
-    render(<BookmarkList {...makeProps({ categories: ['Default', 'Work'] })} />);
+    renderWithServices(<BookmarkList {...makeProps({ categories: ['Default', 'Work'] })} />);
     await waitFor(() => expect(getBookmarkUiState).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(isCategoryExpanded('Default')).toBe(true));
     expect(setBookmarkUiState).not.toHaveBeenCalled();
@@ -253,7 +276,7 @@ describe('BookmarkList characterization', () => {
       () => new Promise((res) => { resolveGeo = res; }),
     );
 
-    render(<BookmarkList {...makeProps({ categories: ['Default', 'Work'] })} />);
+    renderWithServices(<BookmarkList {...makeProps({ categories: ['Default', 'Work'] })} />);
     await waitFor(() => expect(getBookmarkUiState).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(isCategoryExpanded('Default')).toBe(true));
 
@@ -294,7 +317,7 @@ describe('BookmarkList characterization', () => {
       .spyOn(window, 'confirm')
       .mockReturnValue(true);
 
-    render(
+    renderWithServices(
       <BookmarkList
         {...makeProps({ categories, bookmarks, onBookmarkDelete })}
       />,
@@ -330,7 +353,7 @@ describe('BookmarkList characterization', () => {
     const bookmarks = makeBookmarks(4, categories);
     const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
 
-    render(
+    renderWithServices(
       <BookmarkList
         {...makeProps({ categories, bookmarks, onBookmarkDelete })}
       />,
@@ -362,7 +385,7 @@ describe('BookmarkList characterization', () => {
       { id: 'a', name: 'Alpha Cafe', lat: 25, lng: 121, category: 'Default' },
       { id: 'b', name: 'Beta Bar', lat: 26, lng: 122, category: 'Work' },
     ];
-    render(<BookmarkList {...makeProps({ categories, bookmarks })} />);
+    renderWithServices(<BookmarkList {...makeProps({ categories, bookmarks })} />);
     await waitFor(() => expect(getBookmarkUiState).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(isCategoryExpanded('Default')).toBe(true));
 
