@@ -11,8 +11,8 @@ import { useRandomWalkCircleLayer } from '../hooks/useRandomWalkCircleLayer';
 import { usePreviewPinLayer } from '../hooks/usePreviewPinLayer';
 import { useWaypointMarkersLayer } from '../hooks/useWaypointMarkersLayer';
 import { useBookmarkMarkersLayer } from '../hooks/useBookmarkMarkersLayer';
-import { cellsInBounds, approxCellSizeMeters } from '../services/s2grid';
-import type { S2CellPolygon } from '../services/s2grid';
+import { useS2Grid } from '../hooks/useS2Grid';
+import { approxCellSizeMeters } from '../services/s2grid';
 import { parseCoord } from '../utils/coords';
 import { isSubmitEnter } from '../utils/keyboard';
 import { BookmarkGeoLine } from './BookmarkGeoLine';
@@ -361,8 +361,10 @@ const MapView: React.FC<MapViewProps> = ({
   // `useLeafletBarButton` primitive (4 call sites below the map-init effects),
   // which owns each button's DOM node + the wire-once `*HandlerRef` mirror +
   // the React→DOM active-sync — so MapView no longer keeps per-button refs.
-  // The S2 layer group (the overlay it toggles) still lives here.
-  const s2LayerRef = useRef<L.LayerGroup | null>(null);
+  // The S2 grid overlay (its s2Enabled/s2Level/s2Suppressed state + localStorage
+  // persistence + the grid layer ref + the moveend/zoomend redraw listeners) is
+  // owned by useS2Grid now (task p4b2bi); called below after the other layer
+  // hooks. The S2 button + the inline level picker read its returned state.
   // followStateRef mirrors followMode so the dragstart handler (wired once
   // at map init) sees the latest value without a stale closure.
   const followStateRef = useRef(false);
@@ -400,30 +402,13 @@ const MapView: React.FC<MapViewProps> = ({
   const [followMode, setFollowMode] = useState(false);
   useEffect(() => { followStateRef.current = followMode; }, [followMode]);
 
-  // S2 cell grid state. Persisted in localStorage so the user's preferred
-  // level + on/off survives across launches (similar to tile-layer choice).
-  const [s2Enabled, setS2Enabled] = useState<boolean>(() => {
-    try { return localStorage.getItem('locwarp.s2_enabled') === '1'; }
-    catch { return false; }
-  });
-  const [s2Level, setS2Level] = useState<number>(() => {
-    try {
-      const raw = localStorage.getItem('locwarp.s2_level');
-      const n = raw ? parseInt(raw, 10) : 17;
-      if (Number.isFinite(n) && n >= 1 && n <= 30) return n;
-    } catch { /* fall through */ }
-    return 17;
-  });
+  // S2 cell grid state (s2Enabled / s2Level / s2Suppressed) + its localStorage
+  // persistence + the grid layer ref + the moveend/zoomend redraw effect are
+  // owned by useS2Grid now (task p4b2bi); called below after the other layer
+  // hooks. s2PickerOpen — the inline level picker's open/closed visibility — is
+  // JSX state, not grid logic, so it stays here; the S2 button's onContextMenu
+  // toggles it and the picker JSX reads it.
   const [s2PickerOpen, setS2PickerOpen] = useState(false);
-
-  useEffect(() => {
-    try { localStorage.setItem('locwarp.s2_enabled', s2Enabled ? '1' : '0'); }
-    catch { /* ignore */ }
-  }, [s2Enabled]);
-  useEffect(() => {
-    try { localStorage.setItem('locwarp.s2_level', String(s2Level)); }
-    catch { /* ignore */ }
-  }, [s2Level]);
 
   const [recentOpen, setRecentOpen] = useState(false);
   // Clear-button confirmation state. First click flips the single
@@ -569,6 +554,14 @@ const MapView: React.FC<MapViewProps> = ({
     api: { getInitialPosition: api.getInitialPosition },
     prevPositionRef,
   });
+
+  // S2 cell grid overlay — owns the s2Enabled/s2Level/s2Suppressed state +
+  // localStorage persistence (keys locwarp.s2_enabled / locwarp.s2_level) + the
+  // grid layer ref + the moveend/zoomend redraw effect (task p4b2bi). Called
+  // after useMapInstance so its redraw effect runs on the already-created map.
+  // The S2 leaflet-bar button (below) reads s2Enabled; the inline level picker
+  // reads s2Level / s2Suppressed + the setters.
+  const { s2Enabled, setS2Enabled, s2Level, setS2Level, s2Suppressed } = useS2Grid(mapRef);
 
   // ── Leaflet-bar buttons (recenter → follow → library → S2) ──────────────
   // Built by the `useLeafletBarButton` primitive. Defined here (before
@@ -736,85 +729,11 @@ const MapView: React.FC<MapViewProps> = ({
 
   // ── S2 cell grid overlay ────────────────────────────────────────────
   // The toggle handler (toggleS2Grid) + its leaflet-bar button live with the
-  // other 3 buttons above (useLeafletBarButton). The overlay redraw stays here.
-
-  // Track whether the grid was suppressed because the user is too far zoomed
-  // out. The level picker uses this to tell them to zoom in instead of
-  // silently showing nothing.
-  const [s2Suppressed, setS2Suppressed] = useState(false);
-
-  // Recompute + paint S2 polygons whenever the layer is toggled, the level
-  // changes, or the user pans / zooms. Capped per zoom inside cellsInBounds
-  // so wide zooms with high levels don't lock the UI.
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map) return;
-    const draw = () => {
-      if (s2LayerRef.current) {
-        try { s2LayerRef.current.remove(); } catch { /* ignore */ }
-        s2LayerRef.current = null;
-      }
-      if (!s2Enabled) {
-        setS2Suppressed(false);
-        return;
-      }
-      // Suppress when the chosen level would render cells smaller than ~2 px:
-      // the BFS safety cap clips at a center cluster and the grid then looks
-      // like it 'wanders' with the cursor as you pan. Tell the user to zoom
-      // in (or pick a coarser level) instead of silently rendering garbage.
-      const zoom = map.getZoom();
-      const lat = map.getCenter().lat;
-      const cellMeters = approxCellSizeMeters(s2Level, lat);
-      // Web Mercator: world circumference at the equator is 40075016m, mapped
-      // to 256*2^zoom pixels. cos(lat) factor already baked into approxCellSizeMeters.
-      const cellPx = cellMeters * (256 * Math.pow(2, zoom)) / 40075016;
-      if (cellPx < 2) {
-        setS2Suppressed(true);
-        return;
-      }
-      setS2Suppressed(false);
-      const bounds = map.getBounds();
-      let cells: S2CellPolygon[];
-      try {
-        cells = cellsInBounds(bounds, s2Level);
-      } catch {
-        return;
-      }
-      if (!cells.length) return;
-      const layer = L.layerGroup();
-      // Solid colour, transparent fill — keeps the underlying map readable.
-      // Slightly thinner stroke at high levels (more cells, would otherwise
-      // blanket the screen).
-      const weight = s2Level >= 18 ? 0.6 : s2Level >= 16 ? 0.8 : 1.1;
-      for (const c of cells) {
-        L.polygon(c.corners, {
-          color: '#6c8cff',
-          weight,
-          opacity: 0.85,
-          fill: true,
-          fillColor: '#6c8cff',
-          fillOpacity: 0.04,
-          interactive: false,
-          // Sit below markers so cell lines never block clicks on bookmark
-          // pins / waypoint markers / context menu.
-          pane: 'overlayPane',
-        }).addTo(layer);
-      }
-      layer.addTo(map);
-      s2LayerRef.current = layer;
-    };
-    draw();
-    map.on('moveend', draw);
-    map.on('zoomend', draw);
-    return () => {
-      map.off('moveend', draw);
-      map.off('zoomend', draw);
-      if (s2LayerRef.current) {
-        try { s2LayerRef.current.remove(); } catch { /* ignore */ }
-        s2LayerRef.current = null;
-      }
-    };
-  }, [s2Enabled, s2Level]);
+  // other 3 buttons above (useLeafletBarButton). The overlay redraw + the
+  // s2Enabled/s2Level/s2Suppressed state + localStorage persistence + the grid
+  // layer ref + the moveend/zoomend redraw listeners are owned by useS2Grid now
+  // (task p4b2bi); called above after useMapInstance. The inline level picker
+  // (still in MapView) reads s2Level / s2Suppressed + the setters from the hook.
 
   // lastAvatarHtmlRef moved into useCurrentPositionLayer (task p4b2bi) — it's
   // only read/written by the current-position marker effect now living there.
