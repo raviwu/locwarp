@@ -7,6 +7,7 @@ import { useBaseLayers } from '../hooks/useBaseLayers';
 import { useRoutePolylineLayer } from '../hooks/useRoutePolylineLayer';
 import { useCurrentPositionLayer } from '../hooks/useCurrentPositionLayer';
 import { useDestinationLayer } from '../hooks/useDestinationLayer';
+import { useRandomWalkCircleLayer } from '../hooks/useRandomWalkCircleLayer';
 import { cellsInBounds, approxCellSizeMeters } from '../services/s2grid';
 import type { S2CellPolygon } from '../services/s2grid';
 import { parseCoord } from '../utils/coords';
@@ -391,7 +392,8 @@ const MapView: React.FC<MapViewProps> = ({
   const onMapCenterChangeRef = useRef(onMapCenterChange);
   useEffect(() => { onMapCenterChangeRef.current = onMapCenterChange; }, [onMapCenterChange]);
   // clickMarkerRef removed — left-click no longer drops a pin.
-  const radiusCircleRef = useRef<L.Circle | null>(null);
+  // radiusCircleRef moved into useRandomWalkCircleLayer (task p4b2bi) — it owns
+  // the dashed random-walk radius circle's single ref internally.
 
   const [followMode, setFollowMode] = useState(false);
   useEffect(() => { followStateRef.current = followMode; }, [followMode]);
@@ -664,6 +666,12 @@ const MapView: React.FC<MapViewProps> = ({
   // (destMarkerRef, destSigRef) internally; `t` is passed in for the tooltip.
   useDestinationLayer(mapRef, { destination, t });
 
+  // Dashed blue random-walk radius circle (drawn only when a positive radius is
+  // set AND we have a live position), extracted into its own mapRef-dependent
+  // hook (task p4b2bi). Called after the other layer hooks so it runs on the
+  // already-created map. Owns the layer's single ref (radiusCircleRef) internally.
+  useRandomWalkCircleLayer(mapRef, { randomWalkRadius, currentPosition });
+
   // Preview pin (camera-only fly target). Amber teardrop with an eye icon
   // to convey "you're peeking at this coordinate, GPS hasn't actually
   // moved here". Click the marker to dismiss the pin.
@@ -875,34 +883,8 @@ const MapView: React.FC<MapViewProps> = ({
     return () => { map.off('zoomend', onZoom); };
   }, [bookmarkPins, showBookmarkPins, onTeleport]);
 
-  // Update random walk radius circle
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map) return;
-
-    // Remove old circle
-    if (radiusCircleRef.current) {
-      radiusCircleRef.current.remove();
-      radiusCircleRef.current = null;
-    }
-
-    // Draw circle when radius is set and we have a position
-    if (randomWalkRadius && randomWalkRadius > 0 && currentPosition) {
-      const circle = L.circle(
-        [currentPosition.lat, currentPosition.lng],
-        {
-          radius: randomWalkRadius,
-          color: '#4285f4',
-          weight: 2,
-          opacity: 0.6,
-          fillColor: '#4285f4',
-          fillOpacity: 0.08,
-          dashArray: '6, 6',
-        }
-      ).addTo(map);
-      radiusCircleRef.current = circle;
-    }
-  }, [randomWalkRadius, currentPosition]);
+  // The random-walk radius circle effect was moved into useRandomWalkCircleLayer
+  // (task p4b2bi) — see the hook call above, after useDestinationLayer.
 
   // Close context menu on outside click
   useEffect(() => {
