@@ -19,6 +19,7 @@ import {
   buildBookmarkClusterPopupHtml,
 } from '../utils/mapIconHtml';
 import { BookmarkGeoLine } from './BookmarkGeoLine';
+import { useLeafletBarButton } from './LeafletBarButton';
 
 interface Position {
   lat: number;
@@ -232,6 +233,30 @@ function TransportButtons({
   );
 }
 
+// SVG markup for the 4 custom leaflet-bar buttons, lifted VERBATIM out of the
+// old inline button builders. Module-scoped so they're parsed once, not on
+// every render. Painted into each button via innerHTML by useLeafletBarButton.
+const RECENTER_ICON_HTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="3" />
+        <line x1="12" y1="2" x2="12" y2="5" />
+        <line x1="12" y1="19" x2="12" y2="22" />
+        <line x1="2" y1="12" x2="5" y2="12" />
+        <line x1="19" y1="12" x2="22" y2="12" />
+      </svg>`;
+const FOLLOW_ICON_HTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round">
+        <polygon points="3 11 22 2 13 21 11 13 3 11"/>
+      </svg>`;
+const LIBRARY_ICON_HTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 2l2.5 6.5L22 9l-5.5 5.5L18 22l-6-3.5L6 22l1.5-7.5L2 9l7.5-.5z"/>
+      </svg>`;
+const S2_ICON_HTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="3" y="3" width="18" height="18" rx="1" />
+        <line x1="9" y1="3" x2="9" y2="21" />
+        <line x1="15" y1="3" x2="15" y2="21" />
+        <line x1="3" y1="9" x2="21" y2="9" />
+        <line x1="3" y1="15" x2="21" y2="15" />
+      </svg>`;
+
 const MapView: React.FC<MapViewProps> = ({
   currentPosition,
   destination,
@@ -319,27 +344,14 @@ const MapView: React.FC<MapViewProps> = ({
   const polylineRef = useRef<L.Polyline | null>(null);
   // Second polyline layered on top for the flowing-arrow animation (design 6).
   const polylineArrowRef = useRef<L.Polyline | null>(null);
-  // Recenter-on-user-position button. We mount it as a real Leaflet control
-  // (not absolutely-positioned React JSX) so Leaflet's own .leaflet-top
-  // .leaflet-left layout pins it to the same x as the zoom buttons, with the
-  // standard 10px gap. Any other approach leaves it a few px off.
-  const recenterBtnRef = useRef<HTMLButtonElement | null>(null);
-  const recenterHandlerRef = useRef<() => void>(() => {});
-  // Follow-mode toggle button (sits below recenter as a third leaflet-bar).
-  // When enabled, the map auto-pans to the current position on every update.
-  // Manual map drag disables follow so the user can pan/look around freely.
-  const followBtnRef = useRef<HTMLButtonElement | null>(null);
-  const followHandlerRef = useRef<() => void>(() => {});
-  // Library button handler (bottom of the topleft stack). Wired to the
-  // App-level callback that bumps `openLibraryToken`, triggering the
-  // ControlPanel library panel to open.
-  const openLibraryHandlerRef = useRef<() => void>(() => {});
-  // S2 cell grid overlay (Pokemon GO / Ingress style). Toggle button below
-  // the library button. Default level 17 (~80m cells, the canonical Niantic
-  // decor cell). Layer + level live in refs / state; visibility is mirrored
-  // on the button via background colour.
-  const s2GridBtnRef = useRef<HTMLButtonElement | null>(null);
-  const s2GridHandlerRef = useRef<() => void>(() => {});
+  // The 4 custom leaflet-bar buttons (recenter → follow → library → S2-grid)
+  // are mounted as real Leaflet controls (not absolutely-positioned React JSX)
+  // so Leaflet's own .leaflet-top .leaflet-left layout pins them to the same x
+  // as the zoom buttons, with the standard 10px gap. They're now built by the
+  // `useLeafletBarButton` primitive (4 call sites below the map-init effects),
+  // which owns each button's DOM node + the wire-once `*HandlerRef` mirror +
+  // the React→DOM active-sync — so MapView no longer keeps per-button refs.
+  // The S2 layer group (the overlay it toggles) still lives here.
   const s2LayerRef = useRef<L.LayerGroup | null>(null);
   // followStateRef mirrors followMode so the dragstart handler (wired once
   // at map init) sees the latest value without a stale closure.
@@ -546,148 +558,74 @@ const MapView: React.FC<MapViewProps> = ({
     prevPositionRef,
   });
 
-  // Custom leaflet-bar buttons (recenter → follow → library → S2), RELOCATED
-  // out of the monolithic map-init effect into their own mapRef-dependent
-  // effect (awaiting their own extraction in the next task). Runs once per
-  // mount AFTER useMapInstance has created the map + nudged the control
-  // corners — preserving the documented init ORDER (corners → button stack
-  // order → base layers, the latter now in useBaseLayers below) so the
-  // "Taipei-flash-then-jump" / control-layout bugs don't return. Behavior is
-  // unchanged; the only difference is these read `mapRef.current` instead of
-  // the local `map` const.
-  useEffect(() => {
+  // ── Leaflet-bar buttons (recenter → follow → library → S2) ──────────────
+  // Built by the `useLeafletBarButton` primitive. Defined here (before
+  // useBaseLayers) so the documented init ORDER (control corners → button
+  // stack → base layers) is preserved: each hook's wire-once effect runs in
+  // call order, appending its button to the top-left control corner in turn.
+  // The click handlers + the React→DOM active-sync (background / title /
+  // aria-pressed / disabled) live inside the hook; MapView just passes the
+  // live state.
+
+  const recenter = useCallback(() => {
     const map = mapRef.current;
-    if (!map) return;
-    const topLeftEl = (map as any)._controlCorners?.topleft as HTMLElement | undefined;
-
-    // Recenter button as a second leaflet-bar in the topleft corner. This
-    // way Leaflet's layout (margin-left: 10px on each control + 10px gap
-    // between stacked controls) handles positioning — guarantees same x as
-    // the zoom +/- buttons with a natural gap below them.
-    if (topLeftEl) {
-      const wrapper = L.DomUtil.create('div', 'leaflet-bar leaflet-control');
-      const btn = L.DomUtil.create('button', '', wrapper) as HTMLButtonElement;
-      btn.type = 'button';
-      btn.title = tRef.current('map.recenter');
-      btn.setAttribute('role', 'button');
-      btn.style.cssText = [
-        'width: 30px', 'height: 30px', 'display: flex',
-        'align-items: center', 'justify-content: center',
-        'padding: 0', 'margin: 0', 'cursor: pointer',
-        'background: var(--bg-surface, #2a2f3a)',
-        'color: #fff', 'border: none', 'border-radius: 0',
-      ].join(';');
-      btn.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <circle cx="12" cy="12" r="3" />
-        <line x1="12" y1="2" x2="12" y2="5" />
-        <line x1="12" y1="19" x2="12" y2="22" />
-        <line x1="2" y1="12" x2="5" y2="12" />
-        <line x1="19" y1="12" x2="22" y2="12" />
-      </svg>`;
-      L.DomEvent.disableClickPropagation(wrapper);
-      L.DomEvent.on(btn, 'click', (e: Event) => {
-        e.preventDefault();
-        if (btn.disabled) return;
-        recenterHandlerRef.current();
-      });
-      topLeftEl.appendChild(wrapper);
-      recenterBtnRef.current = btn;
-    }
-
-    // Follow-mode toggle, mounted as a third leaflet-bar so it lines up
-    // exactly under the recenter button with Leaflet's standard 10px gap.
-    if (topLeftEl) {
-      const wrapper = L.DomUtil.create('div', 'leaflet-bar leaflet-control');
-      const btn = L.DomUtil.create('button', '', wrapper) as HTMLButtonElement;
-      btn.type = 'button';
-      btn.title = tRef.current('map.follow_off');
-      btn.setAttribute('role', 'button');
-      btn.setAttribute('aria-pressed', 'false');
-      btn.style.cssText = [
-        'width: 30px', 'height: 30px', 'display: flex',
-        'align-items: center', 'justify-content: center',
-        'padding: 0', 'margin: 0', 'cursor: pointer',
-        'background: var(--bg-surface, #2a2f3a)',
-        'color: #fff', 'border: none', 'border-radius: 0',
-      ].join(';');
-      btn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round">
-        <polygon points="3 11 22 2 13 21 11 13 3 11"/>
-      </svg>`;
-      L.DomEvent.disableClickPropagation(wrapper);
-      L.DomEvent.on(btn, 'click', (e: Event) => {
-        e.preventDefault();
-        followHandlerRef.current();
-      });
-      topLeftEl.appendChild(wrapper);
-      followBtnRef.current = btn;
-    }
-
-    // Library (座標 / 路線) shortcut — fourth leaflet-bar. Tapping this
-    // opens the library panel without having to scroll down the left
-    // ControlPanel. Gold-pulsing star to catch the eye (animation
-    // auto-disabled under prefers-reduced-motion).
-    if (topLeftEl) {
-      const wrapper = L.DomUtil.create('div', 'leaflet-bar leaflet-control');
-      const btn = L.DomUtil.create('button', 'locwarp-library-btn', wrapper) as HTMLButtonElement;
-      btn.type = 'button';
-      btn.title = tRef.current('map.library_open');
-      btn.setAttribute('role', 'button');
-      btn.style.cssText = [
-        'width: 30px', 'height: 30px', 'display: flex',
-        'align-items: center', 'justify-content: center',
-        'padding: 0', 'margin: 0', 'cursor: pointer',
-        'background: var(--bg-surface, #2a2f3a)',
-        'color: #ffd95b', 'border: none', 'border-radius: 0',
-      ].join(';');
-      btn.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M12 2l2.5 6.5L22 9l-5.5 5.5L18 22l-6-3.5L6 22l1.5-7.5L2 9l7.5-.5z"/>
-      </svg>`;
-      L.DomEvent.disableClickPropagation(wrapper);
-      L.DomEvent.on(btn, 'click', (e: Event) => {
-        e.preventDefault();
-        openLibraryHandlerRef.current();
-      });
-      topLeftEl.appendChild(wrapper);
-    }
-
-    // S2 cell grid toggle — fifth leaflet-bar. Tap to overlay an Ingress /
-    // Pokemon GO style cell grid at the user-chosen level (default 17).
-    // Right-click (or long-press) opens the level picker popover.
-    if (topLeftEl) {
-      const wrapper = L.DomUtil.create('div', 'leaflet-bar leaflet-control');
-      const btn = L.DomUtil.create('button', 'locwarp-s2-btn', wrapper) as HTMLButtonElement;
-      btn.type = 'button';
-      btn.title = tRef.current('map.s2_toggle');
-      btn.setAttribute('role', 'button');
-      btn.setAttribute('aria-pressed', 'false');
-      btn.style.cssText = [
-        'width: 30px', 'height: 30px', 'display: flex',
-        'align-items: center', 'justify-content: center',
-        'padding: 0', 'margin: 0', 'cursor: pointer',
-        'background: var(--bg-surface, #2a2f3a)',
-        'color: #fff', 'border: none', 'border-radius: 0',
-      ].join(';');
-      btn.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-        <rect x="3" y="3" width="18" height="18" rx="1" />
-        <line x1="9" y1="3" x2="9" y2="21" />
-        <line x1="15" y1="3" x2="15" y2="21" />
-        <line x1="3" y1="9" x2="21" y2="9" />
-        <line x1="3" y1="15" x2="21" y2="15" />
-      </svg>`;
-      L.DomEvent.disableClickPropagation(wrapper);
-      L.DomEvent.on(btn, 'click', (e: Event) => {
-        e.preventDefault();
-        s2GridHandlerRef.current();
-      });
-      L.DomEvent.on(btn, 'contextmenu', (e: Event) => {
-        e.preventDefault();
-        setS2PickerOpen((o) => !o);
-      });
-      topLeftEl.appendChild(wrapper);
-      s2GridBtnRef.current = btn;
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (!map || !currentPosition) return;
+    map.setView([currentPosition.lat, currentPosition.lng], Math.max(map.getZoom(), 16), {
+      animate: true,
+    });
+  }, [currentPosition]);
+  const toggleFollow = useCallback(() => {
+    setFollowMode((prev) => !prev);
   }, []);
+  // Toggle handler for the S2 grid. Wired to the leaflet-bar button below; the
+  // S2 overlay redraw lives in its own effect further down.
+  const toggleS2Grid = useCallback(() => {
+    setS2Enabled((prev) => !prev);
+  }, []);
+
+  // 1. Recenter — anonymous button (no className), pinned by its title in the
+  // e2e net. Blue background when a position exists, disabled+dim when not.
+  // NOT a toggle → no aria-pressed (ariaPressed omitted).
+  useLeafletBarButton({
+    mapRef,
+    iconHtml: RECENTER_ICON_HTML,
+    title: t('map.recenter'),
+    active: !!currentPosition,
+    disabled: !currentPosition,
+    onClick: recenter,
+  });
+  // 2. Follow — toggle. Title flips between on/off labels; aria-pressed tracks
+  // followMode; blue when on.
+  useLeafletBarButton({
+    mapRef,
+    iconHtml: FOLLOW_ICON_HTML,
+    title: t(followMode ? 'map.follow_on' : 'map.follow_off'),
+    active: followMode,
+    ariaPressed: followMode,
+    onClick: toggleFollow,
+  });
+  // 3. Library — gold star, stable `.locwarp-library-btn` className. Plain
+  // action button (no active state); opens the library panel via onOpenLibrary.
+  useLeafletBarButton({
+    mapRef,
+    iconHtml: LIBRARY_ICON_HTML,
+    title: t('map.library_open'),
+    className: 'locwarp-library-btn',
+    color: '#ffd95b',
+    onClick: onOpenLibrary ?? (() => {}),
+  });
+  // 4. S2 grid — toggle, stable `.locwarp-s2-btn` className. aria-pressed tracks
+  // s2Enabled; right-click opens the level picker.
+  useLeafletBarButton({
+    mapRef,
+    iconHtml: S2_ICON_HTML,
+    title: t('map.s2_toggle'),
+    className: 'locwarp-s2-btn',
+    active: s2Enabled,
+    ariaPressed: s2Enabled,
+    onClick: toggleS2Grid,
+    onContextMenu: () => setS2PickerOpen((o) => !o),
+  });
 
   // Base layers + the top-right L.control.layers switcher + localStorage
   // persistence, extracted into its own mapRef-dependent hook (task p4b2a).
@@ -1095,51 +1033,6 @@ const MapView: React.FC<MapViewProps> = ({
     return () => document.removeEventListener('click', handler);
   }, [closeWpMenu]);
 
-  const recenter = useCallback(() => {
-    const map = mapRef.current;
-    if (!map || !currentPosition) return;
-    map.setView([currentPosition.lat, currentPosition.lng], Math.max(map.getZoom(), 16), {
-      animate: true,
-    });
-  }, [currentPosition]);
-
-  // Keep the DOM recenter button's handler + disabled state in sync with
-  // React state without re-creating the button on every render.
-  useEffect(() => {
-    recenterHandlerRef.current = recenter;
-    const btn = recenterBtnRef.current;
-    if (!btn) return;
-    btn.disabled = !currentPosition;
-    btn.style.background = currentPosition ? '#6c8cff' : 'var(--bg-surface, #2a2f3a)';
-    btn.style.cursor = currentPosition ? 'pointer' : 'not-allowed';
-    btn.style.opacity = currentPosition ? '1' : '0.55';
-  }, [recenter, currentPosition]);
-
-  const toggleFollow = useCallback(() => {
-    setFollowMode((prev) => !prev);
-  }, []);
-
-  // Keep the library-shortcut button ref in sync with the parent
-  // callback. The button itself was mounted once in the map init
-  // effect; this useEffect just rewires the target on each render.
-  useEffect(() => {
-    openLibraryHandlerRef.current = onOpenLibrary ?? (() => {});
-  }, [onOpenLibrary]);
-
-  // Sync the follow button's visual state + handler with React state. Active
-  // (blue) when on, neutral surface when off. Title flips between on/off
-  // labels so hover tooltip mirrors current state.
-  useEffect(() => {
-    followHandlerRef.current = toggleFollow;
-    const btn = followBtnRef.current;
-    if (!btn) return;
-    btn.style.background = followMode ? '#6c8cff' : 'var(--bg-surface, #2a2f3a)';
-    btn.style.cursor = 'pointer';
-    btn.style.opacity = '1';
-    btn.title = t(followMode ? 'map.follow_on' : 'map.follow_off');
-    btn.setAttribute('aria-pressed', followMode ? 'true' : 'false');
-  }, [toggleFollow, followMode, t]);
-
   // Auto-pan the map to the current position whenever follow mode is on.
   // Uses panTo with a short animation so rapid backend ticks (random walk
   // can be ~10 Hz) blend into a smooth camera trail rather than jumpy
@@ -1156,19 +1049,8 @@ const MapView: React.FC<MapViewProps> = ({
   }, [currentPosition, followMode]);
 
   // ── S2 cell grid overlay ────────────────────────────────────────────
-  // Toggle handler is wired into the leaflet-bar button via a ref so the
-  // once-mounted button always sees the latest setter.
-  const toggleS2Grid = useCallback(() => {
-    setS2Enabled((prev) => !prev);
-  }, []);
-  useEffect(() => {
-    s2GridHandlerRef.current = toggleS2Grid;
-    const btn = s2GridBtnRef.current;
-    if (!btn) return;
-    btn.style.background = s2Enabled ? '#6c8cff' : 'var(--bg-surface, #2a2f3a)';
-    btn.title = t('map.s2_toggle');
-    btn.setAttribute('aria-pressed', s2Enabled ? 'true' : 'false');
-  }, [toggleS2Grid, s2Enabled, t]);
+  // The toggle handler (toggleS2Grid) + its leaflet-bar button live with the
+  // other 3 buttons above (useLeafletBarButton). The overlay redraw stays here.
 
   // Track whether the grid was suppressed because the user is too far zoomed
   // out. The level picker uses this to tell them to zoom in instead of
