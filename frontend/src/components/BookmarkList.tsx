@@ -1,13 +1,17 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { isSubmitEnter } from '../utils/keyboard';
-import { createPortal } from 'react-dom';
 import { BookmarkRow } from './BookmarkRow';
 import { CategorySection } from './CategorySection';
 import BookmarkContextMenu from './BookmarkContextMenu';
+import AddBookmarkDialog from './AddBookmarkDialog';
+import CustomBookmarkDialog from './CustomBookmarkDialog';
+import EditBookmarkDialog from './EditBookmarkDialog';
+import EditCategoryModal from './EditCategoryModal';
 import { useT, useI18n } from '../i18n';
 import { useServices } from '../contexts/ServicesContext';
 import { useBookmarkUiState } from '../hooks/useBookmarkUiState';
 import { sortBookmarks, sortCategoryEntries, type SortMode } from '../utils/bookmarkSort';
+import { makeResolveColor } from '../utils/categoryColor';
 import {
   getCategoryStatus,
   todayLocal,
@@ -95,33 +99,6 @@ interface BookmarkListProps {
   exportUrl?: string;
 }
 
-// Preset palette for the color picker. Covers warm + cool + neutral so every
-// category can find a visually distinct slot.
-const COLOR_PALETTE = [
-  '#ef4444', '#f97316', '#eab308', '#22c55e',
-  '#14b8a6', '#3b82f6', '#6366f1', '#a855f7',
-  '#ec4899', '#64748b',
-];
-
-const CATEGORY_COLORS: Record<string, string> = {
-  Default: '#4285f4',
-  Home: '#4caf50',
-  Work: '#ff9800',
-  Favorites: '#e91e63',
-  Custom: '#9c27b0',
-};
-
-function getCategoryColor(name: string): string {
-  if (CATEGORY_COLORS[name]) return CATEGORY_COLORS[name];
-  // Deterministic color from name
-  let hash = 0;
-  for (let i = 0; i < name.length; i++) {
-    hash = name.charCodeAt(i) + ((hash << 5) - hash);
-  }
-  const hue = Math.abs(hash) % 360;
-  return `hsl(${hue}, 60%, 55%)`;
-}
-
 const BookmarkList: React.FC<BookmarkListProps> = ({
   bookmarks,
   categories,
@@ -156,13 +133,9 @@ const BookmarkList: React.FC<BookmarkListProps> = ({
   exportUrl,
 }) => {
   // Prefer the stored color (set at creation, editable via color picker). Only
-  // fall back to CATEGORY_COLORS / name hash for legacy categories that have
-  // never had a color assigned.
-  const resolveColor = (name: string): string => {
-    const stored = categoryColors?.[name];
-    if (stored) return stored;
-    return getCategoryColor(name);
-  };
+  // fall back to the built-in / name-hash color for legacy categories that have
+  // never had a color assigned. (Pure logic lives in utils/categoryColor.)
+  const resolveColor = makeResolveColor(categoryColors);
   const t = useT();
   const { lang } = useI18n();
   const chipLocale = lang === 'zh' ? 'zh-TW' : 'en-US';
@@ -211,13 +184,6 @@ const BookmarkList: React.FC<BookmarkListProps> = ({
     setEditCatEnd(d?.end_date ?? '');
   };
   const closeEditCategory = () => setEditCatName(null);
-  // Split "24.14, 120.65" (or tab/whitespace) into [lat, lng] so a user can
-  // paste a Google-Maps-style pair into just the lat field instead of
-  // splitting it themselves.
-  const trySplitLatLng = (s: string): [string, string] | null => {
-    const m = s.trim().match(/^(-?\d+(?:\.\d+)?)\s*[,\t ]\s*(-?\d+(?:\.\d+)?)\s*$/);
-    return m ? [m[1], m[2]] : null;
-  };
 
   const [contextMenu, setContextMenu] = useState<{ bm: Bookmark; x: number; y: number } | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -323,18 +289,6 @@ const BookmarkList: React.FC<BookmarkListProps> = ({
     });
     setNewName('');
     setShowAddDialog(false);
-  };
-
-  const handleAddCustom = () => {
-    const name = customName.trim();
-    const lat = parseFloat(customLat);
-    const lng = parseFloat(customLng);
-    if (!name) return;
-    if (!Number.isFinite(lat) || lat < -90 || lat > 90) return;
-    if (!Number.isFinite(lng) || lng < -180 || lng > 180) return;
-    onBookmarkAdd({ name, lat, lng, category: customCategory });
-    setCustomName(''); setCustomLat(''); setCustomLng('');
-    setShowCustomDialog(false);
   };
 
   const handleContextMenu = (e: React.MouseEvent, bm: Bookmark) => {
@@ -617,61 +571,18 @@ const BookmarkList: React.FC<BookmarkListProps> = ({
       </div>
 
       {/* Add bookmark dialog */}
-      {showAddDialog && (
-        <div
-          style={{
-            background: '#2a2a2e',
-            border: '1px solid #444',
-            borderRadius: 6,
-            padding: 12,
-            marginBottom: 8,
-          }}
-        >
-          <input
-            type="text"
-            className="search-input"
-            placeholder={t('bm.name_placeholder')}
-            value={newName}
-            onChange={(e) => setNewName(e.target.value)}
-            onKeyDown={(e) => isSubmitEnter(e) && handleAddBookmark()}
-            style={{ width: '100%', marginBottom: 8 }}
-            autoFocus
-          />
-          <select
-            value={newCategory}
-            onChange={(e) => setNewCategory(e.target.value)}
-            style={{
-              width: '100%',
-              marginBottom: 8,
-              padding: '6px 8px',
-              background: '#1e1e22',
-              color: '#e0e0e0',
-              border: '1px solid #444',
-              borderRadius: 4,
-              fontSize: 12,
-            }}
-          >
-            {categories.map((cat) => (
-              <option key={cat} value={cat}>
-                {displayCat(cat)}
-              </option>
-            ))}
-          </select>
-          <div style={{ display: 'flex', gap: 6 }}>
-            <button className="action-btn primary" onClick={handleAddBookmark} style={{ flex: 1, fontSize: 12 }}>
-              {t('generic.save')}
-            </button>
-            <button className="action-btn" onClick={() => setShowAddDialog(false)} style={{ fontSize: 12 }}>
-              {t('generic.cancel')}
-            </button>
-          </div>
-          {!currentPosition && (
-            <div style={{ fontSize: 11, color: '#f44336', marginTop: 6 }}>
-              {t('bm.no_position')}
-            </div>
-          )}
-        </div>
-      )}
+      <AddBookmarkDialog
+        open={showAddDialog}
+        name={newName}
+        category={newCategory}
+        categories={categories}
+        hasPosition={!!currentPosition}
+        displayCat={displayCat}
+        onNameChange={setNewName}
+        onCategoryChange={setNewCategory}
+        onSubmit={handleAddBookmark}
+        onClose={() => setShowAddDialog(false)}
+      />
 
       {/* Category manager */}
       {showCategoryMgr && (
@@ -775,147 +686,19 @@ const BookmarkList: React.FC<BookmarkListProps> = ({
         </div>
       )}
 
-      {editCatName !== null && createPortal(
-        <div
-          onClick={closeEditCategory}
-          style={{
-            position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-            background: 'rgba(8,10,20,0.55)',
-            backdropFilter: 'blur(4px)',
-            WebkitBackdropFilter: 'blur(4px)',
-            zIndex: 10000,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-          }}
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              background: 'rgba(26,29,39,0.96)',
-              border: '1px solid rgba(108,140,255,0.35)',
-              borderRadius: 12, padding: 18, width: 340,
-              boxShadow: '0 20px 60px rgba(12,18,40,0.65)',
-              color: '#e0e0e0',
-              display: 'flex', flexDirection: 'column', gap: 10,
-            }}
-          >
-            <div style={{ fontSize: 14, fontWeight: 600 }}>{t('bm.cat.edit_title')}</div>
-
-            <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-              <span style={{ opacity: 0.7, fontSize: 11 }}>{t('bm.cat.name')}</span>
-              <input
-                className="search-input"
-                value={editCatNewName}
-                onChange={(e) => setEditCatNewName(e.target.value)}
-                style={{ padding: '4px 6px' }}
-              />
-            </label>
-
-            <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-              <span style={{ opacity: 0.7, fontSize: 11 }}>{t('bm.cat.color')}</span>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 28px)', gap: 6 }}>
-                {COLOR_PALETTE.map((c) => (
-                  <button
-                    key={c}
-                    type="button"
-                    onClick={() => setEditCatColor(c)}
-                    style={{
-                      width: 28, height: 28, borderRadius: '50%',
-                      background: c,
-                      border: editCatColor.toLowerCase() === c.toLowerCase()
-                        ? '2px solid #fff'
-                        : '1.5px solid rgba(255,255,255,0.12)',
-                      cursor: 'pointer', padding: 0,
-                    }}
-                    title={c}
-                  />
-                ))}
-              </div>
-              <input
-                type="color"
-                value={editCatColor}
-                onChange={(e) => setEditCatColor(e.target.value)}
-                title={t('bm.recolor_custom')}
-                style={{ width: '100%', height: 28, border: 'none', borderRadius: 4, padding: 0, marginTop: 4 }}
-              />
-            </label>
-
-            <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-              <span style={{ opacity: 0.7, fontSize: 11 }}>{t('bm.cat.starts')}</span>
-              <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                <input
-                  type="date"
-                  value={editCatStart}
-                  onChange={(e) => setEditCatStart(e.target.value)}
-                  style={{ flex: 1, padding: '4px 6px', background: '#1e1e22', color: '#e0e0e0', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 4 }}
-                />
-                <button
-                  className="action-btn"
-                  onClick={() => setEditCatStart('')}
-                  disabled={!editCatStart}
-                  style={{ fontSize: 11, padding: '3px 8px', opacity: editCatStart ? 1 : 0.4 }}
-                >
-                  ✕ {t('bm.cat.dates_clear')}
-                </button>
-              </div>
-            </label>
-
-            <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-              <span style={{ opacity: 0.7, fontSize: 11 }}>{t('bm.cat.ends')}</span>
-              <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                <input
-                  type="date"
-                  value={editCatEnd}
-                  onChange={(e) => setEditCatEnd(e.target.value)}
-                  style={{ flex: 1, padding: '4px 6px', background: '#1e1e22', color: '#e0e0e0', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 4 }}
-                />
-                <button
-                  className="action-btn"
-                  onClick={() => setEditCatEnd('')}
-                  disabled={!editCatEnd}
-                  style={{ fontSize: 11, padding: '3px 8px', opacity: editCatEnd ? 1 : 0.4 }}
-                >
-                  ✕ {t('bm.cat.dates_clear')}
-                </button>
-              </div>
-            </label>
-
-            <div style={{ fontSize: 10, opacity: 0.55 }}>{t('bm.cat.dates_hint')}</div>
-            {editCatStart && editCatEnd && editCatStart > editCatEnd && (
-              <div style={{ fontSize: 11, color: '#f87171' }}>{t('bm.cat.dates_invalid')}</div>
-            )}
-
-            <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', marginTop: 4 }}>
-              <button className="action-btn" onClick={closeEditCategory} style={{ fontSize: 11 }}>
-                {t('generic.cancel')}
-              </button>
-              <button
-                className="action-btn"
-                disabled={
-                  !editCatNewName.trim() ||
-                  (!!editCatStart && !!editCatEnd && editCatStart > editCatEnd)
-                }
-                onClick={() => {
-                  if (!onCategoryEdit || !editCatName) return;
-                  const next = editCatNewName.trim();
-                  if (!next) return;
-                  if (editCatStart && editCatEnd && editCatStart > editCatEnd) return;
-                  onCategoryEdit(editCatName, {
-                    name: next,
-                    color: editCatColor,
-                    start_date: editCatStart,
-                    end_date: editCatEnd,
-                  });
-                  closeEditCategory();
-                }}
-                style={{ fontSize: 11 }}
-              >
-                {t('bm.cat.save')}
-              </button>
-            </div>
-          </div>
-        </div>,
-        document.body,
-      )}
+      <EditCategoryModal
+        categoryName={editCatName}
+        newName={editCatNewName}
+        color={editCatColor}
+        startDate={editCatStart}
+        endDate={editCatEnd}
+        onNewNameChange={setEditCatNewName}
+        onColorChange={setEditCatColor}
+        onStartDateChange={setEditCatStart}
+        onEndDateChange={setEditCatEnd}
+        onSubmit={(name, patch) => onCategoryEdit?.(name, patch)}
+        onClose={closeEditCategory}
+      />
 
       {/* Search mode: flat filtered list, no category grouping */}
       {search.trim() !== '' && (() => {
@@ -1183,194 +966,37 @@ const BookmarkList: React.FC<BookmarkListProps> = ({
       )}
 
       {/* Edit dialog — name + lat + lng */}
-      {editDialog && createPortal(
-        <div
-          onClick={() => setEditDialog(null)}
-          className="anim-fade-in"
-          style={{
-            position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-            background: 'rgba(8, 10, 20, 0.55)',
-            backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)',
-            zIndex: 1000,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-          }}
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            onContextMenu={(e) => e.stopPropagation()}
-            className="anim-scale-in"
-            style={{
-              background: 'rgba(26, 29, 39, 0.96)',
-              backdropFilter: 'blur(14px)', WebkitBackdropFilter: 'blur(14px)',
-              border: '1px solid rgba(108, 140, 255, 0.2)',
-              borderRadius: 12, padding: 18, width: 320, color: '#e0e0e0',
-              boxShadow: '0 20px 60px rgba(12, 18, 40, 0.65), 0 0 0 1px rgba(255, 255, 255, 0.05) inset',
-            }}
-          >
-            <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>
-              {t('bm.edit')}
-            </div>
-            <input
-              type="text"
-              className="search-input"
-              placeholder={t('bm.name_placeholder')}
-              value={editDialogName}
-              autoFocus
-              onChange={(e) => setEditDialogName(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Escape') setEditDialog(null);
-              }}
-              style={{ width: '100%', marginBottom: 8 }}
-            />
-            {/* Single 'lat, lng' field — paste or type the whole pair here.
-                The trySplitLatLng helper also accepts tab/space separators. */}
-            <input
-              type="text"
-              className="search-input"
-              inputMode="decimal"
-              placeholder={t('bm.latlng_single_placeholder')}
-              value={
-                editDialogLat && editDialogLng
-                  ? `${editDialogLat}, ${editDialogLng}`
-                  : editDialogLat || editDialogLng
-              }
-              onChange={(e) => {
-                const v = e.target.value;
-                const split = trySplitLatLng(v);
-                if (split) { setEditDialogLat(split[0]); setEditDialogLng(split[1]); }
-                else {
-                  // User is still typing the lat part; keep raw text in lat
-                  // and clear lng until a valid pair is detected.
-                  setEditDialogLat(v);
-                  setEditDialogLng('');
-                }
-              }}
-              style={{ width: '100%', marginBottom: 12 }}
-            />
-            <div style={{ display: 'flex', gap: 6 }}>
-              <button
-                className="action-btn primary"
-                style={{ flex: 1 }}
-                disabled={
-                  !editDialogName.trim() ||
-                  !Number.isFinite(parseFloat(editDialogLat)) ||
-                  !Number.isFinite(parseFloat(editDialogLng))
-                }
-                onClick={() => {
-                  const lat = parseFloat(editDialogLat);
-                  const lng = parseFloat(editDialogLng);
-                  if (!editDialog.id) { setEditDialog(null); return; }
-                  if (!Number.isFinite(lat) || lat < -90 || lat > 90) return;
-                  if (!Number.isFinite(lng) || lng < -180 || lng > 180) return;
-                  // Backend PUT requires the full Bookmark shape, so merge
-                  // the edits over the original to keep category + address.
-                  onBookmarkEdit(editDialog.id, {
-                    ...editDialog,
-                    name: editDialogName.trim(),
-                    lat, lng,
-                  });
-                  setEditDialog(null);
-                }}
-              >{t('generic.save')}</button>
-              <button className="action-btn" onClick={() => setEditDialog(null)}>
-                {t('generic.cancel')}
-              </button>
-            </div>
-          </div>
-        </div>,
-        document.body,
-      )}
+      <EditBookmarkDialog
+        bookmark={editDialog}
+        name={editDialogName}
+        lat={editDialogLat}
+        lng={editDialogLng}
+        onNameChange={setEditDialogName}
+        onLatChange={setEditDialogLat}
+        onLngChange={setEditDialogLng}
+        onSubmit={onBookmarkEdit}
+        onClose={() => setEditDialog(null)}
+      />
 
-      {showCustomDialog && createPortal(
-        <div
-          onClick={() => setShowCustomDialog(false)}
-          className="anim-fade-in"
-          style={{
-            position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-            background: 'rgba(8, 10, 20, 0.55)',
-            backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)',
-            zIndex: 1000,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-          }}
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            className="anim-scale-in"
-            style={{
-              background: 'rgba(26, 29, 39, 0.96)',
-              backdropFilter: 'blur(14px)', WebkitBackdropFilter: 'blur(14px)',
-              border: '1px solid rgba(108, 140, 255, 0.2)',
-              borderRadius: 12, padding: 18, width: 320, color: '#e0e0e0',
-              boxShadow: '0 20px 60px rgba(12, 18, 40, 0.65), 0 0 0 1px rgba(255, 255, 255, 0.05) inset',
-            }}
-          >
-            <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>
-              {t('bm.add_custom')}
-            </div>
-            <input
-              type="text"
-              className="search-input"
-              placeholder={t('bm.name_placeholder')}
-              value={customName}
-              autoFocus
-              onChange={(e) => setCustomName(e.target.value)}
-              onKeyDown={(e) => {
-                if (isSubmitEnter(e)) handleAddCustom();
-                if (e.key === 'Escape') setShowCustomDialog(false);
-              }}
-              style={{ width: '100%', marginBottom: 8 }}
-            />
-            {/* Single 'lat, lng' field. Paste or type the whole pair. */}
-            <input
-              type="text"
-              className="search-input"
-              inputMode="decimal"
-              placeholder={t('bm.latlng_single_placeholder')}
-              value={
-                customLat && customLng
-                  ? `${customLat}, ${customLng}`
-                  : customLat || customLng
-              }
-              onChange={(e) => {
-                const v = e.target.value;
-                const split = trySplitLatLng(v);
-                if (split) { setCustomLat(split[0]); setCustomLng(split[1]); }
-                else { setCustomLat(v); setCustomLng(''); }
-              }}
-              style={{ width: '100%', marginBottom: 8 }}
-            />
-            <select
-              value={customCategory}
-              onChange={(e) => setCustomCategory(e.target.value)}
-              style={{
-                width: '100%', marginBottom: 12, padding: '6px 8px',
-                background: '#1e1e22', color: '#e0e0e0', border: '1px solid #444',
-                borderRadius: 4, fontSize: 12,
-              }}
-            >
-              {categories.map((c) => (
-                <option key={c} value={c}>{displayCat(c)}</option>
-              ))}
-            </select>
-            <div style={{ display: 'flex', gap: 6 }}>
-              <button
-                className="action-btn primary"
-                style={{ flex: 1 }}
-                disabled={
-                  !customName.trim() ||
-                  !Number.isFinite(parseFloat(customLat)) ||
-                  !Number.isFinite(parseFloat(customLng))
-                }
-                onClick={handleAddCustom}
-              >{t('generic.add')}</button>
-              <button className="action-btn" onClick={() => setShowCustomDialog(false)}>
-                {t('generic.cancel')}
-              </button>
-            </div>
-          </div>
-        </div>,
-        document.body,
-      )}
+      <CustomBookmarkDialog
+        open={showCustomDialog}
+        name={customName}
+        lat={customLat}
+        lng={customLng}
+        category={customCategory}
+        categories={categories}
+        displayCat={displayCat}
+        onNameChange={setCustomName}
+        onLatChange={setCustomLat}
+        onLngChange={setCustomLng}
+        onCategoryChange={setCustomCategory}
+        onSubmit={(bm) => {
+          onBookmarkAdd(bm);
+          setCustomName(''); setCustomLat(''); setCustomLng('');
+          setShowCustomDialog(false);
+        }}
+        onClose={() => setShowCustomDialog(false)}
+      />
     </div>
   );
 };
