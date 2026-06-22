@@ -9,13 +9,13 @@ import { useCurrentPositionLayer } from '../hooks/useCurrentPositionLayer';
 import { useDestinationLayer } from '../hooks/useDestinationLayer';
 import { useRandomWalkCircleLayer } from '../hooks/useRandomWalkCircleLayer';
 import { usePreviewPinLayer } from '../hooks/usePreviewPinLayer';
+import { useWaypointMarkersLayer } from '../hooks/useWaypointMarkersLayer';
 import { cellsInBounds, approxCellSizeMeters } from '../services/s2grid';
 import type { S2CellPolygon } from '../services/s2grid';
 import { parseCoord } from '../utils/coords';
 import { isSubmitEnter } from '../utils/keyboard';
 import { clusterByPixelDistance } from '../utils/pinCluster';
 import {
-  buildWaypointHtml,
   buildBookmarkPinHtml,
   buildBookmarkClusterHtml,
   buildBookmarkClusterPopupHtml,
@@ -349,7 +349,10 @@ const MapView: React.FC<MapViewProps> = ({
   // The amber preview pin + its two refs (previewMarkerRef, previewSigRef) are
   // owned by usePreviewPinLayer now (task p4b2bi); called below after the other
   // layer hooks.
-  const waypointMarkersRef = useRef<L.Marker[]>([]);
+  // The numbered waypoint markers + their two refs (waypointMarkersRef,
+  // waypointSigRef) are owned by useWaypointMarkersLayer now (task p4b2bi);
+  // called below after the other layer hooks. The mini-menu state (wpMenu) +
+  // its JSX stay here — only the marker-rebuild effect moved.
   const bookmarkMarkersRef = useRef<L.Marker[]>([]);
   // The route polyline (base line + flowing-arrow dash overlay) + its two refs
   // are owned by useRoutePolylineLayer now (task p4b2bi); called below after
@@ -681,69 +684,24 @@ const MapView: React.FC<MapViewProps> = ({
   // previewSigRef) internally; `tRef` is passed in for the tooltip.
   usePreviewPinLayer(mapRef, { previewPin, onPreviewPinClear, tRef });
 
-  // Update waypoint markers
-  const waypointSigRef = useRef<string>('');
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map) return;
-
-    const sig = waypoints.map((w) => `${w.lat.toFixed(7)},${w.lng.toFixed(7)}`).join('|');
-    if (sig === waypointSigRef.current) return;
-    waypointSigRef.current = sig;
-
-    waypointMarkersRef.current.forEach((m) => m.remove());
-    waypointMarkersRef.current = [];
-
-    waypoints.forEach((wp) => {
-      // index 0 is the implicit start point; S + green, numbered + orange.
-      // Design: subway-station style — thick ring + short stem + ground
-      // shadow. Chosen by user (from route-marker-designs.html, pick 07).
-      const isStart = wp.index === 0;
-      const wpIcon = L.divIcon({
-        className: 'waypoint-marker',
-        // Outer wrapper is pointer-events:auto + cursor:pointer so the
-        // ENTIRE 40x46 marker area (ring + stem + ground shadow + the
-        // padding around them) catches the left-click — not just the
-        // 28px ring. Old layout had pointer-events:none on the wrapper
-        // which meant a click on the stem or shadow passed straight
-        // through to the map and the waypoint menu never opened.
-        html: buildWaypointHtml(wp.index),
-        iconSize: [40, 46],
-        // Anchor = bottom-center of the ground shadow = exact (lat, lng).
-        iconAnchor: [20, 46],
-      });
-
-      const marker = L.marker([wp.lat, wp.lng], { icon: wpIcon }).addTo(map);
-      marker.bindTooltip(
-        isStart ? tRef.current('panel.waypoint_start') : tRef.current('panel.waypoint_num', { n: wp.index }),
-        { direction: 'top', offset: [0, -28] },
-      );
-      // Left-click opens a mini menu (set as start / delete). Stop the
-      // event from bubbling to BOTH the map (so the click-to-add-
-      // waypoint toggle doesn't see it as a new map click) AND the
-      // DOM document (so the document-level outside-click handler
-      // doesn't immediately close the menu we just opened — without
-      // DOM stopPropagation the menu opens and closes in the same
-      // tick and the user sees nothing).
-      marker.on('click', (ev) => {
-        const oe = ev.originalEvent as MouseEvent | undefined;
-        L.DomEvent.stopPropagation(ev);
-        if (oe) {
-          oe.preventDefault?.();
-          oe.stopPropagation?.();
-          (oe as any).stopImmediatePropagation?.();
-        }
-        const x = oe?.clientX ?? 0;
-        const y = oe?.clientY ?? 0;
-        setWpMenu({ visible: true, x, y, index: wp.index, isStart });
-      });
-      waypointMarkersRef.current.push(marker);
-    });
-    // The waypoint signature may have changed under our feet (insert /
-    // remove / rotate). Any open menu now points at a stale index, so
-    // dismiss it.
-    setWpMenu((prev) => prev.visible ? { ...prev, visible: false } : prev);
-  }, [waypoints]);
+  // Numbered waypoint markers (signature-gated full rebuild + per-marker
+  // left-click), extracted into their own mapRef-dependent hook (task p4b2bi).
+  // Called after the other layer hooks so it runs on the already-created map.
+  // Owns the layer's two refs (waypointMarkersRef, waypointSigRef) internally;
+  // `tRef` is passed in for the tooltips. The per-marker click opens the
+  // (still-inline) wpMenu via onWaypointMenu, and a post-rebuild stale-dismiss
+  // routes through onWaypointMenuStale — both preserve the original setWpMenu
+  // calls exactly.
+  useWaypointMarkersLayer(mapRef, {
+    waypoints,
+    tRef,
+    onWaypointMenu: (index, isStart, x, y) => {
+      setWpMenu({ visible: true, x, y, index, isStart });
+    },
+    onWaypointMenuStale: () => {
+      setWpMenu((prev) => prev.visible ? { ...prev, visible: false } : prev);
+    },
+  });
 
   // Render/clear small bookmark pins on the map when the user toggles
   // 'show all bookmarks on map'. Each pin is clickable and teleports to
