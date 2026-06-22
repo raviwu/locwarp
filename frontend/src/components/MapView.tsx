@@ -5,13 +5,13 @@ import L from 'leaflet';
 import { useMapInstance } from '../hooks/useMapInstance';
 import { useBaseLayers } from '../hooks/useBaseLayers';
 import { useRoutePolylineLayer } from '../hooks/useRoutePolylineLayer';
+import { useCurrentPositionLayer } from '../hooks/useCurrentPositionLayer';
 import { cellsInBounds, approxCellSizeMeters } from '../services/s2grid';
 import type { S2CellPolygon } from '../services/s2grid';
 import { parseCoord } from '../utils/coords';
 import { isSubmitEnter } from '../utils/keyboard';
 import { clusterByPixelDistance } from '../utils/pinCluster';
 import {
-  buildCurrentPositionHtml,
   buildDestinationHtml,
   buildPreviewHtml,
   buildWaypointHtml,
@@ -336,7 +336,11 @@ const MapView: React.FC<MapViewProps> = ({
   // mapRef is owned by useMapInstance now (the once-per-mount lifecycle hook);
   // it's destructured from the hook call below and consumed by every other
   // effect in this component exactly as before.
-  const currentMarkerRef = useRef<L.CircleMarker | null>(null);
+  // The "blue person" current-position marker + its two refs (currentMarkerRef,
+  // lastAvatarHtmlRef) + the >500m auto-center heuristic + the follow auto-pan
+  // are owned by useCurrentPositionLayer now (task p4b2bi); called below after
+  // useMapInstance. prevPositionRef stays here — it's shared with useMapInstance
+  // (the persisted-initial-position race guard) and passed into both hooks.
   const prevPositionRef = useRef<Position | null>(null);
   const destMarkerRef = useRef<L.Marker | null>(null);
   const previewMarkerRef = useRef<L.Marker | null>(null);
@@ -642,76 +646,14 @@ const MapView: React.FC<MapViewProps> = ({
   // the layer's two polyline refs internally.
   useRoutePolylineLayer(mapRef, { routePath });
 
-  // Update current position marker — move existing marker instead of recreating.
-  // When currentPosition becomes null (e.g. after 一鍵還原) remove the marker.
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map) return;
-    if (!currentPosition) {
-      if (currentMarkerRef.current) {
-        try { (currentMarkerRef.current as any).remove(); } catch { /* ignore */ }
-        currentMarkerRef.current = null;
-      }
-      prevPositionRef.current = null;
-      return;
-    }
-
-    const latlng: L.LatLngExpression = [currentPosition.lat, currentPosition.lng];
-
-    // If the avatar HTML changed since the marker was created, drop the
-    // old marker so the recreate branch below paints with the new icon at
-    // the current position — without this the user has to teleport again
-    // to see their newly-saved avatar.
-    const currentAvatar = userAvatarHtml ?? '';
-    if (currentMarkerRef.current && lastAvatarHtmlRef.current !== currentAvatar) {
-      try { (currentMarkerRef.current as any).remove(); } catch { /* ignore */ }
-      currentMarkerRef.current = null;
-    }
-
-    if (currentMarkerRef.current) {
-      // Just move the existing marker — no flicker. No tooltip update: the
-      // marker is non-interactive (see below) and the coordinate readout
-      // lives in the bottom status bar.
-      (currentMarkerRef.current as any).setLatLng(latlng);
-    } else {
-      // First time: create the marker. User-supplied avatar HTML (if any)
-      // replaces the default blue-person SVG. The pulse rings stay so the
-      // marker still reads as a "live" position indicator.
-      const personIcon = L.divIcon({
-        className: 'current-pos-marker',
-        html: buildCurrentPositionHtml(userAvatarHtml),
-        iconSize: [44, 44],
-        iconAnchor: [22, 22],
-      });
-
-      // Non-interactive: no click handlers wired and no coord tooltip. The
-      // blue person marker is pure UI — clicks should pass through to the
-      // map / markers beneath it (bookmark pins etc.), and the coordinate
-      // readout already lives in the bottom status bar.
-      const marker = L.marker(latlng, {
-        icon: personIcon,
-        zIndexOffset: 1000,
-        interactive: false,
-      }).addTo(map);
-
-      currentMarkerRef.current = marker as any;
-      lastAvatarHtmlRef.current = currentAvatar;
-    }
-
-    // Only auto-center on first position or teleport (large jump > 500m)
-    const prev = prevPositionRef.current;
-    if (!prev) {
-      map.setView(latlng, map.getZoom());
-    } else {
-      const dlat = (currentPosition.lat - prev.lat) * 111320;
-      const dlng = (currentPosition.lng - prev.lng) * 111320 * Math.cos(currentPosition.lat * Math.PI / 180);
-      const distM = Math.sqrt(dlat * dlat + dlng * dlng);
-      if (distM > 500) {
-        map.setView(latlng, map.getZoom());
-      }
-    }
-    prevPositionRef.current = currentPosition;
-  }, [currentPosition, userAvatarHtml]);
+  // Current-position "blue person" marker (move-vs-recreate, avatar rebuild,
+  // the >500m auto-center heuristic) + the follow auto-pan, extracted into their
+  // own mapRef-dependent hook (task p4b2bi). Called after useMapInstance /
+  // useBaseLayers / useRoutePolylineLayer so it runs on the already-created map.
+  // Owns the marker's two refs (currentMarkerRef, lastAvatarHtmlRef) internally;
+  // prevPositionRef stays owned here (shared with useMapInstance) and is passed
+  // in so the saved-position pan still loses to a real position_update.
+  useCurrentPositionLayer(mapRef, { currentPosition, userAvatarHtml, followMode, prevPositionRef });
 
   // Update destination marker
   const destSigRef = useRef<string | null>(null);
@@ -1001,20 +943,8 @@ const MapView: React.FC<MapViewProps> = ({
     return () => document.removeEventListener('click', handler);
   }, [closeWpMenu]);
 
-  // Auto-pan the map to the current position whenever follow mode is on.
-  // Uses panTo with a short animation so rapid backend ticks (random walk
-  // can be ~10 Hz) blend into a smooth camera trail rather than jumpy
-  // snaps. Programmatic panTo does NOT fire dragstart, so the auto-disable
-  // wired at map init is safe.
-  useEffect(() => {
-    if (!followMode || !currentPosition) return;
-    const map = mapRef.current;
-    if (!map) return;
-    map.panTo([currentPosition.lat, currentPosition.lng], {
-      animate: true,
-      duration: 0.4,
-    });
-  }, [currentPosition, followMode]);
+  // The follow auto-pan effect was moved into useCurrentPositionLayer (task
+  // p4b2bi) — it drives the same camera-vs-marker layer as the position marker.
 
   // ── S2 cell grid overlay ────────────────────────────────────────────
   // The toggle handler (toggleS2Grid) + its leaflet-bar button live with the
@@ -1098,12 +1028,8 @@ const MapView: React.FC<MapViewProps> = ({
     };
   }, [s2Enabled, s2Level]);
 
-  // Track the last avatar HTML we painted so the position-update effect
-  // below can detect "avatar changed, need to rebuild marker even though
-  // the position didn't change". Without this the new avatar only shows
-  // up after the next teleport.
-  const lastAvatarHtmlRef = useRef<string>('');
-
+  // lastAvatarHtmlRef moved into useCurrentPositionLayer (task p4b2bi) — it's
+  // only read/written by the current-position marker effect now living there.
 
   // Coordinate-input overlay (replaces the sidebar's two-field coord input).
   // parseCoord scrapes the first valid lat/lng out of arbitrary pasted
