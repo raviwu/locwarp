@@ -1131,8 +1131,13 @@ UVICORN_LOOP = "asyncio"
 
 
 def _run_server() -> None:
+    # Pass the app OBJECT, not the "main:app" import string. In a codesigned
+    # PyInstaller bundle, uvicorn's import_module("main") fails ("Could not
+    # import module 'main'") even though main.py already ran as __main__ — the
+    # frozen entry module is not re-importable by name inside the signed .app.
+    # Passing the object skips that re-import entirely (reload/workers are off).
     uvicorn.run(
-        "main:app",
+        app,
         host=API_HOST,
         port=API_PORT,
         reload=False,

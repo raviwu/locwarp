@@ -59,6 +59,13 @@ echo "============================================================"
 echo " [4/4] Ad-hoc re-sign app bundle"
 echo "============================================================"
 APP="$ROOT/frontend/release/mac-arm64/LocWarp.app"
+# Ad-hoc, NO hardened runtime: this is a locally-distributed (un-notarized)
+# build, so the hardened runtime brings no benefit and actively breaks it —
+# under hardened runtime Electron's V8 JIT crashes (EXC_BREAKPOINT) without
+# allow-jit, and the bundled PyInstaller Python.framework/.so fail library
+# validation. package.json sets mac.hardenedRuntime=false; this ad-hoc deep
+# sign keeps it that way. The backend's frozen-import issue is fixed in
+# main.py (uvicorn.run(app)), not via signing.
 codesign --force --deep --sign - "$APP"
 echo "Signed: $APP"
 

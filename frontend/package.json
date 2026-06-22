@@ -90,7 +90,8 @@
         }
       ],
       "category": "public.app-category.developer-tools",
-      "icon": "build/icon.icns"
+      "icon": "build/icon.icns",
+      "hardenedRuntime": false
     },
     "nsis": {
       "oneClick": false,
