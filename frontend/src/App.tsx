@@ -26,7 +26,7 @@ import ControlPanel from './components/ControlPanel'
 import DeviceStatus from './components/DeviceStatus'
 import JoystickPad from './components/JoystickPad'
 import EtaBar from './components/EtaBar'
-import PauseControl from './components/PauseControl'
+import WaypointEditor from './components/WaypointEditor'
 import StatusBar from './components/StatusBar'
 import { DeviceChipRow } from './components/DeviceChipRow'
 import {
@@ -1334,218 +1334,35 @@ const App: React.FC = () => {
             bm.deleteCategory(categoryId, true)
           }
           modeExtraSection={(sim.mode === SimMode.Loop || sim.mode === SimMode.MultiStop) ? (
-          <div className="section" style={{ margin: '0 0 8px 0' }}>
-            <div className="section-title" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <circle cx="12" cy="12" r="3" />
-                <line x1="12" y1="5" x2="12" y2="1" />
-                <line x1="12" y1="23" x2="12" y2="19" />
-              </svg>
-              {t('panel.waypoints')} ({sim.waypoints.length})
-              <span style={{ fontSize: 10, opacity: 0.5, marginLeft: 4 }}>{t('panel.waypoints_hint')}</span>
-            </div>
-            <div className="section-content">
-              <PauseControl
-                labelKey={sim.mode === SimMode.Loop ? 'pause.loop' : 'pause.multi_stop'}
-                value={sim.mode === SimMode.Loop ? sim.pauseLoop : sim.pauseMultiStop}
-                onChange={sim.mode === SimMode.Loop ? sim.setPauseLoop : sim.setPauseMultiStop}
-              />
-              {sim.mode === SimMode.Loop && (
-                <div style={{
-                  marginBottom: 6, fontSize: 11,
-                  display: 'flex', alignItems: 'center', gap: 6,
-                }}>
-                  <span style={{ opacity: 0.7, whiteSpace: 'nowrap' }}>{t('loop.lap_count_label')}</span>
-                  <input
-                    type="number"
-                    className="lw-input"
-                    min={0}
-                    placeholder={t('loop.lap_count_placeholder')}
-                    value={sim.loopLapCount ?? ''}
-                    onChange={(e) => {
-                      const raw = e.target.value.trim()
-                      if (raw === '') { sim.setLoopLapCount(null); return }
-                      const n = parseInt(raw, 10)
-                      sim.setLoopLapCount(Number.isFinite(n) && n > 0 ? n : null)
-                    }}
-                    style={{ width: 70 }}
-                    title={t('loop.lap_count_tooltip')}
-                  />
-                  {sim.lapProgress && (
-                    <span style={{ opacity: 0.6, fontSize: 10, marginLeft: 'auto' }}>
-                      {t('loop.lap_progress', {
-                        current: sim.lapProgress.current,
-                        total: sim.lapProgress.total ?? '∞',
-                      })}
-                    </span>
-                  )}
-                </div>
-              )}
-              <div style={{ marginBottom: 6, fontSize: 11 }}>
-                <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 4 }}>
-                  <span style={{ opacity: 0.7, width: 36 }}>{t('panel.waypoints_radius')}</span>
-                  <input
-                    type="number"
-                    className="lw-input"
-                    min={10}
-                    value={wpGenRadius}
-                    onChange={(e) => setWpGenRadius(Math.max(1, parseInt(e.target.value) || 0))}
-                    style={{ flex: 1 }}
-                  />
-                  <span style={{ opacity: 0.5, width: 16 }}>m</span>
-                </div>
-                <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 6 }}>
-                  <span style={{ opacity: 0.7, width: 36 }}>{t('panel.waypoints_count')}</span>
-                  <input
-                    type="number"
-                    className="lw-input"
-                    min={1}
-                    max={50}
-                    value={wpGenCount}
-                    onChange={(e) => setWpGenCount(Math.max(1, parseInt(e.target.value) || 0))}
-                    style={{ flex: 1 }}
-                  />
-                  <span style={{ opacity: 0.5, width: 16 }}>{t('panel.points')}</span>
-                </div>
-                <div style={{ display: 'flex', gap: 6 }}>
-                  <button
-                    className="action-btn"
-                    style={{ flex: 1, padding: '3px 8px', fontSize: 11 }}
-                    onClick={handleGenerateRandomWaypoints}
-                    title={t('panel.waypoints_gen_tooltip')}
-                  >{t('panel.waypoints_generate')}</button>
-                  <button
-                    className="action-btn"
-                    style={{ flex: 1, padding: '3px 8px', fontSize: 11 }}
-                    onClick={handleGenerateAllRandom}
-                    title={t('panel.waypoints_gen_all_tooltip')}
-                  >{t('panel.waypoints_generate_all')}</button>
-                </div>
-                {/* Bulk paste button — Variant D from the mockup: gradient pill
-                    with an animated shimmer that hints "this is the eye-catcher". */}
-                <button
-                  className="route-paste-shimmer"
-                  onClick={() => { setRoutePasteText(''); setRoutePasteOpen(true); }}
-                  title={t('panel.route_paste_tooltip')}
-                  style={{ width: '100%', marginTop: 8 }}
-                >
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <rect x="9" y="2" width="6" height="4" rx="1"/>
-                    <path d="M9 4H6a2 2 0 00-2 2v14a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-3"/>
-                  </svg>
-                  {t('panel.route_paste_button')}
-                </button>
-              </div>
-              {sim.waypoints.length === 0 && (
-                <div style={{ fontSize: 12, opacity: 0.5, padding: '4px 0' }}>
-                  {t('panel.waypoints_empty')}
-                </div>
-              )}
-              {sim.waypoints.map((wp: any, i: number) => {
-                // UI waypoints[0] = the implicit start position (current
-                // device location at add-time). Backend seg_idx N = traveling
-                // from waypoints[N] toward waypoints[N+1]; the *target* of
-                // that segment is waypoints[N+1], so highlight i == seg+1.
-                const seg = sim.waypointProgress?.current
-                const approaching = seg != null && i === seg + 1
-                const passed = seg != null && i <= seg
-                const isStart = i === 0;
-                return (
-                  <div
-                    key={i}
-                    style={{
-                      display: 'flex', alignItems: 'center', gap: 6, padding: '3px 6px', fontSize: 12,
-                      borderRadius: 4, marginBottom: 2,
-                      background: approaching ? 'rgba(255, 152, 0, 0.18)' : 'transparent',
-                      border: approaching ? '1px solid rgba(255, 152, 0, 0.6)' : '1px solid transparent',
-                      opacity: passed ? 0.4 : 1,
-                      transition: 'background 0.25s, border-color 0.25s',
-                      animation: approaching ? 'wp-pulse 1.4s ease-in-out infinite' : undefined,
-                    }}
-                  >
-                    <span style={{ color: approaching ? '#ff9800' : passed ? '#666' : isStart ? '#4caf50' : '#ff9800', fontWeight: 600, width: 24, fontSize: isStart ? 10 : undefined }}>
-                      {approaching ? '>' : passed ? 'OK' : isStart ? t('panel.waypoint_start') : `#${i}`}
-                    </span>
-                    <button
-                      onClick={() => setWpFlyConfirm({ lat: wp.lat, lng: wp.lng, index: i })}
-                      title={t('panel.waypoints_click_to_fly')}
-                      style={{
-                        flex: 1, background: 'transparent', border: 'none',
-                        color: 'inherit', opacity: 0.85, textAlign: 'left',
-                        padding: 0, cursor: 'pointer',
-                        font: 'inherit', letterSpacing: 0,
-                      }}
-                      onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.textDecoration = 'underline'; }}
-                      onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.textDecoration = 'none'; }}
-                    >{wp.lat.toFixed(5)}, {wp.lng.toFixed(5)}</button>
-                    {!isStart && (
-                      <>
-                        <button
-                          className="action-btn"
-                          style={{ padding: '2px 5px', fontSize: 10, opacity: i <= 1 ? 0.3 : 1 }}
-                          onClick={() => handleMoveWaypoint(i, -1)}
-                          disabled={i <= 1 || sim.status?.running}
-                          title={t('panel.waypoints_move_up')}
-                        >↑</button>
-                        <button
-                          className="action-btn"
-                          style={{ padding: '2px 5px', fontSize: 10, opacity: i >= sim.waypoints.length - 1 ? 0.3 : 1 }}
-                          onClick={() => handleMoveWaypoint(i, 1)}
-                          disabled={i >= sim.waypoints.length - 1 || sim.status?.running}
-                          title={t('panel.waypoints_move_down')}
-                        >↓</button>
-                      </>
-                    )}
-                    <button
-                      className="action-btn"
-                      style={{ padding: '2px 6px', fontSize: 10 }}
-                      onClick={() => handleRemoveWaypoint(i)}
-                      title={t('panel.waypoints_remove')}
-                    >X</button>
-                  </div>
-                );
-              })}
-              {sim.waypoints.length > 0 && (
-                <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
-                  <button
-                    className="action-btn"
-                    style={{ flex: 1 }}
-                    onClick={handleClearWaypoints}
-                    disabled={sim.status?.running}
-                  >{t('generic.clear')}</button>
-                  {sim.waypoints.length >= 3 && (
-                    <button
-                      className="action-btn"
-                      style={{ flex: 1 }}
-                      onClick={async () => {
-                        try {
-                          const res = await api.routeOptimize(
-                            sim.waypoints.map((w: any) => ({ lat: w.lat, lng: w.lng })),
-                            sim.moveMode, true, sim.routeEngine,
-                          )
-                          if (res?.waypoints?.length) {
-                            sim.setWaypoints(res.waypoints)
-                            const baseMsg = t('toast.route_optimized')
-                            // When the duration matrix fell back to
-                            // haversine (all road-aware engines down),
-                            // tag the toast so the user knows the order
-                            // is from a straight-line estimate.
-                            showToast(res.used_estimate
-                              ? `${baseMsg} (${t('toast.route_optimize_estimate')})`
-                              : baseMsg)
-                          }
-                        } catch (err: any) {
-                          showToast(err?.message || t('toast.route_optimize_failed'))
-                        }
-                      }}
-                      disabled={sim.status?.running}
-                      title={t('panel.waypoints_optimize_tooltip')}
-                    >{t('panel.waypoints_optimize')}</button>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
+            <WaypointEditor
+              mode={sim.mode}
+              waypoints={sim.waypoints}
+              waypointProgress={sim.waypointProgress}
+              statusRunning={sim.status?.running}
+              pauseLoop={sim.pauseLoop}
+              pauseMultiStop={sim.pauseMultiStop}
+              setPauseLoop={sim.setPauseLoop}
+              setPauseMultiStop={sim.setPauseMultiStop}
+              loopLapCount={sim.loopLapCount}
+              setLoopLapCount={sim.setLoopLapCount}
+              lapProgress={sim.lapProgress}
+              wpGenRadius={wpGenRadius}
+              wpGenCount={wpGenCount}
+              setWpGenRadius={setWpGenRadius}
+              setWpGenCount={setWpGenCount}
+              moveMode={sim.moveMode}
+              routeEngine={sim.routeEngine}
+              onGenerateRandomWaypoints={handleGenerateRandomWaypoints}
+              onGenerateAllRandom={handleGenerateAllRandom}
+              onMoveWaypoint={handleMoveWaypoint}
+              onRemoveWaypoint={handleRemoveWaypoint}
+              onClearWaypoints={handleClearWaypoints}
+              setWaypoints={sim.setWaypoints}
+              onFlyToWaypoint={setWpFlyConfirm}
+              onOpenBulkPaste={() => { setRoutePasteText(''); setRoutePasteOpen(true); }}
+              showToast={showToast}
+              onOptimize={api.routeOptimize}
+            />
           ) : null}
         />
 
