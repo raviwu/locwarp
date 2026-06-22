@@ -63,6 +63,29 @@ The bookmark and route stores are CRDT-style LWW-element-sets with tombstones (`
 
 ---
 
+## Local rotating backup (`~/.locwarp/backups/`)
+
+A lifespan-owned asyncio task (`_bookmark_backup_loop` in `main.py`) snapshots the **live**
+bookmark + route stores every `BACKUP_INTERVAL_S` (5 min) to `~/.locwarp/backups/` —
+local-only, **never** the iCloud sync_folder.
+Design: `docs/superpowers/specs/2026-06-22-bookmark-route-rotating-backup-design.md`.
+
+- `locwarp-latest-backup.json` refreshed every tick; a timestamped
+  `locwarp-backup-<YYYYMMDD-HHMMSS>.json` archived **only when data changed**; pruned past
+  `BACKUP_RETENTION_HOURS` (72h) by the **filename** timestamp.
+- **Never clobbers on empty:** `BackupService.tick` skips when bookmarks==0 AND routes==0.
+- Consistent reads via `BookmarkManager.snapshot_export()` (under `_store_lock`) /
+  `RouteManager.snapshot_export()`.
+- Rings: `domain/backup.py` + `domain/ports/backup_repository.py` ←
+  `infra/persistence/backup_store.py` (atomic via `json_safe`) ← `services/backup_service.py` ←
+  `bootstrap/factories.make_backup_service` + `main.py` lifespan. No new import-linter contract.
+- **Restore** via existing `make merge-bookmarks` / `make merge-routes` (`backend/merge_backup.py`);
+  `make backup` (`scripts/desktop_backup.py`) writes the same format and stays a manual tool.
+- **Test isolation:** `config.BACKUP_DIR` is redirected to tmp by the autouse
+  `conftest._isolate_real_data_paths` guard.
+
+---
+
 ## USB pair records under SIP
 
 `/var/db/lockdown/<udid>.plist` is SIP-protected on macOS 11+ (even `sudo rm` fails). The only user-mode path is sending a `DeletePairRecord` plist to `usbmuxd`. The wrapper is `backend/services/usbmux_pair_records.py` (`delete_system_pair_record`, `delete_local_pair_record`, `autopair_with_recovery`). `POST /api/device/{udid}/forget` is the user-facing entry point. **Do NOT auto-clear on `UserDeniedPairingError`** — that is the user tapping "Don't Trust"; `DeviceManager.connect()` adds the udid to `sticky_user_denied` (persisted to `~/.locwarp/sticky_denied.json`) and the watchdog refuses to auto-connect until the in-app Re-trust button clears it. This whole subsystem is a thick carve-out — wrap it behind a port, never abstract its internals.

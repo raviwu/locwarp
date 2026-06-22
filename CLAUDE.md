@@ -84,6 +84,34 @@ Never assume "the item appears in `self.store.<list>` after my mutation, so it'l
 
 ---
 
+## Local rotating backup (`~/.locwarp/backups/`)
+
+A lifespan-owned asyncio task (`_bookmark_backup_loop` in `main.py`) snapshots the **live**
+bookmark + route stores every `BACKUP_INTERVAL_S` (5 min) to `~/.locwarp/backups/` —
+local-only, **never** the iCloud sync_folder (so backups aren't re-synced/clobbered).
+Design: `docs/superpowers/specs/2026-06-22-bookmark-route-rotating-backup-design.md`.
+
+- `locwarp-latest-backup.json` is refreshed every tick; a timestamped
+  `locwarp-backup-<YYYYMMDD-HHMMSS>.json` is archived **only when the data changed**
+  (fingerprint excludes `_backup_meta`). Pruned past `BACKUP_RETENTION_HOURS` (72h) by the
+  **filename** timestamp, not mtime.
+- **Never clobbers on empty:** `BackupService.tick` skips entirely when bookmarks==0 AND
+  routes==0 (guards transient iCloud eviction / startup).
+- Consistent reads via `BookmarkManager.snapshot_export()` (under `_store_lock` — no torn
+  read vs `_save`/`_watcher_tick`) / `RouteManager.snapshot_export()`.
+- Rings: `domain/backup.py` (pure policy) + `domain/ports/backup_repository.py` (Protocol) ←
+  `infra/persistence/backup_store.py` (atomic I/O via `json_safe`) ← `services/backup_service.py`
+  (`tick`) ← wired at `bootstrap/factories.make_backup_service` + `main.py` lifespan. No new
+  import-linter contract.
+- **Restore** uses existing tooling: the snapshot's `.bookmarks` / `.routes` objects are each
+  directly re-importable — `make merge-bookmarks` / `make merge-routes` (`backend/merge_backup.py`).
+  The manual `make backup` (`scripts/desktop_backup.py`) writes the identical format/dir and stays
+  a compatible on-demand tool; no launchd agent is installed.
+- **Test isolation:** `config.BACKUP_DIR` is redirected to a tmp dir by the autouse
+  `conftest._isolate_real_data_paths` guard — extend that guard for any new `~/.locwarp` path.
+
+---
+
 ## USB pair records under SIP
 
 `/var/db/lockdown/<udid>.plist` is SIP-protected on macOS 11+. Even
