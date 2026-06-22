@@ -1,7 +1,7 @@
 # Clean Architecture Refactor — Design Spec
 
 - **Date:** 2026-06-19
-- **Status:** Phase 0 + Phase 1 + Phase 2 (C / spec-literal) IMPLEMENTED + merged (2026-06-20). Phases 3–5 deferred.
+- **Status:** Phase 0 + Phase 1 + Phase 2 (C / spec-literal) merged (2026-06-20). **Phase 3 (movement-math carve-out) IMPLEMENTED on branch `chore/clean-arch-p3` (2026-06-22), pending hardware smoke + merge.** Phases 4–5 deferred.
 - **Decision (flavor):** **Pragmatic Hexagonal-lite** — real clean architecture (inward-only rings, inner-owned ports, repository, composition-root DI, CI-enforced layering) **without** per-verb interactor classes, numbered `l1–l4` folders, or a presenter layer (`response_model` already serves that role).
 - **Decision (scope):** **MVP first — Phase 0 + Phase 1 + the Phase-1 cycle gate.** Phases 2–5 are documented here but **deferred** (adopt/partial/skip later). The 4 lock/port corrections ride along with the MVP.
 - **Reference studied:** `CJHwong/py-clean-architecture-examples` (`example_2_fastapi_todo_app`).
@@ -56,7 +56,7 @@ backend/
   domain/      innermost: pure types + ports. Imports stdlib + pydantic ONLY
     models/      per-aggregate pure pydantic (unchanged)
     events.py    WsEvent: OPEN discriminated union, OPTIONAL fields, exclude_unset/exclude_none (preserves 6 disconnect shapes)
-    movement.py  PURE math from simulation_engine: EtaTracker, _move_along_route interpolation, snapshot dict<->dataclass CONVERTER only
+    movement.py  PURE math from simulation_engine: EtaTracker, RouteInterpolator (relocated from services/), snapshot dict serializer (build_resume_snapshot) only — NO dataclass exists
     errors.py    GeocodeError(status,code,detail), DeviceConnectError — domain errors, NOT HTTPException
     ports/       device_port, event_publisher, tunnel_registry, bookmark_repo, route_repo, geocoder, clock
   core/        engine orchestration (depends on domain/ports only) + movers; getattr-dispatch RAISES on miss
@@ -141,7 +141,9 @@ Each phase: **執行目標 / 優先順序(first) / 潛在風險 / 驗證方式**
 - **潛在風險:** hidden ordering deps in app_state; `mkdir`-at-import removal can surface a path nothing creates on a clean machine (pristine-HOME CI pins it); geocoding error-shape must stay identical per branch; engine-registry lock must wrap the FULL check-await-assign; per-component reroute must not change WHEN calls fire or swallow errors differently (msw behavioral test per component).
 - **驗證方式:** `grep 'from main import app_state'` == 0 in non-test code; 352 green; geocode tests assert identical status+body per branch (incl httpx); lifespan + pristine-HOME tests; two-concurrent-`create_engine_for_device` regression green; eslint 0 view→adapters/api violations among rerouted components.
 
-### Phase 3 — Carve simulation_engine into pure domain math (fear zone, now netted) — **deferred** — ~7 commits
+### Phase 3 — Carve simulation_engine into pure domain math (fear zone, now netted) — **DONE (2026-06-22, branch chore/clean-arch-p3)** — 7 commits
+
+> **DONE note (2026-06-22):** Implemented as 7 commits on `chore/clean-arch-p3` (3 char nets + 3 extractions + the `no-domain-imports-outer` gate). EtaTracker + `build_resume_snapshot` (a pure dict serializer — **no dataclass ever existed**, so the "dict↔dataclass converter" phrasing below is superseded by the freeze) + RouteInterpolator now live in `backend/domain/movement.py`; RouteInterpolator was *relocated from `services/`* (the interpolation math was never inline in `_move_along_route`), which killed the `core→services` interpolator edge. `engine.py` already depended on `DevicePort` (done in P1). Owner decisions: `resume_from_snapshot` kept **warn-and-return** on unknown kind (behavior-freeze over the literal "RAISES on miss"); the `RouteService` `core→services` edge **deferred** (separate ring fix). Both verbatim moves verified byte-identical; backend 849→871 (new char tests only, no existing test changed); **6 import-linter contracts kept / 0 broken**. Pending: Ravi hardware smoke + merge.
 
 - **執行目標:** extract ONLY the pure movement math (ETA, interpolation, snapshot dict↔dataclass converter) into `domain/movement.py`; make `engine.py` depend on `DevicePort`. Keep navigate/start_loop/multi_stop/random_walk entrypoints + all stop/pause/cancel signalling + ordering ON the engine.
 - **優先順序(first):** extract `EtaTracker` first (most self-contained, re-export from old module), THEN `_move_along_route` interpolation, THEN the snapshot converter — **one extraction per commit**, each guarded by P0 recordings; float interpolation extracted LAST, asserted bit-exact. Grep the to-be-extracted functions for device_manager/api imports first — if found, the extraction is not mechanical and must be re-scoped.
