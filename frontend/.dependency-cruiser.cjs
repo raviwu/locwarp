@@ -32,6 +32,20 @@ module.exports = {
       },
       to: { path: "^src/(adapters/ws/useWsRouter|hooks/useWebSocket)" },
     },
+    {
+      // P4b-3 exit: the BookmarkList tree is fully decomposed and reaches the
+      // backend only via useServices().api, so its rule is tightened to ERROR
+      // (a regression here fails CI). App/MapView stay "warn" until their rounds.
+      name: "bookmarklist-no-direct-api",
+      severity: "error",
+      comment:
+        "The BookmarkList subtree must reach the backend via useServices().api / injected hooks — never a direct services/api or adapters import.",
+      from: {
+        path: "^src/components/(BookmarkList|BookmarkRow|CategorySection|BookmarkContextMenu|CategoryManagerPanel|AddBookmarkDialog|CustomBookmarkDialog|EditBookmarkDialog|EditCategoryModal)",
+        pathNot: TEST_FILES,
+      },
+      to: { path: "^src/(services/api|adapters)" },
+    },
   ],
   options: {
     doNotFollow: { path: "node_modules" },
