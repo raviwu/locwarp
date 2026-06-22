@@ -216,6 +216,15 @@ class RouteManager:
     def list_categories(self) -> list[RouteCategory]:
         return sorted(self.store.categories, key=lambda c: c.sort_order)
 
+    def snapshot_export(self) -> dict:
+        """{categories, routes} for the rotating backup task. No lock needed:
+        the route watcher reassigns self.store atomically (GIL) and never writes,
+        so iterating the current lists yields a consistent snapshot."""
+        return {
+            "categories": [c.model_dump(mode="json") for c in self.list_categories()],
+            "routes": [r.model_dump(mode="json") for r in self.list_routes()],
+        }
+
     def create_category(self, name: str, color: str = "#6c8cff") -> RouteCategory:
         max_order = max((c.sort_order for c in self.store.categories), default=-1)
         now = _now_iso()
