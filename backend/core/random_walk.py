@@ -9,7 +9,7 @@ import random
 from pymobiledevice3.exceptions import ConnectionTerminatedError
 
 from models.schemas import Coordinate, MovementMode, SimulationState
-from services.interpolator import RouteInterpolator
+from domain.movement import RouteInterpolator
 from config import resolve_speed_profile
 
 logger = logging.getLogger(__name__)

@@ -7,7 +7,7 @@ import logging
 import time
 
 from models.schemas import JoystickInput, MovementMode, SimulationState
-from services.interpolator import RouteInterpolator
+from domain.movement import RouteInterpolator
 from config import SPEED_PROFILES
 
 logger = logging.getLogger(__name__)

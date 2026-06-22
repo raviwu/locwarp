@@ -14,7 +14,6 @@ from models.schemas import (
     SimulationState,
     SimulationStatus,
 )
-from services.interpolator import RouteInterpolator
 from services.route_service import RouteService
 from config import SPEED_PROFILES, SpeedProfile
 
@@ -30,7 +29,7 @@ from core.goldditto import GoldDittoHandler
 # EtaTracker moved to domain/movement.py (Phase 3); re-exported here so
 # `core.EtaTracker`, `from core.simulation_engine import EtaTracker`, and the
 # `self.eta_tracker = EtaTracker()` construction keep working.
-from domain.movement import EtaTracker, build_resume_snapshot
+from domain.movement import EtaTracker, build_resume_snapshot, RouteInterpolator
 
 logger = logging.getLogger(__name__)
 
