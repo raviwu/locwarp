@@ -4,10 +4,13 @@ import { render, fireEvent, within } from '@testing-library/react';
 
 // i18n -> identity translator + a fixed language so the real BookmarkRow /
 // BookmarkGeoLine children mount. Mirrors BookmarkRow.test.tsx / BookmarkList
-// .test.tsx.
+// .test.tsx. Interpolation params (e.g. the upcoming-badge {date}) are appended
+// so tests can assert the interpolated formatChipDate value flows through.
+const fakeT = (k: string, params?: Record<string, unknown>) =>
+  params ? `${k}:${Object.values(params).join(',')}` : k;
 vi.mock('../i18n', () => ({
-  useT: () => (k: string) => k,
-  useI18n: () => ({ lang: 'en', setLang: vi.fn(), t: (k: string) => k }),
+  useT: () => fakeT,
+  useI18n: () => ({ lang: 'en', setLang: vi.fn(), t: fakeT }),
 }));
 
 import { CategorySection } from './CategorySection';
@@ -166,6 +169,78 @@ describe('CategorySection', () => {
     (group.firstElementChild as HTMLElement).click();
     expect(onToggleCollapse).toHaveBeenCalledTimes(1);
     expect(onToggleCollapse).toHaveBeenCalledWith('Work');
+  });
+
+  // --- Temporal status badges + group opacity ------------------------------
+  it('renders the ended badge + 0.5 group opacity when status="ended"', () => {
+    const { container } = render(
+      <CategorySection {...makeProps({ status: 'ended' })} />,
+    );
+    const group = container.querySelector('.bookmark-group') as HTMLElement;
+    // The whole group is dimmed to 0.5 for ended events.
+    expect(group.getAttribute('style')).toContain('opacity: 0.5');
+    // The ended badge text key renders inside the header.
+    const header = group.firstElementChild as HTMLElement;
+    const badge = Array.from(header.querySelectorAll('span')).find(
+      (s) => s.textContent === 'bm.cat.status_ended',
+    );
+    expect(badge).toBeTruthy();
+  });
+
+  it('renders the upcoming badge with the interpolated date chip when status="upcoming" + dates', () => {
+    const { container } = render(
+      <CategorySection
+        {...makeProps({
+          status: 'upcoming',
+          dates: { start_date: '2030-01-15', end_date: '2030-01-20' },
+        })}
+      />,
+    );
+    const group = container.querySelector('.bookmark-group') as HTMLElement;
+    // Upcoming events dim the group to 0.7.
+    expect(group.getAttribute('style')).toContain('opacity: 0.7');
+    const header = group.firstElementChild as HTMLElement;
+    // The badge text is the upcoming key + the interpolated formatChipDate of
+    // start_date ('2030-01-15' -> 'Jan 15' for en-US). The fakeT mock appends
+    // interpolation params so we can pin that the chip date flows through.
+    const badge = Array.from(header.querySelectorAll('span')).find((s) =>
+      (s.textContent ?? '').startsWith('bm.cat.status_upcoming'),
+    );
+    expect(badge).toBeTruthy();
+    expect(badge!.textContent).toBe('bm.cat.status_upcoming:Jan 15');
+  });
+
+  it('omits the upcoming badge when status="upcoming" but dates are missing', () => {
+    const { container } = render(
+      <CategorySection {...makeProps({ status: 'upcoming', dates: undefined })} />,
+    );
+    const group = container.querySelector('.bookmark-group') as HTMLElement;
+    const header = group.firstElementChild as HTMLElement;
+    const badge = Array.from(header.querySelectorAll('span')).find((s) =>
+      (s.textContent ?? '').startsWith('bm.cat.status_upcoming'),
+    );
+    expect(badge).toBeUndefined();
+  });
+
+  // --- Empty body + collapse gating ----------------------------------------
+  it('renders the bm.blank placeholder when expanded with no bookmarks', () => {
+    const { container } = render(
+      <CategorySection {...makeProps({ bms: [], collapsed: false })} />,
+    );
+    const blank = Array.from(container.querySelectorAll('div')).find(
+      (d) => d.textContent === 'bm.blank',
+    );
+    expect(blank).toBeTruthy();
+  });
+
+  it('renders no BookmarkRow children when collapsed (even with bookmarks)', () => {
+    const { container } = render(
+      <CategorySection {...makeProps({ collapsed: true })} />,
+    );
+    // The expanded body (paddingLeft:20 wrapper) is the only place rows mount;
+    // when collapsed the body is absent, so neither bookmark name renders.
+    expect(container.textContent).not.toContain('Alpha');
+    expect(container.textContent).not.toContain('Beta');
   });
 
   // --- DOM contract: name span text + group class --------------------------

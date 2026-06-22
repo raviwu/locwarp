@@ -87,4 +87,36 @@ describe('EditBookmarkDialog', () => {
     fireEvent.click(screen.getByText('generic.save'));
     expect(onSubmit).not.toHaveBeenCalled();
   });
+
+  it('does not submit when lat is out of range', () => {
+    const onSubmit = vi.fn();
+    render(
+      <EditBookmarkDialog
+        {...makeProps({ name: 'New Name', lat: '200', lng: '122.5', onSubmit })}
+      />,
+    );
+    fireEvent.click(screen.getByText('generic.save'));
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  it('closes without submitting when the bookmark has no id', () => {
+    const onSubmit = vi.fn();
+    const onClose = vi.fn();
+    render(
+      <EditBookmarkDialog
+        {...makeProps({
+          bookmark: { ...ORIG, id: undefined },
+          name: 'New Name',
+          lat: '26.5',
+          lng: '122.5',
+          onSubmit,
+          onClose,
+        })}
+      />,
+    );
+    fireEvent.click(screen.getByText('generic.save'));
+    // id-missing early branch: bail out before the PUT, just close.
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
 });

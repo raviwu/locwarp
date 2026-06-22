@@ -101,6 +101,40 @@ describe('useBookmarkSelection', () => {
     expect(onBookmarkDelete).not.toHaveBeenCalled()
   })
 
+  it('one onBookmarkDelete throw does not abort the batch', async () => {
+    // Reject/throw for the MIDDLE id only; the per-call try/catch must keep
+    // the other two going AND still exit multi-select after the batch.
+    const onBookmarkDelete = vi.fn((id: string) => {
+      if (id === 'b') throw new Error('boom')
+    })
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const bookmarks = makeBookmarks(['a', 'b', 'c'])
+    const { result } = renderHook(() =>
+      useBookmarkSelection({ bookmarks, onBookmarkDelete, t: identityT }),
+    )
+
+    act(() => {
+      result.current.enterMultiSelect()
+    })
+    act(() => {
+      result.current.toggleSelectAll()
+    })
+    expect(result.current.selectedIds.size).toBe(3)
+
+    await act(async () => {
+      await result.current.handleBulkDelete()
+    })
+
+    expect(confirmSpy).toHaveBeenCalledTimes(1)
+    // (a) all 3 ids were attempted despite the middle one throwing.
+    expect(onBookmarkDelete).toHaveBeenCalledTimes(3)
+    const attempted = onBookmarkDelete.mock.calls.map((c) => c[0]).sort()
+    expect(attempted).toEqual(['a', 'b', 'c'])
+    // (b) the batch still completed -> exitMultiSelect ran.
+    expect(result.current.multiSelect).toBe(false)
+    expect(result.current.selectedIds.size).toBe(0)
+  })
+
   it('toggleSelectAll clears when everything is already selected', () => {
     const onBookmarkDelete = vi.fn()
     const { result } = renderHook(() =>

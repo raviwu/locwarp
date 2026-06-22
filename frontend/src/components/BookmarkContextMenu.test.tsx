@@ -123,4 +123,51 @@ describe('BookmarkContextMenu', () => {
     expect(onTeleport).toHaveBeenCalledWith(bm.lat, bm.lng);
     expect(onClose).toHaveBeenCalledTimes(1);
   });
+
+  it('shows the disabled disconnected row and hides teleport/navigate when deviceConnected=false', () => {
+    render(<BookmarkContextMenu {...makeProps({ deviceConnected: false })} />);
+    // The device-gated branch renders the disconnected notice instead of the
+    // teleport/navigate action rows.
+    expect(screen.getByText('map.device_disconnected')).toBeTruthy();
+    expect(screen.queryByText('map.teleport_here')).toBeNull();
+    expect(screen.queryByText('map.navigate_here')).toBeNull();
+  });
+
+  it('lists only the OTHER categories in the move-to submenu and fires onMoveToCategory on click', () => {
+    const onMoveToCategory = vi.fn();
+    const onClose = vi.fn();
+    // bm.category === 'Default'; the submenu filters that out, leaving 'Work'.
+    render(
+      <BookmarkContextMenu
+        {...makeProps({
+          categories: ['Default', 'Work'],
+          onMoveToCategory,
+          onClose,
+        })}
+      />,
+    );
+    // The current category must NOT appear as a move target...
+    expect(screen.queryByText('bm.move_to')).toBeTruthy();
+    // 'Default' is bm.category; the only move-to row in the submenu is 'Work'.
+    // (displayCat is identity, so the text is the raw category name.)
+    const workRow = screen.getByText('Work');
+    fireEvent.click(workRow);
+    expect(onMoveToCategory).toHaveBeenCalledWith(bm.id, 'Work');
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('hides the move-to submenu entirely when only the current category exists', () => {
+    render(<BookmarkContextMenu {...makeProps({ categories: ['Default'] })} />);
+    // categories.length <= 1 -> no "Move to" header at all.
+    expect(screen.queryByText('bm.move_to')).toBeNull();
+  });
+
+  it('fires onDelete(bm.id) and closes when Delete is clicked', () => {
+    const onDelete = vi.fn();
+    const onClose = vi.fn();
+    render(<BookmarkContextMenu {...makeProps({ onDelete, onClose })} />);
+    fireEvent.click(screen.getByText('generic.delete'));
+    expect(onDelete).toHaveBeenCalledWith(bm.id);
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
 });
