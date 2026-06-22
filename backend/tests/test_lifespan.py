@@ -63,6 +63,19 @@ async def test_lifespan_loads_state_after_helper_handshake(monkeypatch):
     async with lifespan(None):
         assert app_state.bookmark_manager is not None
         assert app_state.route_manager is not None
+        assert app_state.backup_service is not None
+        running = [
+            t for t in asyncio.all_tasks() if "_bookmark_backup_loop" in repr(t.get_coro())
+        ]
+        assert running, "backup loop task should be running inside the lifespan"
+
+    # After shutdown the backup loop must be cancelled, not leaked.
+    await asyncio.sleep(0)
+    leaked = [
+        t for t in asyncio.all_tasks()
+        if "_bookmark_backup_loop" in repr(t.get_coro()) and not t.done()
+    ]
+    assert not leaked, "backup loop task leaked past shutdown"
 
     assert migration_calls, "migrate_user_state should have been called"
 

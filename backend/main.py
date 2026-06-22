@@ -14,6 +14,7 @@ import asyncio
 import json
 import logging
 import os
+from datetime import datetime
 from contextlib import asynccontextmanager
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
@@ -22,6 +23,7 @@ import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+import config
 from config import API_HOST, API_PORT, DATA_DIR, SETTINGS_FILE, DEFAULT_LOCATION, CORS_ORIGINS, DEFAULT_CSP_MODE
 from core.device_manager import DeviceManager
 from infra.device.wifi_tunnel import WifiTunnelRegistry
@@ -131,6 +133,9 @@ class AppState:
         # from being adopted at startup.
         self.bookmark_manager: BookmarkManager | None = None
         self.route_manager: RouteManager | None = None
+        # Rotating local backup. Built in load_state (after the managers exist
+        # and the helper has chowned ~/.locwarp); driven by a lifespan task.
+        self.backup_service = None
         self.coord_formatter = CoordinateFormatter()
         self.reconnect_manager = None
         self._last_position = None
@@ -167,6 +172,20 @@ class AppState:
         # them. Offline + idempotent — a no-op once everything is filled.
         self.bookmark_manager.enrich_all()
         self.route_manager = make_route_manager()
+
+        # Rotating local backup: snapshots both managers' live state to
+        # ~/.locwarp/backups on a 5-min cadence (the loop is started in the
+        # lifespan). The provider reads each store consistently (bookmark under
+        # its _store_lock) and is independent of where the live files reside.
+        from bootstrap.factories import make_backup_service
+
+        def _backup_provider():
+            return (
+                self.bookmark_manager.snapshot_export(),
+                self.route_manager.snapshot_export(),
+            )
+
+        self.backup_service = make_backup_service(_backup_provider)
 
     def _reload_sync_folder(self) -> None:
         """Re-read sync_folder + cloud_sync_dismissed from settings.json.
@@ -764,11 +783,27 @@ async def _usbmux_presence_watchdog():
             logger.exception("usbmux watchdog iteration crashed; continuing")
 
 
+async def _bookmark_backup_loop(service, *, interval_s, sleep=asyncio.sleep, now_provider=datetime.now):
+    """Periodic rotating-backup tick. Ticks immediately for an instant baseline,
+    then every interval_s. Mirrors _usbmux_presence_watchdog: re-raise
+    CancelledError (clean shutdown) but swallow + log any other error so one bad
+    tick never kills the loop."""
+    while True:
+        try:
+            service.tick(now_provider())
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("backup tick failed")
+        await sleep(interval_s)
+
+
 @asynccontextmanager
 async def lifespan(application: FastAPI):
     import asyncio
     # ── Ensure data directory exists (moved here from config.py import time) ──
     DATA_DIR.mkdir(parents=True, exist_ok=True)
+    config.BACKUP_DIR.mkdir(parents=True, exist_ok=True)
 
     # ── Helper handshake + state migration ──
     # The helper split applies ONLY to macOS packaged builds. The helper
@@ -851,6 +886,12 @@ async def lifespan(application: FastAPI):
 
     watchdog_task = asyncio.create_task(_usbmux_presence_watchdog())
 
+    backup_task = None
+    if app_state.backup_service is not None:
+        backup_task = asyncio.create_task(
+            _bookmark_backup_loop(app_state.backup_service, interval_s=config.BACKUP_INTERVAL_S)
+        )
+
     # Start bookmark file watcher so external changes (iCloud sync from
     # another device) are picked up and broadcast to all WebSocket clients.
     loop = asyncio.get_running_loop()
@@ -904,6 +945,13 @@ async def lifespan(application: FastAPI):
         await watchdog_task
     except (asyncio.CancelledError, Exception):
         pass
+
+    if backup_task is not None:
+        backup_task.cancel()
+        try:
+            await backup_task
+        except (asyncio.CancelledError, Exception):
+            pass
 
     try:
         app_state.save_settings()
