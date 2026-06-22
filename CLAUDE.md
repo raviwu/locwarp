@@ -103,10 +103,13 @@ Design: `docs/superpowers/specs/2026-06-22-bookmark-route-rotating-backup-design
   `infra/persistence/backup_store.py` (atomic I/O via `json_safe`) ← `services/backup_service.py`
   (`tick`) ← wired at `bootstrap/factories.make_backup_service` + `main.py` lifespan. No new
   import-linter contract.
-- **Restore** uses existing tooling: the snapshot's `.bookmarks` / `.routes` objects are each
-  directly re-importable — `make merge-bookmarks` / `make merge-routes` (`backend/merge_backup.py`).
-  The manual `make backup` (`scripts/desktop_backup.py`) writes the identical format/dir and stays
-  a compatible on-demand tool; no launchd agent is installed.
+- **Restore:** `make restore-backup` restores BOTH stores from a combined snapshot (default
+  `~/.locwarp/backups/locwarp-latest-backup.json`; `merge_backup.py` auto-detects the combined
+  `{_backup_meta, bookmarks, routes}` shape and folds each sub-store via `merge_stores`). Bare
+  per-store files still restore via `make merge-bookmarks` / `make merge-routes`. (Feeding the
+  combined file straight to `merge-bookmarks` used to raise a ValidationError — `restore_combined_snapshot`
+  fixes that.) The manual `make backup` (`scripts/desktop_backup.py`) writes the identical
+  format/dir and stays a compatible on-demand tool; no launchd agent is installed.
 - **Test isolation:** `config.BACKUP_DIR` is redirected to a tmp dir by the autouse
   `conftest._isolate_real_data_paths` guard — extend that guard for any new `~/.locwarp` path.
 

@@ -79,7 +79,9 @@ Design: `docs/superpowers/specs/2026-06-22-bookmark-route-rotating-backup-design
 - Rings: `domain/backup.py` + `domain/ports/backup_repository.py` ←
   `infra/persistence/backup_store.py` (atomic via `json_safe`) ← `services/backup_service.py` ←
   `bootstrap/factories.make_backup_service` + `main.py` lifespan. No new import-linter contract.
-- **Restore** via existing `make merge-bookmarks` / `make merge-routes` (`backend/merge_backup.py`);
+- **Restore:** `make restore-backup` restores BOTH stores from a combined snapshot
+  (`merge_backup.py` auto-detects the `{_backup_meta, bookmarks, routes}` shape via
+  `restore_combined_snapshot`); per-store files via `make merge-bookmarks` / `make merge-routes`.
   `make backup` (`scripts/desktop_backup.py`) writes the same format and stays a manual tool.
 - **Test isolation:** `config.BACKUP_DIR` is redirected to tmp by the autouse
   `conftest._isolate_real_data_paths` guard.

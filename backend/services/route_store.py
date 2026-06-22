@@ -217,12 +217,19 @@ class RouteManager:
         return sorted(self.store.categories, key=lambda c: c.sort_order)
 
     def snapshot_export(self) -> dict:
-        """{categories, routes} for the rotating backup task. No lock needed:
-        the route watcher reassigns self.store atomically (GIL) and never writes,
-        so iterating the current lists yields a consistent snapshot."""
+        """{categories, routes} for the rotating backup task. No lock, but bind
+        self.store to a local FIRST so both lists come from the SAME store object.
+        The watcher reassigns self.store atomically (GIL) and merge_stores returns
+        a fresh store (it never mutates the bound one), and CRUD runs on the
+        event-loop thread alongside the synchronous backup tick — so a single
+        bound reference cannot capture a mixed pre/post-merge (torn) read."""
+        store = self.store
         return {
-            "categories": [c.model_dump(mode="json") for c in self.list_categories()],
-            "routes": [r.model_dump(mode="json") for r in self.list_routes()],
+            "categories": [
+                c.model_dump(mode="json")
+                for c in sorted(store.categories, key=lambda c: c.sort_order)
+            ],
+            "routes": [r.model_dump(mode="json") for r in store.routes],
         }
 
     def create_category(self, name: str, color: str = "#6c8cff") -> RouteCategory:

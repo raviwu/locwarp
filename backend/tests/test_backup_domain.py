@@ -3,12 +3,20 @@ from datetime import datetime, timedelta
 from domain import backup
 
 
-def test_fingerprint_ignores_meta_and_detects_data_change():
-    a = {"bookmarks": [{"id": "x"}]}
+def test_fingerprint_stable_orderinsensitive_and_detects_change():
+    a = {"categories": [{"id": "c1"}], "bookmarks": [{"id": "x"}]}
     r = {"routes": []}
-    assert backup.data_fingerprint(a, r) == backup.data_fingerprint(dict(a), dict(r))
+    # Stable across two independent but equal inputs.
+    assert backup.data_fingerprint(a, r) == backup.data_fingerprint(
+        {"categories": [{"id": "c1"}], "bookmarks": [{"id": "x"}]}, {"routes": []}
+    )
+    # Key order must not matter (sort_keys) — else identical data churns snapshots.
+    assert backup.data_fingerprint(
+        {"bookmarks": [{"id": "x"}], "categories": [{"id": "c1"}]}, r
+    ) == backup.data_fingerprint(a, r)
+    # A real data change is detected.
     assert backup.data_fingerprint(a, r) != backup.data_fingerprint(
-        {"bookmarks": [{"id": "y"}]}, r
+        {"categories": [{"id": "c1"}], "bookmarks": [{"id": "y"}]}, r
     )
 
 

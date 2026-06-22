@@ -81,3 +81,20 @@ def test_routes_only_change_still_archives():
     s = _svc(r, {"categories": [], "bookmarks": []}, {"categories": [], "routes": [{"id": "r1"}]})
     res = s.tick(datetime(2026, 6, 22, 12, 0, 0))
     assert res.changed and res.route_count == 1 and len(r.snaps) == 1
+
+
+def test_meta_change_alone_does_not_trigger_new_snapshot():
+    """The change check must compare DATA only (it reads prev['bookmarks']/
+    prev['routes'], not the whole payload): identical bookmarks/routes but a
+    different captured_at must NOT archive a redundant snapshot. This is the
+    real meta-exclusion guarantee the change detection provides."""
+    r = FakeRepo()
+    bms = {"categories": [], "bookmarks": [{"id": "a"}]}
+    rts = {"categories": [], "routes": []}
+    s = BackupService(r, lambda: (bms, rts), 72)
+    s.tick(datetime(2026, 6, 22, 12, 0, 0))  # latest now carries captured_at #1
+    assert len(r.snaps) == 1
+    # Same data, different time → latest's _backup_meta.captured_at differs, but
+    # data is unchanged, so no new timestamped snapshot.
+    s.tick(datetime(2026, 6, 22, 18, 30, 0))
+    assert len(r.snaps) == 1

@@ -1,7 +1,7 @@
 # LocWarp dev / build / install shortcuts.
 # Run `make help` for the list.
 
-.PHONY: help start dev kill install build build-install push push-build backup merge-bookmarks merge-routes
+.PHONY: help start dev kill install build build-install push push-build backup merge-bookmarks merge-routes restore-backup
 
 # Backup JSON to fold into the live store. Each merge target has its own
 # default file; override either with FILE= on the command line:
@@ -45,4 +45,8 @@ merge-bookmarks: ## Safely merge a bookmarks backup into the live store (default
 
 merge-routes: ## Safely merge a routes backup into the live store (default ~/Desktop/locwarp-route.json; DRY_RUN=1, FORCE=1)
 	@cd backend && .venv/bin/python merge_backup.py "$(or $(FILE),$(HOME)/Desktop/locwarp-route.json)" \
+		$(if $(DRY_RUN),--dry-run,) $(if $(FORCE),--force-restore,)
+
+restore-backup: ## Restore BOTH bookmarks + routes from a combined rotating snapshot (default ~/.locwarp/backups/locwarp-latest-backup.json; DRY_RUN=1, FORCE=1)
+	@cd backend && .venv/bin/python merge_backup.py "$(or $(FILE),$(HOME)/.locwarp/backups/locwarp-latest-backup.json)" \
 		$(if $(DRY_RUN),--dry-run,) $(if $(FORCE),--force-restore,)

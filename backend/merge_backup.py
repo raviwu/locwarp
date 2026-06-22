@@ -21,6 +21,7 @@ Why it is safe:
     tombstone and re-suppress the item on the next sync.
 
 Usage (via the Makefile):
+    make restore-backup                         # ~/.locwarp/backups/locwarp-latest-backup.json (BOTH stores)
     make merge-bookmarks                        # ~/Desktop/locwarp-bookmark.json
     make merge-routes                           # ~/Desktop/locwarp-route.json
     make merge-bookmarks FILE=~/Desktop/x.json
@@ -84,7 +85,23 @@ def merge_backup_into_live(
         raise ValueError(f"Backup file is missing or not valid JSON: {backup_path}")
     store_cls = detect_store_cls(raw)
     backup = store_cls(**raw)
+    return _merge_store_into_live(
+        backup, store_cls, live_path,
+        force_restore=force_restore, dry_run=dry_run, backup_path=backup_path,
+    )
 
+
+def _merge_store_into_live(
+    backup,
+    store_cls,
+    live_path: Path,
+    *,
+    force_restore: bool = False,
+    dry_run: bool = False,
+    backup_path: Path | None = None,
+) -> dict:
+    """Merge an already-parsed *backup* store object into the live store at
+    *live_path*. Shared by the per-store and combined-snapshot restore paths."""
     live_raw = safe_load_json(live_path)
     if isinstance(live_raw, dict):
         try:
@@ -112,7 +129,7 @@ def merge_backup_into_live(
 
     summary = {
         "store_type": "bookmarks" if store_cls is BookmarkStore else "routes",
-        "backup_path": str(backup_path),
+        "backup_path": str(backup_path) if backup_path is not None else None,
         "live_path": str(live_path),
         "items_before": before,
         "items_after": after,
@@ -141,6 +158,48 @@ def merge_backup_into_live(
     return summary
 
 
+def is_combined_snapshot(raw) -> bool:
+    """True for a combined rotating-backup snapshot — the shape written by the
+    in-process backup task / desktop_backup.py: ``{_backup_meta, bookmarks: {...},
+    routes: {...}}`` where the nested values are dicts. A bare per-store file's
+    top-level ``bookmarks``/``routes`` is a LIST, so this stays False for those."""
+    return (
+        isinstance(raw, dict)
+        and "_backup_meta" in raw
+        and isinstance(raw.get("bookmarks"), dict)
+        and isinstance(raw.get("routes"), dict)
+    )
+
+
+def restore_combined_snapshot(
+    raw: dict,
+    bookmarks_live: Path,
+    routes_live: Path,
+    *,
+    force_restore: bool = False,
+    dry_run: bool = False,
+) -> dict:
+    """Restore BOTH stores from a combined snapshot in one pass: extract the
+    nested {categories, bookmarks} and {categories, routes} sub-stores and merge
+    each into its live path. Returns ``{'bookmarks': summary, 'routes': summary}``.
+
+    This is what makes the auto-produced combined snapshot files actually
+    restorable — feeding the whole combined file to the per-store path would
+    raise (the nested dict is not a list of items)."""
+    bm = BookmarkStore(**raw["bookmarks"])
+    rt = RouteStore(**raw["routes"])
+    return {
+        "bookmarks": _merge_store_into_live(
+            bm, BookmarkStore, Path(bookmarks_live),
+            force_restore=force_restore, dry_run=dry_run,
+        ),
+        "routes": _merge_store_into_live(
+            rt, RouteStore, Path(routes_live),
+            force_restore=force_restore, dry_run=dry_run,
+        ),
+    }
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Merge a backup store JSON into the live LocWarp store.",
@@ -165,6 +224,27 @@ def main(argv: list[str] | None = None) -> int:
     if not isinstance(raw, dict):
         print(f"error: backup file is not valid JSON: {backup_path}", file=sys.stderr)
         return 1
+
+    # Combined rotating-backup snapshot → restore BOTH stores in one pass.
+    if is_combined_snapshot(raw):
+        combined = restore_combined_snapshot(
+            raw, Path(get_bookmarks_path()), Path(get_routes_path()),
+            force_restore=args.force_restore, dry_run=args.dry_run,
+        )
+        for key in ("bookmarks", "routes"):
+            s = combined[key]
+            print(f"Store type:    {s['store_type']}")
+            print(f"Live store:    {s['live_path']}")
+            print(f"Items:         {s['items_before']} → {s['items_after']} "
+                  f"(+{s['items_restored']} restored)")
+            if s["tombstone_suppressed"]:
+                print(f"  Suppressed by tombstones (NOT restored): "
+                      f"{len(s['tombstone_suppressed'])} — re-run with FORCE=1")
+            if not s["dry_run"] and s["backup_copy"]:
+                print(f"  Live store backed up to: {s['backup_copy']}")
+        print("DRY RUN — nothing written." if args.dry_run else "Combined restore complete.")
+        return 0
+
     try:
         store_cls = detect_store_cls(raw)
     except ValueError as exc:
