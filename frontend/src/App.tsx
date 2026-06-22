@@ -8,11 +8,13 @@ import { useBookmarks } from './hooks/useBookmarks'
 import { useExternalChangeSubscriptions } from './hooks/useExternalChangeSubscriptions'
 import { useGoldDittoSubscription } from './hooks/useGoldDittoSubscription'
 import { useServices } from './contexts/ServicesContext'
+import { useToast } from './hooks/useToast'
 import UserAvatarPicker from './components/UserAvatarPicker'
 import { UserAvatar, avatarToHtml, loadAvatar, saveAvatar, loadCustomPng, saveCustomPng } from './userAvatars'
 import * as api from './services/api'
 import { parseCoord } from './utils/coords'
 import { isSubmitEnter } from './utils/keyboard'
+import { toastForFanout } from './utils/toast'
 
 import MapView from './components/MapView'
 import ControlPanel from './components/ControlPanel'
@@ -22,31 +24,10 @@ import EtaBar from './components/EtaBar'
 import PauseControl from './components/PauseControl'
 import StatusBar from './components/StatusBar'
 import { DeviceChipRow } from './components/DeviceChipRow'
-import type { FanoutOutcome } from './hooks/useSimulation'
 import {
   CloudSyncBusyProvider, useCloudSyncBusy, useCloudSyncAfter,
 } from './contexts/CloudSyncBusyContext'
 import { CloudSyncBusyOverlay } from './components/CloudSyncBusyOverlay'
-
-// Summarise a group fan-out result into a single toast string.
-// Call from action handlers: showToast(toastForFanout(t, 'teleport', outcome, connectedDevices))
-export function toastForFanout<T>(
-  t: (k: any, v?: Record<string, string | number>) => string,
-  action: string,
-  outcome: FanoutOutcome<T>,
-  devices: { udid: string }[],
-): string {
-  const total = outcome.ok.length + outcome.failed.length
-  if (total === 0) return action
-  if (outcome.failed.length === 0) return t('group.action_all_success', { action })
-  if (outcome.ok.length === 0) return t('group.action_all_failed', { action })
-  const statusFor = (udid: string) =>
-    outcome.ok.some((o) => o.udid === udid) ? 'OK'
-      : outcome.failed.find((f) => f.udid === udid)?.reason ?? 'error'
-  const letters = ['A', 'B', 'C']
-  const parts = devices.slice(0, 3).map((d, i) => `${letters[i]} ${statusFor(d.udid)}`)
-  return `${action}: ${parts.join(', ')}`
-}
 
 import { SimMode, MoveMode } from './hooks/useSimulation'
 
@@ -83,14 +64,17 @@ const App: React.FC = () => {
   const t = useT()
   useCloudSyncDiscovery()
   const { ws: router, sendMessage, connected } = useServices()
+  // Toast lives near the top so `showToast` is a stable reference BEFORE
+  // useSimulation runs — its 3rd-arg callback (WiFi tunnel-recovered toast)
+  // captures showToast, so it must already be declared here. No forward
+  // reference to a later declaration.
+  const { toastMsg, showToast, setToastMsg } = useToast()
   const device = useDevice(router)
   // Pass primary-device udid into useSimulation so its legacy single-device
   // setters only react to the primary's WS events in dual-device mode,
   // stopping the map marker from ping-ponging between both devices'
   // independently-jittered positions.
-  // 3rd arg: positive "WiFi tunnel restored" toast on recovery. showToast is
-  // declared below; the closure only reads it when a tunnel_recovered event
-  // fires (post-mount), so the TDZ binding is resolved by then.
+  // 3rd arg: positive "WiFi tunnel restored" toast on recovery.
   const sim = useSimulation(
     router,
     device.primaryDevice?.udid,
@@ -146,7 +130,6 @@ const App: React.FC = () => {
     setShowBookmarkPinsRaw(v)
     try { localStorage.setItem('locwarp.show_bookmark_pins', v ? '1' : '0') } catch { /* ignore */ }
   }
-  const [toastMsg, setToastMsg] = useState<string | null>(null)
   // Gold Ditto (拉金盆) shared state. externalA receives a "lat, lng" coord
   // pushed in by the map right-click handler so the panel's A-input updates
   // without the user having to copy. We wrap the coord in an object so that
@@ -193,23 +176,6 @@ const App: React.FC = () => {
   // to suppress redundant lookups when jitter nudges the coordinate but the
   // user hasn't actually moved.
   const lastLookedUpPosRef = useRef<{ lat: number; lng: number } | null>(null)
-
-  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const showToast = useCallback((msg: string, ms = 3000) => {
-    // Cancel any previous auto-clear timer so the newest toast always
-    // gets its full duration. Otherwise an earlier toast (e.g. teleport,
-    // 2s) would fire its clear timer mid-way through a later toast
-    // (e.g. timezone, 6s) and blank it out after only a fraction.
-    if (toastTimerRef.current !== null) {
-      clearTimeout(toastTimerRef.current)
-      toastTimerRef.current = null
-    }
-    setToastMsg(msg)
-    toastTimerRef.current = setTimeout(() => {
-      setToastMsg(null)
-      toastTimerRef.current = null
-    }, ms)
-  }, [])
 
   // Auto-refresh bookmarks / routes when the backend signals an external
   // change (cloud-sync watchdog picked up a file written by another device).
