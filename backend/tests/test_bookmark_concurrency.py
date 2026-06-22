@@ -183,50 +183,45 @@ def test_watcher_handler_triggers_on_moved_to_target(tmp_path, monkeypatch):
     rename it into place. The resulting watchdog event is a FileMovedEvent
     whose src_path is the temp name and dest_path is the real file. The
     handler must recognise this as a write to our target.
+
+    Capture strategy: monkeypatch ``services.bookmarks._watcher_schedule`` to
+    intercept the REAL nested ``_Handler`` instance that ``start_watcher``
+    passes to it — no re-implementation.  If the handler logic relocates away
+    from ``start_watcher`` the capture will be None and the assertion fails,
+    which is exactly the signal we want.
     """
     _patch_paths(tmp_path, monkeypatch)
     bookmarks = tmp_path / "bookmarks.json"
     mgr = BookmarkManager()
     mgr.create_bookmark(name="local", lat=1.0, lng=1.0)
 
-    # Sanity: handler factory available only after start_watcher; we
-    # don't actually start a real Observer here. Construct the handler
-    # by exercising the watcher code path via _schedule_reconcile.
-    # The bug under test was that on_moved aliased on_modified and
-    # ignored dest_path. We verify by directly simulating the event
-    # against the inner _Handler class.
-    from unittest.mock import MagicMock
+    from unittest.mock import MagicMock, sentinel
 
+    # Capture the real handler that start_watcher passes to _watcher_schedule.
+    captured = []
+
+    def _fake_schedule(handler, parent):
+        captured.append(handler)
+        return sentinel.watch  # dummy ObservedWatch — unschedule is also patched
+
+    monkeypatch.setattr("services.bookmarks._watcher_schedule", _fake_schedule)
+    monkeypatch.setattr("services.bookmarks._watcher_unschedule", lambda w: None)
+
+    # Patch _schedule_reconcile BEFORE start_watcher so the captured handler
+    # already holds the patched manager method.
     fired = []
     monkeypatch.setattr(mgr, "_schedule_reconcile", lambda: fired.append(True))
 
-    # Replicate the inner handler exactly as start_watcher would build it.
-    from watchdog.events import FileSystemEventHandler
+    mgr.start_watcher(on_change=lambda: None)
 
-    class _Handler(FileSystemEventHandler):
-        def on_modified(self, event):
-            if event.is_directory:
-                return
-            if Path(event.src_path) != mgr._bookmarks_path():
-                return
-            mgr._schedule_reconcile()
+    assert captured, "start_watcher never called _watcher_schedule"
+    real_handler = captured[0]
 
-        on_created = on_modified
-
-        def on_moved(self, event):
-            if event.is_directory:
-                return
-            bm = mgr._bookmarks_path()
-            if Path(event.src_path) != bm and Path(getattr(event, "dest_path", "")) != bm:
-                return
-            mgr._schedule_reconcile()
-
-    h = _Handler()
     fake_event = MagicMock()
     fake_event.is_directory = False
     fake_event.src_path = str(tmp_path / ".bookmarks.tmp-abc")
     fake_event.dest_path = str(bookmarks)
-    h.on_moved(fake_event)
+    real_handler.on_moved(fake_event)
     assert fired == [True]
 
 
