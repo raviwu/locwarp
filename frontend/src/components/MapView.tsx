@@ -4,6 +4,7 @@ import { useServices } from '../contexts/ServicesContext';
 import L from 'leaflet';
 import { useMapInstance } from '../hooks/useMapInstance';
 import { useBaseLayers } from '../hooks/useBaseLayers';
+import { useRoutePolylineLayer } from '../hooks/useRoutePolylineLayer';
 import { cellsInBounds, approxCellSizeMeters } from '../services/s2grid';
 import type { S2CellPolygon } from '../services/s2grid';
 import { parseCoord } from '../utils/coords';
@@ -341,9 +342,9 @@ const MapView: React.FC<MapViewProps> = ({
   const previewMarkerRef = useRef<L.Marker | null>(null);
   const waypointMarkersRef = useRef<L.Marker[]>([]);
   const bookmarkMarkersRef = useRef<L.Marker[]>([]);
-  const polylineRef = useRef<L.Polyline | null>(null);
-  // Second polyline layered on top for the flowing-arrow animation (design 6).
-  const polylineArrowRef = useRef<L.Polyline | null>(null);
+  // The route polyline (base line + flowing-arrow dash overlay) + its two refs
+  // are owned by useRoutePolylineLayer now (task p4b2bi); called below after
+  // useMapInstance / useBaseLayers.
   // The 4 custom leaflet-bar buttons (recenter → follow → library → S2-grid)
   // are mounted as real Leaflet controls (not absolutely-positioned React JSX)
   // so Leaflet's own .leaflet-top .leaflet-left layout pins them to the same x
@@ -634,6 +635,12 @@ const MapView: React.FC<MapViewProps> = ({
   // the map, so the documented init ORDER (control corners → leaflet-bar
   // button stack above → base layers here) is preserved.
   useBaseLayers(mapRef);
+
+  // Route polyline overlay (base line + flowing-arrow dash, `path.route-flow-dash`),
+  // extracted into its own mapRef-dependent hook (task p4b2bi). Called after
+  // useMapInstance / useBaseLayers so it runs on the already-created map. Owns
+  // the layer's two polyline refs internally.
+  useRoutePolylineLayer(mapRef, { routePath });
 
   // Update current position marker — move existing marker instead of recreating.
   // When currentPosition becomes null (e.g. after 一鍵還原) remove the marker.
@@ -948,46 +955,6 @@ const MapView: React.FC<MapViewProps> = ({
     map.on('zoomend', onZoom);
     return () => { map.off('zoomend', onZoom); };
   }, [bookmarkPins, showBookmarkPins, onTeleport]);
-
-  // Update route polyline
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map) return;
-
-    if (polylineRef.current) {
-      polylineRef.current.remove();
-      polylineRef.current = null;
-    }
-    if (polylineArrowRef.current) {
-      polylineArrowRef.current.remove();
-      polylineArrowRef.current = null;
-    }
-
-    if (routePath.length > 1) {
-      const latlngs: L.LatLngExpression[] = routePath.map((p) => [p.lat, p.lng]);
-      // Design 6 (chosen): flowing arrows. Base solid line + animated white
-      // dash overlay that flows from start to end so the user can tell the
-      // travel direction at a glance.
-      const base = L.polyline(latlngs, {
-        color: '#3a66c5',
-        weight: 7,
-        opacity: 0.9,
-        lineCap: 'round',
-        lineJoin: 'round',
-      }).addTo(map);
-      polylineRef.current = base;
-
-      const arrows = L.polyline(latlngs, {
-        color: '#ffffff',
-        weight: 3,
-        opacity: 0.95,
-        dashArray: '2 38',
-        lineCap: 'round',
-        className: 'route-flow-dash',
-      }).addTo(map);
-      polylineArrowRef.current = arrows;
-    }
-  }, [routePath]);
 
   // Update random walk radius circle
   useEffect(() => {
