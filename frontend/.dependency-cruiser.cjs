@@ -60,6 +60,20 @@ module.exports = {
       },
       to: { path: "^src/(services/api|adapters)" },
     },
+    {
+      // P4b-2a exit: MapView (+ the LeafletBarButton primitive) reaches the
+      // backend only via useServices().api / injected hooks, so it flips to
+      // ERROR. (Its per-layer hooks/popovers land in P4b-2b.)
+      name: "mapview-no-direct-api",
+      severity: "error",
+      comment:
+        "MapView + LeafletBarButton must reach the backend via useServices().api / injected hooks — never a direct services/api or adapters import.",
+      from: {
+        path: "^src/components/(MapView|LeafletBarButton)",
+        pathNot: TEST_FILES,
+      },
+      to: { path: "^src/(services/api|adapters)" },
+    },
   ],
   options: {
     doNotFollow: { path: "node_modules" },

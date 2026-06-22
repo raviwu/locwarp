@@ -1,6 +1,6 @@
 import React, { useRef, useEffect, useLayoutEffect, useState, useCallback, useMemo } from 'react';
 import { useT } from '../i18n';
-import { reverseGeocode, getInitialPosition } from '../services/api';
+import { useServices } from '../contexts/ServicesContext';
 import L from 'leaflet';
 import { useMapInstance } from '../hooks/useMapInstance';
 import { useBaseLayers } from '../hooks/useBaseLayers';
@@ -511,6 +511,7 @@ const MapView: React.FC<MapViewProps> = ({
   // through the callbacks here, which read the same *Ref mirrors the once-per-
   // mount handlers always did — so toggling a prop mid-session still takes
   // effect without re-creating the map.
+  const { api } = useServices();
   const { mapRef } = useMapInstance(mapContainerRef, {
     // Left-click: dismiss any open context menu / waypoint menu, then forward
     // to onMapClick (the "left-click to add waypoint" toggle). Identical to the
@@ -554,7 +555,7 @@ const MapView: React.FC<MapViewProps> = ({
     // Injected api — only getInitialPosition is read, for the persisted
     // initial-position pan on mount. Race-guarded by prevPositionRef so the
     // saved-position pan still loses to a real position_update that arrived.
-    api: { getInitialPosition },
+    api: { getInitialPosition: api.getInitialPosition },
     prevPositionRef,
   });
 
@@ -1865,7 +1866,7 @@ const MapView: React.FC<MapViewProps> = ({
               if (reverseGeo.address && reverseGeo.key === key) return;
               setReverseGeo({ loading: true, address: null, error: null, key });
               try {
-                const res = await reverseGeocode(contextMenu.lat, contextMenu.lng);
+                const res = await api.reverseGeocode(contextMenu.lat, contextMenu.lng);
                 const name = res?.display_name || res?.address || null;
                 if (name) {
                   setReverseGeo({ loading: false, address: name, error: null, key });
