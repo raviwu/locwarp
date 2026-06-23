@@ -93,3 +93,55 @@ async def test_no_helper_client_raises_runtimeerror():
     wt.set_helper_client(None)
     with pytest.raises(RuntimeError):
         await wt.open_tunnel_with_reconcile("open_usb_tunnel", "UDID-Z")
+
+
+# --- B' in-use guard: never tear down a healthy in-use connection on a WiFi -32003 ---
+
+@pytest.mark.asyncio
+async def test_wifi_open_refuses_when_udid_in_use_instead_of_closing():
+    from services.tunnel_helper_client import TunnelBusyError
+    fake = _FakeHelper(first_open_error_code=-32003)
+    wt.set_helper_client(fake)
+    wt.set_in_use_predicate(lambda udid: udid == "UDID-USB")
+    try:
+        with pytest.raises(TunnelBusyError):
+            await wt.open_tunnel_with_reconcile(
+                "open_wifi_tunnel", "UDID-USB", ip="1.2.3.4", port=49152)
+    finally:
+        wt.set_in_use_predicate(lambda _u: False)
+        wt.set_helper_client(None)
+    assert fake.close_calls == []            # the live tunnel was NOT torn down
+    assert len(fake.open_wifi_calls) == 1    # opened once (got -32003), did NOT retry
+
+
+@pytest.mark.asyncio
+async def test_wifi_open_still_self_heals_when_not_in_use():
+    fake = _FakeHelper(first_open_error_code=-32003)
+    wt.set_helper_client(fake)
+    wt.set_in_use_predicate(lambda _u: False)  # explicit: not in use
+    try:
+        info = await wt.open_tunnel_with_reconcile(
+            "open_wifi_tunnel", "UDID-STALE", ip="1.2.3.4", port=49152)
+    finally:
+        wt.set_in_use_predicate(lambda _u: False)
+        wt.set_helper_client(None)
+    assert fake.close_calls == ["UDID-STALE"]   # stale tunnel closed
+    assert len(fake.open_wifi_calls) == 2       # retried once
+    assert info["rsd_address"] == "fd00::2"
+
+
+@pytest.mark.asyncio
+async def test_usb_open_still_self_heals_even_when_in_use():
+    # Guard is WiFi-only: a USB open over a stale tunnel keeps self-healing even
+    # if the udid reads as in-use (USB is the preferred-transport takeover).
+    fake = _FakeHelper(first_open_error_code=-32003)
+    wt.set_helper_client(fake)
+    wt.set_in_use_predicate(lambda _u: True)
+    try:
+        info = await wt.open_tunnel_with_reconcile("open_usb_tunnel", "UDID-X")
+    finally:
+        wt.set_in_use_predicate(lambda _u: False)
+        wt.set_helper_client(None)
+    assert fake.close_calls == ["UDID-X"]
+    assert fake.open_usb_calls == 2
+    assert info["rsd_address"] == "fd00::1"

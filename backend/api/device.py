@@ -103,6 +103,7 @@ import asyncio
 import logging
 
 from core.wifi_tunnel import TunnelRunner
+from services.tunnel_helper_client import TunnelBusyError
 
 _tunnel_logger = logging.getLogger("wifi_tunnel")
 
@@ -1041,6 +1042,20 @@ async def wifi_tunnel_start(req: WifiTunnelStartRequest):
                 raise HTTPException(
                     status_code=500,
                     detail={"code": "tunnel_timeout", "message": "Tunnel 啟動逾時"},
+                ) from e
+            except TunnelBusyError as e:
+                # This udid already has a live connection on another transport
+                # (USB). The reconcile refused to tear it down — surface a clean
+                # 409 instead of churning other candidates into a misleading 500.
+                _tunnel_logger.info(
+                    "WiFi tunnel refused for udid=%s: already connected on another "
+                    "transport; not tearing it down",
+                    cand,
+                )
+                raise HTTPException(
+                    status_code=409,
+                    detail={"code": "tunnel_busy_other_transport",
+                            "message": "裝置已透過 USB 連線,請先中斷再切換 WiFi"},
                 ) from e
             except Exception as e:
                 last_error = e

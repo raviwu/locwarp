@@ -58,3 +58,20 @@ def _isolate_real_data_paths(tmp_path, monkeypatch):
         sr = sys.modules["services.route_store"]
         monkeypatch.setattr(sr, "ROUTES_FILE", rt, raising=False)
         monkeypatch.setattr(sr, "_CONFIG_DEFAULT_ROUTES_FILE", rt, raising=False)
+
+
+@pytest.fixture(autouse=True)
+def _reset_wifi_tunnel_globals():
+    """Reset core.wifi_tunnel module-level injection seams after each test.
+
+    ``_helper_client`` and ``_in_use_predicate`` are global singletons set via
+    set_helper_client / set_in_use_predicate. A test that injects one (e.g. a
+    leaked ``set_in_use_predicate(lambda: True)``) would otherwise poison
+    unrelated reconcile tests that rely on the always-False / None defaults.
+    Mirror the data-path guard above for these injected singletons.
+    """
+    yield
+    if "core.wifi_tunnel" in sys.modules:
+        wt = sys.modules["core.wifi_tunnel"]
+        wt.set_in_use_predicate(lambda _u: False)
+        wt.set_helper_client(None)

@@ -1075,6 +1075,18 @@ class DeviceManager:
         """Check whether a device is currently connected."""
         return udid in self._connections
 
+    def is_usb_connected(self, udid: str) -> bool:
+        """True iff udid is connected specifically over USB (not WiFi/Network).
+
+        Guards a WiFi-tunnel open from tearing down a live USB tunnel. Must be
+        transport-specific, NOT a plain is_connected: a WiFi device whose tunnel
+        is being auto-restarted is still in _connections (the disconnect in
+        infra/device/tunnel_restart runs AFTER the re-open), so a plain
+        is_connected here would wrongly refuse its self-heal close+retry.
+        """
+        conn = self._connections.get(udid)
+        return conn is not None and conn.connection_type == "USB"
+
     def get_connection_type(self, udid: str) -> str:
         """Return ``'USB'`` or ``'Network'`` for a connected device."""
         conn = self._connections.get(udid)

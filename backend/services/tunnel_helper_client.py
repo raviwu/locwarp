@@ -41,6 +41,17 @@ class HelperError(Exception):
         self.data = data
 
 
+class TunnelBusyError(Exception):
+    """A tunnel open was refused because the udid already has a healthy, in-use
+    connection on another transport — closing it (one-tunnel-per-udid helper)
+    would destroy a live connection, so we refuse instead of close+retry."""
+
+    def __init__(self, udid: str, message: str) -> None:
+        super().__init__(f"tunnel busy for {udid}: {message}")
+        self.udid = udid
+        self.message = message
+
+
 class TunnelHelperClient:
     def __init__(
         self,

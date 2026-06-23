@@ -832,8 +832,16 @@ async def lifespan(application: FastAPI):
             logger.error("tunnel helper did not become ready: %s", exc)
             raise SystemExit(1)
 
-        from core.wifi_tunnel import set_helper_client
+        from core.wifi_tunnel import set_helper_client, set_in_use_predicate
         set_helper_client(helper_client)
+        # Never let a WiFi-tunnel open tear down a healthy USB connection
+        # (core/wifi_tunnel.open_tunnel_with_reconcile refuses the destructive
+        # close+retry when this returns True). Transport-specific on purpose:
+        # is_usb_connected, NOT is_connected — a WiFi device whose tunnel is being
+        # auto-restarted is still connected (Network) and must keep self-healing.
+        # Default is always-False until wired here, so the prior close+retry is
+        # preserved if this line is ever absent.
+        set_in_use_predicate(app_state.device_manager.is_usb_connected)
 
         try:
             result = await asyncio.wait_for(

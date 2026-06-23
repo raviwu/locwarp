@@ -17,9 +17,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Optional
+from typing import Callable, Optional
 
-from services.tunnel_helper_client import TunnelHelperClient, HelperError
+from services.tunnel_helper_client import TunnelHelperClient, HelperError, TunnelBusyError
 
 logger = logging.getLogger("wifi_tunnel")
 
@@ -46,6 +46,26 @@ def set_helper_client(client: Optional[TunnelHelperClient]) -> None:
     _helper_client = client
 
 
+# Injected at the composition root: "is this udid connected on a transport that a
+# WiFi-tunnel open would destroy?" — i.e. connected via USB. Wired to
+# DeviceManager.is_usb_connected. Must be transport-specific, NOT a plain
+# is_connected: a WiFi device whose tunnel is being auto-restarted is still in
+# _connections (the disconnect in tunnel_restart runs AFTER the re-open), so a
+# plain is_connected would wrongly refuse its self-heal close+retry. Defaults to
+# always-False so absent injection preserves the prior close+retry behavior.
+_in_use_predicate: Callable[[str], bool] = lambda _udid: False
+
+
+def set_in_use_predicate(pred: Callable[[str], bool]) -> None:
+    """Inject the 'would a WiFi-open destroy a different-transport connection?' check.
+
+    Wired in main.py's lifespan to DeviceManager.is_usb_connected. Tests pass a
+    plain lambda; reset to always-False between cases.
+    """
+    global _in_use_predicate
+    _in_use_predicate = pred
+
+
 async def open_tunnel_with_reconcile(method: str, udid: str, **kwargs) -> dict:
     """Open a helper tunnel, self-healing a stale "tunnel already exists"
     (-32003). The elevated helper persists its tunnels across backend restarts
@@ -65,6 +85,17 @@ async def open_tunnel_with_reconcile(method: str, udid: str, **kwargs) -> dict:
     except HelperError as exc:
         if getattr(exc, "code", None) != -32003:
             raise
+        # Never tear down a healthy in-use connection just to open a WiFi tunnel
+        # over it. The helper is one-tunnel-per-udid, so close+retry would destroy
+        # a live USB connection; if the WiFi open then failed the device would be
+        # left with NO tunnel (DVT "No route to host" -> ~27s reconnect). Only a
+        # GENUINELY stale tunnel (not in use) is auto-healed. Guard is WiFi-only:
+        # a USB open is the preferred-transport takeover and stays close+retry.
+        if method == "open_wifi_tunnel" and _in_use_predicate(udid):
+            raise TunnelBusyError(
+                udid,
+                "device is connected on another transport; disconnect to switch",
+            ) from exc
         logger.info(
             "Helper already holds a tunnel for %s (-32003); closing the stale "
             "tunnel and retrying %s once",
