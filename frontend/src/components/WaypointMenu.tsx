@@ -1,5 +1,10 @@
 import React from 'react';
 import { useT } from '../i18n';
+import {
+  contextMenuItemStyle,
+  highlightItem,
+  unhighlightItem,
+} from '../utils/contextMenuStyle';
 
 interface WaypointMenuProps {
   // Whether the menu is shown. The wpMenu state (visible/x/y/index/isStart)
@@ -134,25 +139,3 @@ export const WaypointMenu: React.FC<WaypointMenuProps> = ({
     </div>
   );
 };
-
-// Local copies of MapView's context-menu item style + hover helpers. These stay
-// duplicated (not exported/shared) so this component is self-contained and the
-// markup is byte-for-byte identical to the original inline JSX; MapView keeps
-// its own copies for the other inline menus.
-const contextMenuItemStyle: React.CSSProperties = {
-  padding: '8px 16px',
-  cursor: 'pointer',
-  color: '#e0e0e0',
-  fontSize: 13,
-  display: 'flex',
-  alignItems: 'center',
-  transition: 'background 0.15s',
-};
-
-function highlightItem(e: React.MouseEvent<HTMLDivElement>) {
-  (e.currentTarget as HTMLDivElement).style.background = '#3a3a3e';
-}
-
-function unhighlightItem(e: React.MouseEvent<HTMLDivElement>) {
-  (e.currentTarget as HTMLDivElement).style.background = 'transparent';
-}

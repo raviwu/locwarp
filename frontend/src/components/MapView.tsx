@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useLayoutEffect, useState, useCallback, useMemo } from 'react';
+import React, { useRef, useEffect, useState, useCallback, useMemo } from 'react';
 import { useT } from '../i18n';
 import { useServices } from '../contexts/ServicesContext';
 import L from 'leaflet';
@@ -14,6 +14,7 @@ import { useBookmarkMarkersLayer } from '../hooks/useBookmarkMarkersLayer';
 import { useS2Grid } from '../hooks/useS2Grid';
 import { S2LevelPicker } from './S2LevelPicker';
 import { WaypointMenu } from './WaypointMenu';
+import MapContextMenu from './MapContextMenu';
 import { CoordInputStrip } from './CoordInputStrip';
 import { RecentPlacesPopover } from './RecentPlacesPopover';
 import { useLeafletBarButton } from './LeafletBarButton';
@@ -419,6 +420,11 @@ const MapView: React.FC<MapViewProps> = ({
   // (the menu JSX itself stays here). bookmarkByCoord is passed in (MapView also
   // reads it for the context-menu match).
 
+  // Right-click context-menu OPEN-STATE only. The menu JSX (incl. the viewport-
+  // clamp layout-effect + the reverse-geocode state/stale-guard) moved into
+  // <MapContextMenu> (task p4b2bii); MapView renders it conditionally with a
+  // per-open key so each open is a FRESH MOUNT and the stale-guard reduces to a
+  // mountedRef inside the component.
   const [contextMenu, setContextMenu] = useState<ContextMenuState>({
     visible: false,
     x: 0,
@@ -426,44 +432,30 @@ const MapView: React.FC<MapViewProps> = ({
     lat: 0,
     lng: 0,
   });
-  // DOM ref + clamped position state. Separate states for "click point" and
-  // "where the menu is actually painted" — the paint position is set ONCE
-  // per open via useLayoutEffect after measuring the real rendered size.
-  // Critical: the layout effect's deps do NOT include contextMenuPos itself,
-  // otherwise the setState triggers the effect again and we get an infinite
-  // reposition loop (that was v0.2.38's bug).
-  const contextMenuElRef = useRef<HTMLDivElement | null>(null);
-  const [contextMenuPos, setContextMenuPos] = useState<{ left: number; top: number } | null>(null);
-  useLayoutEffect(() => {
-    if (!contextMenu.visible) {
-      if (contextMenuPos !== null) setContextMenuPos(null);
-      return;
-    }
-    const el = contextMenuElRef.current;
-    if (!el) return;
-    const { width, height } = el.getBoundingClientRect();
-    const margin = 8;
-    const vw = window.innerWidth;
-    const vh = window.innerHeight;
-    // Clamp: prefer opening rightward / downward, but if that overflows,
-    // push the menu back in so it never clips the viewport edge.
-    const left = Math.max(margin, Math.min(contextMenu.x, vw - width - margin));
-    const top  = Math.max(margin, Math.min(contextMenu.y, vh - height - margin));
-    setContextMenuPos({ left, top });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [contextMenu.visible, contextMenu.x, contextMenu.y]);
-
-  // Reverse-geocode state for the context menu header row. Reset whenever
-  // the menu closes or the right-click target changes, so a stale address
-  // from a previous click never leaks into a new lookup.
-  const [reverseGeo, setReverseGeo] = useState<{
-    loading: boolean; address: string | null; error: string | null;
-    key: string; // lat|lng the result belongs to
-  }>({ loading: false, address: null, error: null, key: '' });
 
   const closeContextMenu = useCallback(() => {
     setContextMenu((prev) => ({ ...prev, visible: false }));
-    setReverseGeo({ loading: false, address: null, error: null, key: '' });
+  }, []);
+
+  // Copy the right-clicked coord to the clipboard (with the legacy execCommand
+  // fallback) + toast. Wrapped here so <MapContextMenu> stays clipboard-free and
+  // fires it through the onCopy prop. Behavior is identical to the original
+  // inline handler — same string format, same fallback, same toast key.
+  const copyContextCoords = useCallback((lat: number, lng: number) => {
+    const txt = `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+    (async () => {
+      try {
+        await navigator.clipboard.writeText(txt);
+      } catch {
+        const ta = document.createElement('textarea');
+        ta.value = txt;
+        document.body.appendChild(ta);
+        ta.select();
+        try { document.execCommand('copy'); } catch { /* ignore */ }
+        document.body.removeChild(ta);
+      }
+      if (onShowToastRef.current) onShowToastRef.current(tRef.current('map.coords_copied'));
+    })();
   }, []);
 
   // Map lifecycle (creation + control-corner offsets + map-level events +
@@ -850,267 +842,36 @@ const MapView: React.FC<MapViewProps> = ({
         }}
       />
 
+      {/* Map right-click context menu — JSX extracted to <MapContextMenu>
+          (task p4b2bii); only the open-state (contextMenu) stays lifted here.
+          Rendered CONDITIONALLY with a per-open key so each open is a fresh
+          mount: that reduces the reverse-geocode stale-guard to a mountedRef
+          inside the component (a late address after close/reopen is dropped),
+          and gives the viewport-clamp layout-effect a clean per-open run. The
+          reverseGeocode gateway is injected via prop (api.reverseGeocode) so
+          MapView + the menu stay free of a direct services/api import. */}
       {contextMenu.visible && (
-        <div
-          ref={contextMenuElRef}
-          className="context-menu anim-scale-in-tl"
-          style={{
-            position: 'fixed',
-            // First paint renders at the click point but invisible; the
-            // layout-effect below measures the actual rendered size and
-            // clamps left/top into the viewport, then flips visibility on.
-            // Because the layout effect runs synchronously before the
-            // browser paints, the user never sees the unclamped position.
-            left: contextMenuPos ? contextMenuPos.left : contextMenu.x,
-            top: contextMenuPos ? contextMenuPos.top : contextMenu.y,
-            visibility: contextMenuPos ? 'visible' : 'hidden',
-            zIndex: 1000,
-            background: 'rgba(26, 29, 39, 0.95)',
-            backdropFilter: 'blur(10px)',
-            WebkitBackdropFilter: 'blur(10px)',
-            border: '1px solid rgba(108, 140, 255, 0.18)',
-            borderRadius: 10,
-            padding: '4px 0',
-            boxShadow: '0 10px 32px rgba(12, 18, 40, 0.55), 0 0 0 1px rgba(255, 255, 255, 0.04) inset',
-            minWidth: 180,
-            maxWidth: 'calc(100vw - 16px)',
-            maxHeight: 'calc(100vh - 16px)',
-            overflow: 'auto',
-          }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          {/* 1. Coordinates label — always visible at the top of the menu.
-                Not clickable; shows the exact lat/lng of the right-click
-                target directly instead of making the user click through. */}
-          <div
-            className="context-menu-item"
-            style={{
-              padding: '8px 16px 6px',
-              color: '#9ac0ff',
-              fontSize: 12,
-              fontFamily: 'monospace',
-              display: 'flex',
-              alignItems: 'center',
-              cursor: 'pointer',
-              gap: 4,
-            }}
-            title={t('map.whats_here_tooltip')}
-            onMouseEnter={highlightItem}
-            onMouseLeave={unhighlightItem}
-            onClick={async (e) => {
-              e.stopPropagation();
-              const key = `${contextMenu.lat.toFixed(6)}|${contextMenu.lng.toFixed(6)}`;
-              if (reverseGeo.loading && reverseGeo.key === key) return;
-              if (reverseGeo.address && reverseGeo.key === key) return;
-              setReverseGeo({ loading: true, address: null, error: null, key });
-              try {
-                const res = await api.reverseGeocode(contextMenu.lat, contextMenu.lng);
-                const name = res?.display_name || res?.address || null;
-                if (name) {
-                  setReverseGeo({ loading: false, address: name, error: null, key });
-                } else {
-                  setReverseGeo({ loading: false, address: null, error: t('map.whats_here_empty'), key });
-                }
-              } catch (err: any) {
-                setReverseGeo({ loading: false, address: null, error: err?.message || 'error', key });
-              }
-            }}
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: 4, opacity: 0.8 }}>
-              <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z" />
-              <circle cx="12" cy="10" r="3" />
-            </svg>
-            <span style={{ flex: 1 }}>{contextMenu.lat.toFixed(6)}, {contextMenu.lng.toFixed(6)}</span>
-            <span style={{ fontSize: 10, opacity: 0.7, fontFamily: 'inherit' }}>
-              {reverseGeo.loading && reverseGeo.key === `${contextMenu.lat.toFixed(6)}|${contextMenu.lng.toFixed(6)}`
-                ? t('map.whats_here_loading')
-                : t('map.whats_here')}
-            </span>
-          </div>
-          {/* Reverse-geocode result or error, shown only after the user taps
-              the header row. Wraps + selectable so the user can copy the
-              address. Max width is clipped by .context-menu parent. */}
-          {reverseGeo.key === `${contextMenu.lat.toFixed(6)}|${contextMenu.lng.toFixed(6)}` &&
-           (reverseGeo.address || reverseGeo.error) && (
-            <div
-              onClick={(e) => e.stopPropagation()}
-              style={{
-                padding: '2px 16px 8px',
-                color: reverseGeo.error ? '#ff8a80' : '#d0d0d0',
-                fontSize: 11.5,
-                lineHeight: 1.5,
-                userSelect: 'text',
-                cursor: 'text',
-                wordBreak: 'break-word',
-              }}
-            >
-              {reverseGeo.address ?? reverseGeo.error}
-            </div>
+        <MapContextMenu
+          key={`${contextMenu.lat}-${contextMenu.lng}-${contextMenu.x}-${contextMenu.y}`}
+          lat={contextMenu.lat}
+          lng={contextMenu.lng}
+          x={contextMenu.x}
+          y={contextMenu.y}
+          name={contextMenu.name}
+          reverseGeocode={api.reverseGeocode}
+          bookmarkMatch={bookmarkByCoord.get(
+            `${contextMenu.lat.toFixed(5)}|${contextMenu.lng.toFixed(5)}`
           )}
-          <div style={{ height: 1, background: '#444', margin: '2px 0 4px' }} />
-
-          {/* 2 + 3. Teleport / Navigate (device-gated). */}
-          {deviceConnected ? (
-            <>
-              <div
-                className="context-menu-item"
-                style={contextMenuItemStyle}
-                onMouseEnter={highlightItem}
-                onMouseLeave={unhighlightItem}
-                onClick={() => {
-                  onTeleport(contextMenu.lat, contextMenu.lng);
-                  closeContextMenu();
-                }}
-              >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: 8 }}>
-                  <circle cx="12" cy="12" r="10" />
-                  <line x1="12" y1="2" x2="12" y2="6" />
-                  <line x1="12" y1="18" x2="12" y2="22" />
-                  <line x1="2" y1="12" x2="6" y2="12" />
-                  <line x1="18" y1="12" x2="22" y2="12" />
-                </svg>
-                {t('map.teleport_here')}
-              </div>
-              <div
-                className="context-menu-item"
-                style={contextMenuItemStyle}
-                onMouseEnter={highlightItem}
-                onMouseLeave={unhighlightItem}
-                onClick={() => {
-                  onNavigate(contextMenu.lat, contextMenu.lng);
-                  closeContextMenu();
-                }}
-              >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: 8 }}>
-                  <polygon points="3,11 22,2 13,21 11,13" />
-                </svg>
-                {t('map.navigate_here')}
-              </div>
-              {onSetAsGoldDittoA && (
-                <div
-                  className="context-menu-item"
-                  style={contextMenuItemStyle}
-                  onMouseEnter={highlightItem}
-                  onMouseLeave={unhighlightItem}
-                  onClick={() => {
-                    onSetAsGoldDittoA(contextMenu.lat, contextMenu.lng);
-                    closeContextMenu();
-                  }}
-                >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: 8 }}>
-                    <path d="M12 2 L13.5 9 L21 12 L13.5 15 L12 22 L10.5 15 L3 12 L10.5 9 Z" />
-                  </svg>
-                  {t('goldditto.set_as_a')}
-                </div>
-              )}
-            </>
-          ) : (
-            <div
-              style={{ ...contextMenuItemStyle, color: '#ff6b6b', cursor: 'not-allowed', opacity: 0.75 }}
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: 8 }}>
-                <circle cx="12" cy="12" r="10" />
-                <line x1="4.93" y1="4.93" x2="19.07" y2="19.07" />
-              </svg>
-              {t('map.device_disconnected')}
-            </div>
-          )}
-
-          {/* 4. Copy coordinates to clipboard. */}
-          <div
-            className="context-menu-item"
-            style={contextMenuItemStyle}
-            onMouseEnter={highlightItem}
-            onMouseLeave={unhighlightItem}
-            onClick={async () => {
-              const txt = `${contextMenu.lat.toFixed(6)}, ${contextMenu.lng.toFixed(6)}`;
-              try {
-                await navigator.clipboard.writeText(txt);
-              } catch {
-                const ta = document.createElement('textarea');
-                ta.value = txt;
-                document.body.appendChild(ta);
-                ta.select();
-                try { document.execCommand('copy'); } catch { /* ignore */ }
-                document.body.removeChild(ta);
-              }
-              if (onShowToast) onShowToast(tRef.current('map.coords_copied'));
-              closeContextMenu();
-            }}
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: 8 }}>
-              <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
-              <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />
-            </svg>
-            {t('map.copy_coords')}
-          </div>
-
-          {/* 5. Add to bookmarks — disabled when the coord matches an
-              existing bookmark, to prevent duplicates. Visual mirrors
-              the device-disconnected disabled item above. */}
-          {(() => {
-            const ctxMatch = bookmarkByCoord.get(
-              `${contextMenu.lat.toFixed(5)}|${contextMenu.lng.toFixed(5)}`
-            );
-            if (ctxMatch) {
-              return (
-                <div
-                  style={{ ...contextMenuItemStyle, color: '#9499ac', cursor: 'not-allowed', opacity: 0.75 }}
-                  title={ctxMatch.name}
-                >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: 8 }}>
-                    <path d="M19 21l-7-5-7 5V5a2 2 0 012-2h10a2 2 0 012 2z" />
-                  </svg>
-                  {t('map.already_bookmarked')}
-                </div>
-              );
-            }
-            return (
-              <div
-                className="context-menu-item"
-                style={contextMenuItemStyle}
-                onMouseEnter={highlightItem}
-                onMouseLeave={unhighlightItem}
-                onClick={() => {
-                  onAddBookmark(contextMenu.lat, contextMenu.lng, contextMenu.name);
-                  closeContextMenu();
-                }}
-              >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: 8 }}>
-                  <path d="M19 21l-7-5-7 5V5a2 2 0 012-2h10a2 2 0 012 2z" />
-                </svg>
-                {t('map.add_bookmark')}
-              </div>
-            );
-          })()}
-
-          {/* 6. Add waypoint (only when in a route mode). */}
-          {showWaypointOption && onAddWaypoint && (
-            <>
-              <div style={{ height: 1, background: '#444', margin: '4px 0' }} />
-              <div
-                className="context-menu-item"
-                style={contextMenuItemStyle}
-                onMouseEnter={highlightItem}
-                onMouseLeave={unhighlightItem}
-                onClick={() => {
-                  onAddWaypoint(contextMenu.lat, contextMenu.lng);
-                  closeContextMenu();
-                }}
-              >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: 8 }}>
-                  <circle cx="12" cy="12" r="3" />
-                  <line x1="12" y1="5" x2="12" y2="1" />
-                  <line x1="12" y1="23" x2="12" y2="19" />
-                  <line x1="5" y1="12" x2="1" y2="12" />
-                  <line x1="23" y1="12" x2="19" y2="12" />
-                </svg>
-                {t('map.add_waypoint')}
-              </div>
-            </>
-          )}
-
-        </div>
+          deviceConnected={deviceConnected}
+          showWaypointOption={showWaypointOption}
+          onTeleport={onTeleport}
+          onNavigate={onNavigate}
+          onSetAsGoldDittoA={onSetAsGoldDittoA}
+          onCopy={() => copyContextCoords(contextMenu.lat, contextMenu.lng)}
+          onAddBookmark={onAddBookmark}
+          onAddWaypoint={onAddWaypoint}
+          onClose={closeContextMenu}
+        />
       )}
 
       {/* Per-waypoint mini-menu — JSX extracted to <WaypointMenu> (task
@@ -1133,23 +894,5 @@ const MapView: React.FC<MapViewProps> = ({
     </div>
   );
 };
-
-const contextMenuItemStyle: React.CSSProperties = {
-  padding: '8px 16px',
-  cursor: 'pointer',
-  color: '#e0e0e0',
-  fontSize: 13,
-  display: 'flex',
-  alignItems: 'center',
-  transition: 'background 0.15s',
-};
-
-function highlightItem(e: React.MouseEvent<HTMLDivElement>) {
-  (e.currentTarget as HTMLDivElement).style.background = '#3a3a3e';
-}
-
-function unhighlightItem(e: React.MouseEvent<HTMLDivElement>) {
-  (e.currentTarget as HTMLDivElement).style.background = 'transparent';
-}
 
 export default MapView;
