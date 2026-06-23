@@ -31,6 +31,42 @@ ddi_datas, ddi_binaries, ddi_hidden = collect_all('developer_disk_image')
 pyimg4_datas, pyimg4_binaries, pyimg4_hidden = collect_all('pyimg4')
 pyimg4_meta = copy_metadata('pyimg4')
 
+# apple_compress provides Apple's LZFSE/LZBITMAP codec used by pyimg4's
+# Personalized-DDI parse path: mobile_image_mounter -> restore.tss -> restore.img4
+# -> ipsw_parser.build_identity -> `from pyimg4 import IM4P` -> pyimg4/parser.py
+# `import apple_compress` (the live `else` branch on macOS). apple_compress/__init__.py
+# runs `__version__ = version('apple_compress')` at import time, UNGUARDED, so the
+# frozen exe raises PackageNotFoundError without the dist-info — the SAME failure mode
+# as pyimg4 above. That kills the mobile_image_mounter import -> DDI never mounts ->
+# DtSimulateLocation silently no-ops on iOS 17+ (the device accepts the call but iOS
+# rejects it without DDI), so route playback fails with "no current position" because
+# the teleport's set_location() raised before setting current_position. copy_metadata
+# bundles the dist-info (THE fix); collect_all is belt-and-suspenders — apple_compress
+# ships no .so (it ctypes-loads the OS libcompression.dylib) but this guarantees all
+# submodules ship despite the conditional-branch import.
+ac_datas, ac_binaries, ac_hidden = collect_all('apple_compress')
+ac_meta = copy_metadata('apple_compress')
+
+# prompt_toolkit is dragged onto the SAME device path by pymobiledevice3:
+# mobile_image_mounter -> lockdown -> service_connection.py
+# (`from pymobiledevice3.utils import start_ipython_shell` -> bare `import IPython`
+# -> IPython terminal -> `from prompt_toolkit...`). prompt_toolkit/__init__.py runs
+# `__version__ = metadata.version("prompt_toolkit")` at import time (and asserts pep440
+# on it), so the frozen exe raises PackageNotFoundError and the whole mobile_image_mounter
+# import dies — same class as apple_compress, one link further down the chain. Only the
+# dist-info is missing (the .py is pure-Python, already followed by the Analysis graph
+# from the IPython edge), so copy_metadata alone is the fix.
+pt_meta = copy_metadata('prompt_toolkit')
+
+# h3 is on the OFFLINE-GEO path (not the location-sim route): timezonefinder requires
+# h3>=4 and is imported lazily in services/geo_offline.py. h3/_version.py runs
+# `__version__ = metadata.version(__package__)` at import time, unguarded, so the frozen
+# exe raises PackageNotFoundError -> timezonefinder import fails -> the offline
+# reverse-geocode fallback silently blanks (the `_load_failed` latch). Same metadata-gap
+# class; copy_metadata fixes it (h3's Cython .so are followed transitively from the
+# static import, so no collect_all needed here).
+h3_meta = copy_metadata('h3')
+
 # uvicorn/fastapi also need their sub-modules collected
 uvicorn_hidden = collect_submodules('uvicorn')
 fastapi_hidden = collect_submodules('fastapi')
@@ -51,6 +87,7 @@ hidden = [
     *pytun_hidden,
     *ddi_hidden,
     *pyimg4_hidden,
+    *ac_hidden,
     *uvicorn_hidden,
     *fastapi_hidden,
     *ps_hidden,
@@ -78,8 +115,9 @@ a = Analysis(
     ['main.py'],
     pathex=['.'],
     binaries=[*pmd_binaries, *pytun_binaries, *ddi_binaries, *pyimg4_binaries,
-              *ps_binaries, *tzf_binaries],
+              *ac_binaries, *ps_binaries, *tzf_binaries],
     datas=[*pmd_datas, *pytun_datas, *ddi_datas, *pyimg4_datas, *pyimg4_meta,
+           *ac_datas, *ac_meta, *pt_meta, *h3_meta,
            *ps_datas, *tzf_datas,
            ('static/phone.html', 'static'),
            ('static/catalog.json', 'static'),
