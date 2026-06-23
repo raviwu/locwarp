@@ -136,4 +136,37 @@ describe('useWifiAutoConnect', () => {
     // status is queried but no tunnel attempt is made (USB already up).
     expect(startWifiTunnel).not.toHaveBeenCalled()
   })
+
+  it('skips when a USB device surfaces AFTER the effect runs but before the deferred pass fires', async () => {
+    // Repro of the route slow-load tunnel thrash: the USB device connects on
+    // the backend before the WS connects, but its device_connected event only
+    // populates connectedDevices a beat AFTER `connected` flipped true — i.e.
+    // after the effect captured its snapshot, but before the ~1500ms deferred
+    // pass fires. useDevice returns a NEW device object on that render (fresh
+    // connectedDevices array), so the guard must read CURRENT state, not the
+    // snapshot the effect closed over. Otherwise it fires a spurious WiFi
+    // tunnel that tears the healthy USB tunnel down -> DVT "No route to host"
+    // -> a ~27s reconnect before the route moves.
+    localStorage.setItem(
+      'locwarp.tunnel.savedips',
+      JSON.stringify([{ ip: '10.0.0.1', port: 49152, udid: 'a' }]),
+    )
+    const { api } = makeApi()
+    const startWifiTunnel = vi.fn(async () => ({
+      udid: 'u', name: 'n', ios_version: '17', connection_type: 'Network', is_connected: true,
+    })) as unknown as WifiAutoConnectDevice['startWifiTunnel']
+    const deviceEmpty: WifiAutoConnectDevice = { connectedDevices: [], startWifiTunnel }
+    const usb = { udid: 'x', name: 'n', ios_version: '17', connection_type: 'USB', is_connected: true }
+    const deviceConnected: WifiAutoConnectDevice = { connectedDevices: [usb], startWifiTunnel }
+
+    const { rerender } = renderHook(({ d }) => useWifiAutoConnect(true, api, d), {
+      initialProps: { d: deviceEmpty },
+    })
+    // device_connected event surfaces the USB device on a later render (new object).
+    rerender({ d: deviceConnected })
+    // Now the deferred pass fires.
+    await act(async () => { await vi.advanceTimersByTimeAsync(1600) })
+
+    expect(startWifiTunnel).not.toHaveBeenCalled()
+  })
 })

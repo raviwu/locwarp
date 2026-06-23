@@ -49,6 +49,16 @@ export function useWifiAutoConnect(
   device: WifiAutoConnectDevice,
 ) {
   const wifiAutoConnectAttemptedRef = useRef(false)
+  // Mirror the latest connectedDevices so the deferred guard below reads the
+  // CURRENT connection state, not the snapshot the effect closed over when
+  // `connected` flipped true. The effect dep stays [connected] (frozen,
+  // once-per-session); without this ref the setTimeout closure reads a stale
+  // (usually empty) connectedDevices from before the USB device's
+  // device_connected event surfaced — so it fires a spurious WiFi tunnel and
+  // the backend tears the healthy USB tunnel down (DVT "No route to host" ->
+  // ~27s reconnect before a route moves).
+  const connectedDevicesRef = useRef(device.connectedDevices)
+  connectedDevicesRef.current = device.connectedDevices
   useEffect(() => {
     if (!connected) return
     if (wifiAutoConnectAttemptedRef.current) return
@@ -89,8 +99,10 @@ export function useWifiAutoConnect(
       ;(async () => {
         try {
           // Skip if a device is already connected (USB plug, or backend
-          // already brought a tunnel back up via its own restart logic).
-          if (device.connectedDevices.length > 0) return
+          // already brought a tunnel back up via its own restart logic). Read
+          // the ref, not the closed-over device, so a USB device that surfaced
+          // after the effect ran still suppresses the spurious WiFi attempt.
+          if (connectedDevicesRef.current.length > 0) return
           const status = await api.wifiTunnelStatus()
           const alreadyTunneled = new Set(
             (status?.tunnels || [])
