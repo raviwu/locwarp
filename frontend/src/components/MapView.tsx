@@ -16,6 +16,7 @@ import { parseCoord } from '../utils/coords';
 import { isSubmitEnter } from '../utils/keyboard';
 import { BookmarkGeoLine } from './BookmarkGeoLine';
 import { S2LevelPicker } from './S2LevelPicker';
+import { WaypointMenu } from './WaypointMenu';
 import { useLeafletBarButton } from './LeafletBarButton';
 
 interface Position {
@@ -346,8 +347,9 @@ const MapView: React.FC<MapViewProps> = ({
   // layer hooks.
   // The numbered waypoint markers + their two refs (waypointMarkersRef,
   // waypointSigRef) are owned by useWaypointMarkersLayer now (task p4b2bi);
-  // called below after the other layer hooks. The mini-menu state (wpMenu) +
-  // its JSX stay here — only the marker-rebuild effect moved.
+  // called below after the other layer hooks. The mini-menu STATE (wpMenu)
+  // stays lifted here; its JSX moved to <WaypointMenu> (task p4b2bii), wired
+  // via thin closures over the handler-mirror refs below.
   // The small bookmark pins + their marker ref (bookmarkMarkersRef) + the
   // zoomend rebuild listener are owned by useBookmarkMarkersLayer now (task
   // p4b2bi); called below after the other layer hooks.
@@ -1592,99 +1594,23 @@ const MapView: React.FC<MapViewProps> = ({
         </div>
       )}
 
-      {wpMenu.visible && (
-        <div
-          className="context-menu anim-scale-in-tl"
-          style={{
-            position: 'fixed',
-            // Offset slightly so the cursor lands inside the menu rather
-            // than on its edge (otherwise the document-level click handler
-            // might immediately close it).
-            left: Math.max(8, Math.min(wpMenu.x + 6, window.innerWidth - 188)),
-            top: Math.max(8, Math.min(wpMenu.y + 6, window.innerHeight - 100)),
-            zIndex: 1000,
-            background: 'rgba(26, 29, 39, 0.96)',
-            backdropFilter: 'blur(10px)',
-            WebkitBackdropFilter: 'blur(10px)',
-            border: '1px solid rgba(108, 140, 255, 0.18)',
-            borderRadius: 10,
-            padding: '4px 0',
-            boxShadow: '0 10px 32px rgba(12, 18, 40, 0.55), 0 0 0 1px rgba(255, 255, 255, 0.04) inset',
-            minWidth: 180,
-          }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          <div
-            style={{
-              padding: '6px 14px 4px',
-              fontSize: 11,
-              opacity: 0.55,
-              fontFamily: 'monospace',
-              borderBottom: '1px solid rgba(255,255,255,0.05)',
-              marginBottom: 2,
-            }}
-          >
-            {wpMenu.isStart ? tRef.current('panel.waypoint_start') : `#${wpMenu.index}`}
-          </div>
-          {!wpMenu.isStart && onSetWpAsStartRef.current && (
-            <div
-              style={contextMenuItemStyle}
-              onMouseEnter={highlightItem}
-              onMouseLeave={unhighlightItem}
-              onClick={() => {
-                const fn = onSetWpAsStartRef.current;
-                const idx = wpMenu.index;
-                closeWpMenu();
-                fn?.(idx);
-              }}
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#43a047" strokeWidth="2" style={{ marginRight: 8 }}>
-                <line x1="4" y1="22" x2="4" y2="3" />
-                <path d="M4 4h12l-2 4 2 4H4" fill="#43a04733" />
-              </svg>
-              {t('map.wp_set_as_start')}
-            </div>
-          )}
-          {onInsertAfterWpRef.current && (
-            <div
-              style={contextMenuItemStyle}
-              onMouseEnter={highlightItem}
-              onMouseLeave={unhighlightItem}
-              onClick={() => {
-                const fn = onInsertAfterWpRef.current;
-                const idx = wpMenu.index;
-                closeWpMenu();
-                fn?.(idx);
-              }}
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6c8cff" strokeWidth="2" style={{ marginRight: 8 }}>
-                <line x1="12" y1="5" x2="12" y2="19" />
-                <line x1="5" y1="12" x2="19" y2="12" />
-              </svg>
-              {t('map.wp_insert_after')}
-            </div>
-          )}
-          {onRemoveWaypointRef.current && (
-            <div
-              style={{ ...contextMenuItemStyle, color: '#ff6b6b' }}
-              onMouseEnter={highlightItem}
-              onMouseLeave={unhighlightItem}
-              onClick={() => {
-                const fn = onRemoveWaypointRef.current;
-                const idx = wpMenu.index;
-                closeWpMenu();
-                fn?.(idx);
-              }}
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: 8 }}>
-                <polyline points="3 6 5 6 21 6" />
-                <path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6" />
-              </svg>
-              {t('map.wp_delete')}
-            </div>
-          )}
-        </div>
-      )}
+      {/* Per-waypoint mini-menu — JSX extracted to <WaypointMenu> (task
+          p4b2bii); the wpMenu state stays lifted here. The action props are
+          thin closures over the wire-once handler-mirror refs (so freshness is
+          preserved), gated on the original optional props so an absent handler
+          omits its menu item (mirrors the old `…Ref.current &&` gating). Each
+          closure closes the menu before firing, matching the prior order. */}
+      <WaypointMenu
+        visible={wpMenu.visible}
+        x={wpMenu.x}
+        y={wpMenu.y}
+        index={wpMenu.index}
+        isStart={wpMenu.isStart}
+        onSetAsStart={onSetWpAsStart ? (idx) => onSetWpAsStartRef.current?.(idx) : undefined}
+        onInsertAfter={onInsertAfterWp ? (idx) => onInsertAfterWpRef.current?.(idx) : undefined}
+        onRemove={onRemoveWaypoint ? (idx) => onRemoveWaypointRef.current?.(idx) : undefined}
+        onClose={closeWpMenu}
+      />
     </div>
   );
 };
