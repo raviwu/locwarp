@@ -204,8 +204,11 @@ API_PORT = 8777
 # phone.html is served same-origin from :8777 over LAN, so the LAN host:port must be
 # covered. Set LOCWARP_LAN_ORIGIN=http://<LAN-IP>:8777 to add it at runtime (in main.py).
 CORS_ORIGINS: list[str] = [
-    "http://127.0.0.1:8777",
-    "http://localhost:8777",
+    # Backend-origin entries derive from API_PORT — the single source of the
+    # backend port (no stray 8777 literal here). The 5173 entries are the Vite
+    # dev server (a separate concern).
+    f"http://127.0.0.1:{API_PORT}",
+    f"http://localhost:{API_PORT}",
     "http://127.0.0.1:5173",
     "http://localhost:5173",
 ]
