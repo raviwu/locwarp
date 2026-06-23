@@ -439,8 +439,11 @@ const MapView: React.FC<MapViewProps> = ({
 
   // Copy the right-clicked coord to the clipboard (with the legacy execCommand
   // fallback) + toast. Wrapped here so <MapContextMenu> stays clipboard-free and
-  // fires it through the onCopy prop. Behavior is identical to the original
-  // inline handler — same string format, same fallback, same toast key.
+  // fires it through the onCopy prop. Same string format, fallback, and toast key
+  // as the original inline handler; one intentional difference — the menu now
+  // closes optimistically (onClose runs right after onCopy) rather than after the
+  // async clipboard write settles. Benign: the write + toast live on these
+  // MapView-scoped refs, which outlive the menu unmount.
   const copyContextCoords = useCallback((lat: number, lng: number) => {
     const txt = `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
     (async () => {

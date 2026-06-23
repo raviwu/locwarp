@@ -50,7 +50,7 @@ describe('MapContextMenu', () => {
   });
 
   // --- stale-guard: a late resolve after unmount is dropped -----------------
-  it('drops a reverse-geocode result that resolves after the menu unmounted (stale-guard)', async () => {
+  it('drops a reverse-geocode result that resolves after the menu unmounted (per-open unmount)', async () => {
     // Deferred promise so we can unmount before it resolves.
     let resolveGeo!: (v: any) => void;
     const reverseGeocode = vi.fn(
@@ -81,8 +81,13 @@ describe('MapContextMenu', () => {
     rerender(<div />);
     await waitFor(() => expect(screen.queryByText('map.whats_here')).toBeNull());
 
-    // Resolve the late geocode — the stale-guard must drop it (no write-back,
-    // and nothing to mount it into anyway since the component is gone).
+    // Resolve the late geocode — the late address must never appear. NOTE: this
+    // pins the OBSERVABLE behavior (per-open unmount → no stale address). Under
+    // React 18 a setState on an unmounted component is already a silent no-op, so
+    // the `mountedRef` guard is belt-and-suspenders (defensive, not isolable by a
+    // test); MapView's per-open `key` means there is no still-mounted-but-
+    // re-targeted path for the guard to affect. Behavior-equivalent to the
+    // monolith, which used a render-side `reverseGeo.key === headerKey` check.
     await act(async () => {
       resolveGeo({ display_name: 'Late Stale Address' });
       await Promise.resolve();

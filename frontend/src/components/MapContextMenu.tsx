@@ -116,7 +116,10 @@ const MapContextMenu: React.FC<MapContextMenuProps> = ({
   // Reverse-geocode stale-guard. The menu is mounted-per-open (the parent keys
   // it on the open coords), so "is this still the same open?" reduces to "is
   // this menu instance still mounted?". The ref flips false on unmount so a late
-  // reverseGeocode resolve is dropped instead of writing back stale state.
+  // reverseGeocode resolve bails. NOTE: under React 18 a setState after unmount
+  // is already a no-op, and the per-open key means there is no still-mounted-but-
+  // re-targeted path — so this guard is defensive belt-and-suspenders, kept to
+  // match the BookmarkContextMenu pattern; it has no test-isolable effect.
   const mountedRef = useRef(true);
   useLayoutEffect(() => {
     mountedRef.current = true;
