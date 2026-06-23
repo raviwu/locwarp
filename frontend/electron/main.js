@@ -6,6 +6,12 @@ const os = require('os')
 const fs = require('fs')
 const { escapeAppleScriptString } = require('./applescript.js')
 
+// Backend port — the single source for this Electron (Node) runtime. MUST match
+// backend config.py API_PORT and the renderer's adapters/config.ts ORIGIN_PORT
+// (separate runtimes, so they cannot share an import).
+const BACKEND_PORT = 8777
+const BACKEND_ORIGIN = `http://127.0.0.1:${BACKEND_PORT}`
+
 // macOS: pymobiledevice3 needs root to create the utun interface for iOS
 // 17+ USB tunnelling. We keep Electron (and the renderer) running as the
 // normal user so that macOS pasteboard access, iCloud Drive, and Spotlight
@@ -359,7 +365,7 @@ function waitForBackend(timeoutMs = 30000) {
   const started = Date.now()
   return new Promise((resolve, reject) => {
     const tick = () => {
-      const req = http.get('http://127.0.0.1:8777/docs', (res) => {
+      const req = http.get(`${BACKEND_ORIGIN}/docs`, (res) => {
         res.destroy()
         resolve()
       })

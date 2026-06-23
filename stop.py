@@ -5,11 +5,16 @@ LocWarp 一鍵停止
 import os
 import subprocess
 
+# Ports to free on stop. BACKEND_PORT must match backend config.py API_PORT
+# (separate launcher runtime — can't import it); VITE_PORT is the dev server.
+BACKEND_PORT = 8777
+VITE_PORT = 5173
+
 
 def main():
     print("  正在停止 LocWarp...")
 
-    for port in [8777, 5173]:
+    for port in [BACKEND_PORT, VITE_PORT]:
         if os.name == "nt":
             result = subprocess.run(
                 f'netstat -ano | findstr ":{port}" | findstr "LISTENING"',
