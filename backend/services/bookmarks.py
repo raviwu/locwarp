@@ -562,6 +562,46 @@ class BookmarkManager:
                 "bookmarks": [b.model_dump(mode="json") for b in self.store.bookmarks],
             }
 
+    def _upsert_items(self, items: list, *, stamp_now: bool, enrich_force: bool) -> tuple[int, int]:
+        """Upsert bookmark *items* into self.store.bookmarks; the single seed/
+        import primitive shared by import_json / import_catalog / force_seed.
+
+        ``stamp_now`` stamps each incoming item's ``updated_at = now()`` via
+        force_seed_items so it beats any pre-existing real-timestamp tombstone
+        in merge_stores inside _save() (the empty-updated_at pitfall). This is
+        a PARAMETER, not a per-path omission — every caller declares whether it
+        wants the stamp instead of duplicating the logic.
+
+        For an UPDATE (id already present) the existing record's mutable fields
+        are overwritten and re-enriched with ``force=enrich_force``. For an ADD
+        the new item is enriched with ``force=False`` (fill blanks only).
+
+        Caller-owned: validating category_id, appending categories, calling
+        _save(), logging, and the return-shape mapping. Returns (added, updated).
+        """
+        if stamp_now:
+            force_seed_items(items, _now_iso())
+        existing = {b.id: b for b in self.store.bookmarks}
+        added = updated = 0
+        for bm in items:
+            old = existing.get(bm.id)
+            if old is not None:
+                old.name = bm.name
+                old.lat = bm.lat
+                old.lng = bm.lng
+                old.address = bm.address
+                old.category_id = bm.category_id
+                old.country_code = bm.country_code
+                old.updated_at = bm.updated_at
+                enrich_bookmark(old, force=enrich_force)
+                updated += 1
+            else:
+                enrich_bookmark(bm)
+                self.store.bookmarks.append(bm)
+                existing[bm.id] = bm
+                added += 1
+        return added, updated
+
     def import_json(self, data: str) -> dict:
         """Import bookmarks (and optionally categories) from a JSON string.
 
@@ -583,26 +623,13 @@ class BookmarkManager:
                 self.store.categories.append(cat)
                 existing_cat_ids.add(cat.id)
 
-        now = _now_iso()
         existing_bm_ids = {b.id for b in self.store.bookmarks}
-        imported = 0
-        skipped = 0
-        for bm in incoming.bookmarks:
-            if bm.id not in existing_bm_ids:
-                # Ensure the bookmark's category exists
-                if bm.category_id not in existing_cat_ids:
-                    bm.category_id = "default"
-                enrich_bookmark(bm)  # fill any geo fields the import lacked
-                # Stamp updated_at=now so a re-imported id whose prior delete
-                # left a real-timestamp tombstone is resurrected by the
-                # merge_stores _alive() check inside _save() (the
-                # empty-updated_at pitfall). Mirrors import_catalog.
-                force_seed_items([bm], now)
-                self.store.bookmarks.append(bm)
-                existing_bm_ids.add(bm.id)
-                imported += 1
-            else:
-                skipped += 1
+        new_items = [bm for bm in incoming.bookmarks if bm.id not in existing_bm_ids]
+        skipped = len(incoming.bookmarks) - len(new_items)
+        for bm in new_items:
+            if bm.category_id not in existing_cat_ids:
+                bm.category_id = "default"
+        imported, _ = self._upsert_items(new_items, stamp_now=True, enrich_force=False)
 
         if imported:
             self._save()
@@ -665,27 +692,15 @@ class BookmarkManager:
                 added_cats += 1
 
         valid_cat_ids = {c.id for c in self.store.categories}
-        existing_bms = {b.id: b for b in self.store.bookmarks}
-        added_bms = updated_bms = 0
         for bm in incoming.bookmarks:
             if bm.category_id not in valid_cat_ids:
                 bm.category_id = "default"
-            if bm.id in existing_bms:
-                old = existing_bms[bm.id]
-                old.name = bm.name
-                old.lat = bm.lat
-                old.lng = bm.lng
-                old.address = bm.address
-                old.category_id = bm.category_id
-                old.country_code = bm.country_code
-                old.updated_at = now
-                enrich_bookmark(old, force=True)
-                updated_bms += 1
-            else:
-                enrich_bookmark(bm)
-                self.store.bookmarks.append(bm)
-                existing_bms[bm.id] = bm
-                added_bms += 1
+        # incoming.bookmarks already stamped via force_seed_items above, so
+        # stamp_now=False here avoids double-stamping; catalog upserts re-resolve
+        # geo on coord changes (enrich_force=True).
+        added_bms, updated_bms = self._upsert_items(
+            incoming.bookmarks, stamp_now=False, enrich_force=True
+        )
 
         self._save()
         logger.info(
@@ -715,28 +730,6 @@ class BookmarkManager:
         that were new to the store and *updated* counts items that replaced
         an existing entry.
         """
-        now = _now_iso()
-        force_seed_items(items, now)
-
-        existing = {b.id: b for b in self.store.bookmarks}
-        added = updated = 0
-        for bm in items:
-            if bm.id in existing:
-                old = existing[bm.id]
-                old.name = bm.name
-                old.lat = bm.lat
-                old.lng = bm.lng
-                old.address = bm.address
-                old.category_id = bm.category_id
-                old.country_code = bm.country_code
-                old.updated_at = bm.updated_at
-                enrich_bookmark(old, force=True)
-                updated += 1
-            else:
-                enrich_bookmark(bm)
-                self.store.bookmarks.append(bm)
-                existing[bm.id] = bm
-                added += 1
-
+        added, updated = self._upsert_items(items, stamp_now=True, enrich_force=True)
         self._save()
         return {"added": added, "updated": updated}
