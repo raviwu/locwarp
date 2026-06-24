@@ -43,3 +43,22 @@ describe('TransportButtons — Teleport-mode Start suppression', () => {
     expect(document.querySelector('.lw-transport-start')).not.toBeNull();
   });
 });
+
+describe('TransportButtons — deviceConnected gate', () => {
+  it('Start button is disabled when deviceConnected=false', () => {
+    render(<Harness simMode={SimMode.Joystick} isRunning={false} isPaused={false}
+      deviceConnected={false}
+      onStart={vi.fn()} onStop={vi.fn()} onPause={vi.fn()} onResume={vi.fn()} />);
+    const btn = document.querySelector('.lw-transport-start') as HTMLButtonElement;
+    expect(btn).not.toBeNull();
+    expect(btn.disabled).toBe(true);
+  });
+  it('Start button is enabled when deviceConnected=true', () => {
+    render(<Harness simMode={SimMode.Joystick} isRunning={false} isPaused={false}
+      deviceConnected={true}
+      onStart={vi.fn()} onStop={vi.fn()} onPause={vi.fn()} onResume={vi.fn()} />);
+    const btn = document.querySelector('.lw-transport-start') as HTMLButtonElement;
+    expect(btn).not.toBeNull();
+    expect(btn.disabled).toBe(false);
+  });
+});
