@@ -43,6 +43,7 @@ interface ContextMenuState {
 }
 
 import type { RuntimesMap } from '../hooks/useSimulation';
+import { SimMode } from '../hooks/useSimulation';
 import type { DeviceInfo } from '../hooks/useDevice';
 
 interface MapViewProps {
@@ -124,6 +125,7 @@ interface MapViewProps {
   onOpenLibrary?: () => void;
   // Transport (start / stop / pause) — moved from the sidebar to the
   // bottom-left of the map so they sit just above the coord-input strip.
+  simMode?: SimMode;
   isRunning?: boolean;
   isPaused?: boolean;
   onStart?: () => void;
@@ -144,9 +146,11 @@ interface MapViewProps {
 // directly above the coord-input strip. Mockup S6 (玻璃膠囊) base with
 // the active state filled D8 (sliding highlight). Width fits content
 // only — we don't want the whole row to span the coord input below.
-function TransportButtons({
+export function TransportButtons({
   isRunning,
   isPaused,
+  simMode,
+  deviceConnected,
   onStart,
   onStop,
   onPause,
@@ -155,6 +159,8 @@ function TransportButtons({
 }: {
   isRunning: boolean;
   isPaused: boolean;
+  simMode: SimMode;
+  deviceConnected: boolean;
   onStart?: () => void;
   onStop?: () => void;
   onPause?: () => void;
@@ -187,10 +193,11 @@ function TransportButtons({
         boxShadow: '0 10px 26px rgba(8, 11, 22, 0.5)',
       }}
     >
-      {!isRunning && (
+      {!isRunning && simMode !== SimMode.Teleport && (
         <button
           className="lw-transport-btn lw-transport-start"
           onClick={onStart}
+          disabled={!deviceConnected}
           title={label('generic.start')}
         >
           <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><polygon points="5,3 19,12 5,21" /></svg>
@@ -287,6 +294,7 @@ const MapView: React.FC<MapViewProps> = ({
   onRecentReFly,
   onRecentClear,
   onOpenLibrary,
+  simMode,
   isRunning,
   isPaused,
   onStart,
@@ -790,6 +798,8 @@ const MapView: React.FC<MapViewProps> = ({
         <TransportButtons
           isRunning={!!isRunning}
           isPaused={!!isPaused}
+          simMode={simMode ?? SimMode.Teleport}
+          deviceConnected={deviceConnected}
           onStart={onStart}
           onStop={onStop}
           onPause={onPause}

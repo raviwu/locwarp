@@ -177,6 +177,10 @@ export function useSimActions(args: UseSimActionsArgs) {
   const handleStart = useCallback(async () => {
     const udids = device.connectedDevices.map((d) => d.udid)
     if (sim.mode === SimMode.Joystick) {
+      if (!sim.currentPosition) {
+        showToast(t('toast.no_position_random'))
+        return
+      }
       if (udids.length >= 2) {
         const outcome = await sim.joystickStartAll(udids)
         showToast(toastForFanout(t, t('mode.joystick'), outcome, device.connectedDevices))

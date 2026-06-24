@@ -180,6 +180,23 @@ describe('useSimActions — start (mode gate + joystick branch)', () => {
     await act(async () => { await result.current.handleStart() })
     expect(sim.startLoop).toHaveBeenCalledTimes(1)
   })
+
+  it('Joystick mode with no current position: toasts no_position_random and never starts', async () => {
+    const sim = makeSim({ mode: SimMode.Joystick, currentPosition: null })
+    const { result, showToast } = setup({ udids: ['A'], sim })
+    await act(async () => { await result.current.handleStart() })
+    expect(sim.joystickStart).not.toHaveBeenCalled()
+    expect(sim.joystickStartAll).not.toHaveBeenCalled()
+    expect(showToast).toHaveBeenCalledWith('no position')
+  })
+
+  it('Joystick dual-device with no position: guard fires before joystickStartAll', async () => {
+    const sim = makeSim({ mode: SimMode.Joystick, currentPosition: null })
+    const { result, showToast } = setup({ udids: ['A', 'B'], sim })
+    await act(async () => { await result.current.handleStart() })
+    expect(sim.joystickStartAll).not.toHaveBeenCalled()
+    expect(showToast).toHaveBeenCalledWith('no position')
+  })
 })
 
 describe('useSimActions — stop (literal action string + joystick-dual special case)', () => {

@@ -87,8 +87,10 @@ vi.mock('./services/api', async (importOriginal) => {
       out[key] = vi.fn(async () => ({ ok: true }))
     } else if (key === 'cloudSyncStatus') {
       out[key] = async () => ({ enabled: false, prompt_dismissed: true, detected_icloud_path: null })
-    } else if (key === 'getCooldownStatus' || key === 'getStatus') {
+    } else if (key === 'getCooldownStatus') {
       out[key] = async () => ({})
+    } else if (key === 'getStatus') {
+      out[key] = vi.fn(async () => ({}))
     } else if (key === 'listDevices') {
       // Default: no devices. Individual tests override via vi.mocked(...).
       out[key] = vi.fn(async () => [])
@@ -165,8 +167,12 @@ describe('sim action fan-out (single vs dual device)', () => {
   })
 
   it('single device: Start in Joystick mode calls api.joystickStart WITHOUT a udid', async () => {
+    // Seed a current position via getStatus so the Joystick no-position guard passes.
+    vi.mocked(api.getStatus).mockResolvedValueOnce({ position: { lat: 25.05, lng: 121.55 } } as any)
     const router = createWsRouter()
     await act(async () => { renderApp(router) })
+    // Flush the async getStatus().then(...) microtask chain so currentPosition is set.
+    await act(async () => { await Promise.resolve(); await Promise.resolve() })
     await connectDevices(router, ['A'])
     // Put the sim in Joystick mode via the ControlPanel mode-change button.
     await act(async () => { fireEvent.click(screen.getByTestId('cp-mode-joystick')) })
@@ -185,11 +191,17 @@ describe('sim action fan-out (single vs dual device)', () => {
     const router = createWsRouter()
     await act(async () => { renderApp(router) })
     await connectDevices(router, ['A', 'B'])
+    // Seed a current position via teleport (sim.teleport calls setCurrentPosition internally)
+    // so the Joystick no-position guard passes.
+    await act(async () => { fireEvent.click(screen.getByTestId('map-teleport')) })
+    await act(async () => { await Promise.resolve(); await Promise.resolve() })
     // Put the sim in Joystick mode via the ControlPanel mode-change button.
     await act(async () => { fireEvent.click(screen.getByTestId('cp-mode-joystick')) })
 
     await act(async () => { fireEvent.click(screen.getByTestId('cp-start')) })
-    await act(async () => { await Promise.resolve(); await Promise.resolve() })
+    // preSyncStart has a 150ms settle delay for dual-device pre-teleport;
+    // wait enough real time for it to resolve before asserting.
+    await act(async () => { await new Promise((r) => setTimeout(r, 200)) })
 
     // joystickStartAll → one api.joystickStart per connected udid, WITH the udid.
     expect(api.joystickStart).toHaveBeenCalledTimes(2)

@@ -1353,6 +1353,7 @@ const App: React.FC = () => {
           onSetAsGoldDittoA={handleSetGoldDittoA}
           showWaypointOption={sim.mode === SimMode.Loop || sim.mode === SimMode.MultiStop || sim.mode === SimMode.Navigate}
           deviceConnected={device.connectedDevice !== null}
+          simMode={sim.mode}
           onShowToast={showToast}
           userAvatarHtml={avatarToHtml(userAvatar, customPng)}
           bookmarkPins={bookmarkPins}
