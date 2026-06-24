@@ -29,82 +29,19 @@ router = APIRouter(prefix="/api/location", tags=["location"])
 
 
 async def _engine(udid: str | None = None, registry=None):
-    """Return the active SimulationEngine for *udid* (or the primary one if
-    unspecified), lazily rebuilding when the slot is empty. On the first
-    attempt we just rebuild the engine; if that fails we force a full
-    disconnect + reconnect + engine rebuild (covers the common iOS 17+ case
-    where the RSD tunnel is alive but the DVT channel has silently gone stale)."""
+    """Resolve the active SimulationEngine via EngineResolver, mapping the
+    domain EngineUnavailableError to the frozen 400 HTTPException."""
+    from services.engine_resolver import EngineResolver
+    from domain.errors import EngineUnavailableError
     app_state = _engine_registry_or_main(registry)
-    import logging as _logging
-    _log = _logging.getLogger("locwarp")
-
-    # Direct hit on the requested udid.
-    if udid is not None:
-        eng = app_state.get_engine(udid)
-        if eng is not None:
-            return eng
-
-    if udid is None and app_state.simulation_engine is not None:
-        return app_state.simulation_engine
-
-    dm = app_state.device_manager
-
-    # Pick a target UDID — requested udid first, then already-connected, then any discoverable device.
-    target_udid = udid or next(iter(dm._connections.keys()), None)
-    if target_udid is None:
-        import asyncio as _asyncio
-        for attempt in range(10):
-            try:
-                discovered = await dm.discover_devices()
-                if discovered:
-                    target_udid = discovered[0].udid
-                    if attempt > 0:
-                        _log.info("discover_devices returned device on attempt %d", attempt + 1)
-                    break
-            except Exception:
-                _log.exception("discover_devices failed during lazy rebuild (attempt %d)", attempt + 1)
-            await _asyncio.sleep(1.0)
-
-    if target_udid is None:
+    resolver = EngineResolver(app_state, app_state.device_manager)
+    try:
+        return await resolver.resolve_engine(udid)
+    except EngineUnavailableError as e:
         raise HTTPException(
             status_code=400,
-            detail={"code": "no_device", "message": "尚未連接任何 iOS 裝置,請先透過 USB 連線"},
+            detail={"code": e.code, "message": e.message},
         )
-
-    # Attempt 1: rebuild engine on top of existing connection
-    _log.info("simulation_engine missing; attempt 1 (rebuild) for %s", target_udid)
-    try:
-        await app_state.create_engine_for_device(target_udid)
-        rebuilt = app_state.get_engine(target_udid) if udid is not None else app_state.simulation_engine
-        if rebuilt is not None:
-            _log.info("Engine rebuild succeeded on attempt 1")
-            return rebuilt
-    except Exception:
-        _log.exception("Engine rebuild (attempt 1) failed for %s", target_udid)
-
-    # Attempt 2: hard reset — disconnect + reconnect + rebuild
-    _log.info("attempt 2 (hard reset) for %s", target_udid)
-    try:
-        try:
-            await dm.disconnect(target_udid)
-        except Exception:
-            _log.warning("disconnect during hard reset failed; proceeding", exc_info=True)
-        await dm.connect(target_udid)
-        await app_state.create_engine_for_device(target_udid)
-        rebuilt = app_state.get_engine(target_udid) if udid is not None else app_state.simulation_engine
-        if rebuilt is not None:
-            _log.info("Engine rebuild succeeded on attempt 2")
-            return rebuilt
-    except Exception:
-        _log.exception("Engine rebuild (attempt 2, hard reset) failed for %s", target_udid)
-
-    raise HTTPException(
-        status_code=400,
-        detail={
-            "code": "no_device",
-            "message": "裝置連線已失效,請嘗試重新插拔 USB 或重新啟動 LocWarp(詳見 ~/.locwarp/logs/backend.log)",
-        },
-    )
 
 
 _DEVICE_LOST_REASON_MESSAGES: dict[str, str] = {

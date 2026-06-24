@@ -8,6 +8,18 @@ The api boundary translates these into transport errors (e.g. GeocodeError
 from __future__ import annotations
 
 
+class EngineUnavailableError(Exception):
+    """Raised by EngineResolver when no usable SimulationEngine can be
+    resolved or rebuilt. The api boundary maps this to
+    HTTPException(400, {"code": code, "message": message}).
+    """
+
+    def __init__(self, code: str, message: str) -> None:
+        super().__init__(message)
+        self.code = code
+        self.message = message
+
+
 class GeocodeError(Exception):
     """Raised by the geocoding service for forward-geocode failures.
 
