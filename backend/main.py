@@ -32,7 +32,6 @@ from services.cooldown import CooldownTimer
 from services.bookmarks import BookmarkManager
 from services.route_store import RouteManager
 from services.coord_format import CoordinateFormatter
-from services.reconnect import ReconnectManager
 from services.tunnel_helper_client import TunnelHelperClient, HelperError
 from services.geocoding import GeocodingService
 from services.route_service import RouteService
@@ -137,7 +136,6 @@ class AppState:
         # and the helper has chowned ~/.locwarp); driven by a lifespan task.
         self.backup_service = None
         self.coord_formatter = CoordinateFormatter()
-        self.reconnect_manager = None
         self._last_position = None
         # User-chosen initial map center (persisted between launches). When
         # None, the frontend falls back to a hardcoded default.
@@ -449,9 +447,6 @@ class AppState:
             # The map UI still shows a default center (Taipei or the user's
             # `initial_map_position` setting) — that's purely a visual default
             # for the Leaflet view, not a virtual GPS coordinate.
-
-            # Setup reconnect manager
-            self.reconnect_manager = ReconnectManager(self.device_manager)
 
             logger.info("Simulation engine created for device %s (no initial location pushed)", udid)
 
