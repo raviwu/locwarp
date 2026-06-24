@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ApiGateway } from '../contract/apiGateway'
 import { SimMode } from './useSimulation'
 
@@ -57,7 +57,17 @@ export interface UseMapClickArgs {
 }
 
 export function useMapClick(args: UseMapClickArgs) {
-  const { sim, device, api, clickToAddWaypoint, clampLat, normalizeLng } = args
+  const { api, clickToAddWaypoint, clampLat, normalizeLng } = args
+  // Mirror the FRESH-every-render sim/device objects into refs so handleMapClick
+  // can drop them from its dep array (keeping only the behavior-gating
+  // clickToAddWaypoint + insertAfterIndex), giving it a stable identity across
+  // position ticks. It only reads sim/device when it FIRES (a user map click),
+  // at which point the refs hold the latest value — behaviorally identical to
+  // closing over sim/device. Same ref-mirror technique as useSimActions (N1).
+  const simRef = useRef(args.sim)
+  simRef.current = args.sim
+  const deviceRef = useRef(args.device)
+  deviceRef.current = args.device
 
   // Insert-after-waypoint mode: when set, the next map click drops a new
   // waypoint immediately AFTER the chosen index instead of appending to
@@ -83,6 +93,8 @@ export function useMapClick(args: UseMapClickArgs) {
 
   // -- Map handlers --
   const handleMapClick = useCallback((lat: number, lng: number) => {
+    const sim = simRef.current
+    const device = deviceRef.current
     const nlat = clampLat(lat)
     const nlng = normalizeLng(lng)
     // Priority 1: insert-after mode. One-shot — clears itself after the
@@ -135,12 +147,12 @@ export function useMapClick(args: UseMapClickArgs) {
       }
       return [...prev, { lat: nlat, lng: nlng }]
     })
-    // Dep array matches App's original handleMapClick exactly. clampLat /
-    // normalizeLng / api / device are intentionally NOT listed: clampLat /
-    // normalizeLng were unlisted closures in App too (pure), and api / device
-    // are only read inside the insert-after branch whose gate (insertAfterIndex)
-    // IS listed — matching the original referential stability.
-  }, [clickToAddWaypoint, insertAfterIndex, sim])
+    // Deps are the two BEHAVIOR-GATING values only (clickToAddWaypoint +
+    // insertAfterIndex); sim/device are read via refs so this handler keeps a
+    // stable identity across position ticks (those gates only change on user
+    // action). clampLat / normalizeLng / api remain unlisted (pure / stable),
+    // matching the original referential stability.
+  }, [clickToAddWaypoint, insertAfterIndex])
 
   return {
     insertAfterIndex,

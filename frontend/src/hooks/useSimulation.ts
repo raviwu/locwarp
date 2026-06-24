@@ -145,10 +145,13 @@ export function useSimulation(
   const [straightLine, setStraightLineRaw] = useState<boolean>(() => {
     try { return localStorage.getItem('locwarp.straight_line') === '1' } catch { return false }
   })
-  const setStraightLine = (v: boolean) => {
+  // useCallback([]) so the setter keeps a stable ref across renders — it only
+  // calls the stable raw setter + a pure localStorage write, so freezing it is
+  // behaviorally identical and lets memo'd consumers (ControlPanel) short-circuit (N1).
+  const setStraightLine = useCallback((v: boolean) => {
     setStraightLineRaw(v)
     try { localStorage.setItem('locwarp.straight_line', v ? '1' : '0') } catch { /* ignore */ }
-  }
+  }, [])
 
   // Routing engine selection. Persisted in localStorage; backend default is
   // 'osrm' so omitting the field is equivalent to picking it explicitly.
@@ -161,10 +164,10 @@ export function useSimulation(
     } catch { /* ignore */ }
     return 'osrm'
   })
-  const setRouteEngine = (v: RouteEngine) => {
+  const setRouteEngine = useCallback((v: RouteEngine) => {
     setRouteEngineRaw(v)
     try { localStorage.setItem('locwarp.route_engine', v) } catch { /* ignore */ }
-  }
+  }, [])
 
   // Per-mode pause settings, persisted in localStorage.
   interface PauseSetting { enabled: boolean; min: number; max: number }
@@ -189,9 +192,14 @@ export function useSimulation(
   const [pauseMultiStop, setPauseMultiStopRaw] = useState<PauseSetting>(() => loadPause('locwarp.pause.multi_stop'))
   const [pauseLoop, setPauseLoopRaw] = useState<PauseSetting>(() => loadPause('locwarp.pause.loop'))
   const [pauseRandomWalk, setPauseRandomWalkRaw] = useState<PauseSetting>(() => loadPause('locwarp.pause.random_walk'))
-  const setPauseMultiStop = (v: PauseSetting) => { setPauseMultiStopRaw(v); savePause('locwarp.pause.multi_stop', v) }
-  const setPauseLoop = (v: PauseSetting) => { setPauseLoopRaw(v); savePause('locwarp.pause.loop', v) }
-  const setPauseRandomWalk = (v: PauseSetting) => { setPauseRandomWalkRaw(v); savePause('locwarp.pause.random_walk', v) }
+  // []-stable (see setStraightLine). `savePause` is a render-stable pure helper
+  // (only a localStorage write); not listing it is safe and intentional.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const setPauseMultiStop = useCallback((v: PauseSetting) => { setPauseMultiStopRaw(v); savePause('locwarp.pause.multi_stop', v) }, [])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const setPauseLoop = useCallback((v: PauseSetting) => { setPauseLoopRaw(v); savePause('locwarp.pause.loop', v) }, [])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const setPauseRandomWalk = useCallback((v: PauseSetting) => { setPauseRandomWalkRaw(v); savePause('locwarp.pause.random_walk', v) }, [])
   const [error, setError] = useState<string | null>(null)
   // Transient "WiFi tunnel dropped, reconnecting…" state for the up-to-~21s
   // backend retry window (tunnel_degraded → retry×3 → tunnel_recovered | tunnel_lost).

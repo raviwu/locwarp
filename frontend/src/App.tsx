@@ -92,6 +92,21 @@ const App: React.FC = () => {
   )
   const joystick = useJoystick(sendMessage, sim.mode === SimMode.Joystick)
   const bm = useBookmarks()
+
+  // Ref-mirrors of the hook returns that are FRESH object literals every render
+  // (sim/device/bm). Used by the action handlers below so their useCallbacks can
+  // key on [] (stable identity) yet still read the latest value when they fire on
+  // a user action — same technique as useWifiAutoConnect's connectedDevicesRef and
+  // useSimActions. Stable handler refs let the memo'd ControlPanel/MapView short-
+  // circuit on position ticks that don't change their inputs (N1). The ref is
+  // updated on EVERY render, so there is no stale-closure risk.
+  const simRef = useRef(sim)
+  simRef.current = sim
+  const deviceRef = useRef(device)
+  deviceRef.current = device
+  const bmRef = useRef(bm)
+  bmRef.current = bm
+
   const categoryDatesByName = useMemo(
     () => Object.fromEntries(
       bm.categories.map(c => [c.name, {
@@ -129,10 +144,10 @@ const App: React.FC = () => {
   const [showBookmarkPins, setShowBookmarkPinsRaw] = useState<boolean>(() => {
     try { return localStorage.getItem('locwarp.show_bookmark_pins') === '1' } catch { return false }
   })
-  const setShowBookmarkPins = (v: boolean) => {
+  const setShowBookmarkPins = useCallback((v: boolean) => {
     setShowBookmarkPinsRaw(v)
     try { localStorage.setItem('locwarp.show_bookmark_pins', v ? '1' : '0') } catch { /* ignore */ }
-  }
+  }, [])
   // Gold Ditto (拉金盆) shared state. externalA receives a "lat, lng" coord
   // pushed in by the map right-click handler so the panel's A-input updates
   // without the user having to copy. We wrap the coord in an object so that
@@ -446,6 +461,7 @@ const App: React.FC = () => {
     // point on the first add. This keeps backend route and UI list aligned
     // so waypoint-progress highlighting indexes correctly, and removes the
     // "start button injects current pos every click" footgun.
+    const sim = simRef.current
     const nlat = clampLat(lat)
     const nlng = normalizeLng(lng)
     sim.setWaypoints((prev: any[]) => {
@@ -457,7 +473,7 @@ const App: React.FC = () => {
       }
       return [...prev, { lat: nlat, lng: nlng }]
     })
-  }, [sim])
+  }, [])
 
   const handleClearWaypoints = useCallback(() => {
     sim.setWaypoints([])
@@ -601,6 +617,7 @@ const App: React.FC = () => {
     name: string,
     opts?: { categoryId?: string; overwriteId?: string },
   ) => {
+    const sim = simRef.current
     if (sim.waypoints.length === 0) {
       showToast(t('toast.route_need_waypoint'))
       return
@@ -619,7 +636,7 @@ const App: React.FC = () => {
     } catch (err: any) {
       showToast(t('toast.route_save_failed', { msg: err.message || '' }))
     }
-  }, [sim, routes.save, showToast, t])
+  }, [routes.save, showToast, t])
 
   const handleRoutesBulkDelete = useCallback(async (ids: string[]) => {
     try {
@@ -704,6 +721,8 @@ const App: React.FC = () => {
   // same fanout / single-device split as handleTeleport so multi-device
   // setups still get a fan-out toast.
   const handleGoldDittoConfirm = useCallback(async (lat: number, lng: number) => {
+    const sim = simRef.current
+    const device = deviceRef.current
     const udids = device.connectedDevices.map((d) => d.udid)
     if (udids.length >= 2) {
       sim.setCurrentPosition({ lat, lng })
@@ -712,7 +731,7 @@ const App: React.FC = () => {
     } else {
       sim.teleport(lat, lng)
     }
-  }, [sim, device, t, showToast])
+  }, [t, showToast])
 
   // Gold Ditto cycle. Adapter: GoldDittoPanel.onCycle splits target out
   // of args, but useSimulation.goldDittoCycleAll wants target merged in.
@@ -721,13 +740,15 @@ const App: React.FC = () => {
     target: 'A' | 'B' | 'auto',
     args: { lat_a: number; lng_a: number; lat_b: number; lng_b: number; wait_seconds: number },
   ) => {
+    const sim = simRef.current
+    const device = deviceRef.current
     const udids = device.connectedDevices.map((d) => d.udid)
     if (udids.length === 0) return
     const outcome = await sim.goldDittoCycleAll(udids, { target, ...args })
     if (udids.length >= 2) {
       showToast(toastForFanout(t, t('mode.goldditto'), outcome, device.connectedDevices))
     }
-  }, [sim, device, t, showToast])
+  }, [t, showToast])
 
   // Subscribe to backend goldditto_cycle phase events via typed WsRouter.
   // Extracted into useGoldDittoSubscription for testability; countdown ref
@@ -750,12 +771,12 @@ const App: React.FC = () => {
       const text = await file.text()
       const data = JSON.parse(text)
       const res = await api.importBookmarks(data)
-      await bm.refresh()
+      await bmRef.current.refresh()
       showToast(t('bm.import_success', { n: res.imported }))
     } catch (err: any) {
       showToast(t('bm.import_failed', { error: err?.message || 'unknown' }))
     }
-  }, [bm, showToast, t])
+  }, [showToast, t])
 
   // Bundled public-event catalog state + force-sync live in useCatalog (api
   // injected from useServices). The mount fetch, catalogNewCount diff vs the
@@ -763,6 +784,8 @@ const App: React.FC = () => {
   // App keeps the toast / i18n / post-sync bm.refresh wrapper below (matching the
   // useRoutes convention of keeping user-facing messaging in App).
   const cat = useCatalog(api, bm.bookmarks)
+  const catRef = useRef(cat)
+  catRef.current = cat
   const catalogStatus = cat.catalogStatus
   const catalogError = cat.catalogError
   const catalogNewCount = cat.catalogNewCount
@@ -773,9 +796,9 @@ const App: React.FC = () => {
       // refresh() is a no-op (returns null) when there's no catalog loaded or a
       // sync is already in flight — same guard the inline handler had, so no
       // toast fires in those cases.
-      const res = await cat.refresh()
+      const res = await catRef.current.refresh()
       if (!res) return
-      await bm.refresh()
+      await bmRef.current.refresh()
       showToast(t('bm.catalog.synced', {
         added: res.added,
         updated: res.updated,
@@ -784,7 +807,7 @@ const App: React.FC = () => {
     } catch (err: unknown) {
       showToast(err instanceof Error ? err.message : t('bm.catalog.failed'))
     }
-  }, [cat, bm, showToast, t])
+  }, [showToast, t])
 
   const handleRouteRename = useCallback(async (id: string, name: string) => {
     try {
@@ -803,19 +826,29 @@ const App: React.FC = () => {
     }
   }, [routes.remove, showToast, t])
 
-  // Build props for components
+  // Build props for components.
+  //
+  // VALUE-keyed (not object-keyed) memo (N1): useSimulation's position_update
+  // handler calls `setCurrentPosition({ lat, lng })` on EVERY tick, allocating a
+  // fresh object even when the coordinates are unchanged. Keying on the object
+  // (`[sim.currentPosition]`) would therefore recompute every frame, handing a
+  // new ref to the memo'd MapView/ControlPanel/StatusBar and forcing a commit
+  // each tick. Keying on the primitive lat/lng means `currentPos` keeps a stable
+  // reference until the coordinates actually change, so a tick that re-renders
+  // App for an unrelated reason (or a duplicate same-coord frame) short-circuits
+  // the children. Same treatment for `destPos`.
+  const curLat = sim.currentPosition?.lat
+  const curLng = sim.currentPosition?.lng
   const currentPos = useMemo(
-    () => sim.currentPosition
-      ? { lat: sim.currentPosition.lat, lng: sim.currentPosition.lng }
-      : null,
-    [sim.currentPosition],
+    () => (curLat != null && curLng != null) ? { lat: curLat, lng: curLng } : null,
+    [curLat, curLng],
   )
 
+  const destLat = sim.destination?.lat
+  const destLng = sim.destination?.lng
   const destPos = useMemo(
-    () => sim.destination
-      ? { lat: sim.destination.lat, lng: sim.destination.lng }
-      : null,
-    [sim.destination],
+    () => (destLat != null && destLng != null) ? { lat: destLat, lng: destLng } : null,
+    [destLat, destLng],
   )
 
   // Mode default km/h, used only for ControlPanel's in-panel preset

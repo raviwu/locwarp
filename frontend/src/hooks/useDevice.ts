@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useMemo } from 'react'
 import {
   listDevices, connectDevice, disconnectDevice,
   wifiScan,
@@ -274,7 +274,14 @@ export function useDevice(ws?: WsRouter) {
   // surviving device in charge so the rejoining one's replay stays
   // filtered out and invisible until the user explicitly chooses to
   // switch.
-  const connectedDevices: DeviceInfo[] = devices.filter((d) => d.is_connected)
+  // Memoized so the array keeps a stable reference between renders that don't
+  // touch `devices` (e.g. a position_update tick re-rendering the tree). Pure
+  // filter — behaviorally identical to recomputing inline; the stable ref lets
+  // the memo'd MapView short-circuit when no device event has fired (N1).
+  const connectedDevices: DeviceInfo[] = useMemo(
+    () => devices.filter((d) => d.is_connected),
+    [devices],
+  )
   const [stickyPrimaryUdid, setStickyPrimaryUdid] = useState<string | null>(null)
   useEffect(() => {
     if (connectedDevices.length === 0) {

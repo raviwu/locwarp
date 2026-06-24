@@ -77,8 +77,8 @@ beforeEach(() => {
 })
 afterEach(() => { try { localStorage.clear() } catch { /* ignore */ } })
 
-describe('App re-render count per position_update tick (characterization)', () => {
-  it('pins the commit count for ControlPanel + MapView across N position_update frames', async () => {
+describe('App re-render count per position_update tick (N1 memoization guard)', () => {
+  it('does NOT re-commit ControlPanel/MapView on repeated SAME-coordinate position frames', async () => {
     const router = createWsRouter()
     await act(async () => { renderApp(router) })
 
@@ -87,42 +87,54 @@ describe('App re-render count per position_update tick (characterization)', () =
     counts.control = 0
     counts.map = 0
 
-    const FRAMES = 5
-    for (let i = 0; i < FRAMES; i++) {
+    // Establish a position with the FIRST frame. This legitimately changes
+    // currentPos (null -> {lat,lng}), so ControlPanel + MapView SHOULD commit
+    // exactly once here. We count it, then assert the *subsequent* identical
+    // frames add nothing.
+    const LAT = 25.0330
+    const LNG = 121.5654
+    await act(async () => {
+      router.dispatch({
+        type: 'position_update',
+        lat: LAT, lng: LNG,
+        progress: 0, distance_remaining: 100, distance_traveled: 0,
+      })
+    })
+    const controlAfterFirst = counts.control
+    const mapAfterFirst = counts.map
+
+    // Now dispatch REPEATED frames with the SAME lat/lng. useSimulation's
+    // handler still calls setCurrentPosition({lat,lng}) on each one — a FRESH
+    // object literal every tick (useSimulation.ts L312) — so App re-renders.
+    // But:
+    //   • currentPos / destPos are VALUE-keyed memos (App.tsx) → the ref stays
+    //     stable because lat/lng are unchanged.
+    //   • the ~8 action handlers from useSimActions are []-stable (ref-mirror).
+    // So the memo'd children must short-circuit and NOT commit again.
+    //
+    // WITHOUT the N1 fix this fails hard: the useSimActions handlers were keyed
+    // on [sim, device, …] (fresh objects every render), so their refs changed
+    // every frame, the memo shallow-compare missed, and BOTH children committed
+    // on every one of these frames (verified by stashing the fix: control/map
+    // jump from 1 to 1+REPEAT_FRAMES). See sh3-s4-report.md.
+    const REPEAT_FRAMES = 5
+    for (let i = 0; i < REPEAT_FRAMES; i++) {
       await act(async () => {
-        // Single-device frame (NO udid) so it flows through the legacy
-        // setters: useSimulation's position_update handler calls
-        // setCurrentPosition + setProgress + setStatus (useSimulation.ts
-        // L309-330) — the path that re-renders App on every tick.
         router.dispatch({
           type: 'position_update',
-          lat: 25.03 + i * 1e-4,
-          lng: 121.56 + i * 1e-4,
-          progress: i / FRAMES,
-          distance_remaining: 100 - i,
-          distance_traveled: i,
+          lat: LAT, lng: LNG,
+          progress: 0, distance_remaining: 100, distance_traveled: 0,
         })
       })
     }
 
-    // PIN the status quo (AFTER memo+useMemo refactor).
-    //
-    // before refactor: control=5, map=5 — every App re-render from a position
-    //   tick allocated fresh bookmark-array/handler refs, so the memo'd stubs
-    //   always saw new prop refs and committed every frame.
-    //
-    // after refactor: control=5, map=5 — bookmark arrays and inline handlers
-    //   are now memoized (stable refs across position ticks). HOWEVER,
-    //   `currentPos` (passed to ControlPanel as `currentPosition`) genuinely
-    //   changes on every tick (each frame dispatches a different lat/lng), so
-    //   the shallow-compare still fires once per frame. In a real scenario where
-    //   App re-renders for OTHER reasons (e.g. catalog polling, unrelated state)
-    //   but position didn't change, ControlPanel now correctly short-circuits.
-    //   The test pins this minimum-necessary count; a regression (e.g. adding
-    //   an unstable ref prop) would push the count above 5.
-    //
-    // before→after: control 5→5, map 5→5 (minimum-necessary given position changes)
-    expect(counts.control).toBe(5)
-    expect(counts.map).toBe(5)
+    // The first frame committed once (coordinate change). The 5 identical
+    // follow-up frames must add ZERO commits — that is the whole point of the
+    // memoization. (Absolute count is the first-frame commit, unchanged.)
+    expect(counts.control).toBe(controlAfterFirst)
+    expect(counts.map).toBe(mapAfterFirst)
+    // And the first frame itself should have committed exactly once each.
+    expect(controlAfterFirst).toBe(1)
+    expect(mapAfterFirst).toBe(1)
   })
 })

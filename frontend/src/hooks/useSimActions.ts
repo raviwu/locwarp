@@ -1,4 +1,4 @@
-import { useCallback } from 'react'
+import { useCallback, useRef } from 'react'
 import type { ApiGateway } from '../contract/apiGateway'
 import { SimMode } from './useSimulation'
 import { toastForFanout } from '../utils/toast'
@@ -76,12 +76,48 @@ export interface UseSimActionsArgs {
 }
 
 export function useSimActions(args: UseSimActionsArgs) {
-  const {
-    sim, device, showToast, t, pushRecent, randomWalkRadius,
-    clampLat, normalizeLng, setPreviewPin,
-  } = args
+  // ── Ref-mirror stabilisation (N1) ──────────────────────────────────────────
+  // `sim`/`device` are the RAW return objects of useSimulation()/useDevice() —
+  // FRESH object literals on every App render (a position_update tick allocates
+  // a new sim object each frame). If the handler useCallbacks key on [sim,
+  // device, …], their refs change every render, so the React.memo'd ControlPanel
+  // / MapView (which receive ~8 of these handlers) fail their shallow prop-
+  // compare and commit every frame — the N1 memoization becomes a no-op.
+  //
+  // Fix: mirror every input into a ref updated on each render (plain assignment,
+  // same technique as `connectedDevicesRef` in useWifiAutoConnect — the ref
+  // ALWAYS holds the latest value, so there is no stale-closure risk). Each
+  // handler reads `*Ref.current` and is keyed on `[]`, giving it ONE stable
+  // identity for the app's lifetime. Every handler fires on a USER ACTION
+  // (button press / map click), at which point the refs already hold the latest
+  // sim/device/showToast/t/etc., so behavior is IDENTICAL to keying on [sim,
+  // device, …]. No useEffect anywhere depends on these handler identities (they
+  // are passed as event-handler props, not effect deps), so freezing them is
+  // safe.
+  const simRef = useRef(args.sim)
+  simRef.current = args.sim
+  const deviceRef = useRef(args.device)
+  deviceRef.current = args.device
+  const showToastRef = useRef(args.showToast)
+  showToastRef.current = args.showToast
+  const tRef = useRef(args.t)
+  tRef.current = args.t
+  const pushRecentRef = useRef(args.pushRecent)
+  pushRecentRef.current = args.pushRecent
+  const randomWalkRadiusRef = useRef(args.randomWalkRadius)
+  randomWalkRadiusRef.current = args.randomWalkRadius
+  const clampLatRef = useRef(args.clampLat)
+  clampLatRef.current = args.clampLat
+  const normalizeLngRef = useRef(args.normalizeLng)
+  normalizeLngRef.current = args.normalizeLng
+  const setPreviewPinRef = useRef(args.setPreviewPin)
+  setPreviewPinRef.current = args.setPreviewPin
 
   const handleRestore = useCallback(async () => {
+    const sim = simRef.current
+    const device = deviceRef.current
+    const showToast = showToastRef.current
+    const t = tRef.current
     // The backend stop + DVT clear can take a few seconds, especially if
     // movement was active or the channel is flaky. Give the user a visible
     // "working on it" toast up front so the UI doesn't feel frozen.
@@ -110,12 +146,17 @@ export function useSimActions(args: UseSimActionsArgs) {
     } catch {
       showToast(t('status.restore_failed'))
     }
-  }, [showToast, t, sim, device])
+  }, [])
 
   const handleTeleport = useCallback(async (latIn: number, lngIn: number, source: 'menu' | 'coord' = 'menu') => {
-    const lat = clampLat(latIn)
-    const lng = normalizeLng(lngIn)
-    setPreviewPin(null)
+    const sim = simRef.current
+    const device = deviceRef.current
+    const showToast = showToastRef.current
+    const t = tRef.current
+    const pushRecent = pushRecentRef.current
+    const lat = clampLatRef.current(latIn)
+    const lng = normalizeLngRef.current(lngIn)
+    setPreviewPinRef.current(null)
     const udids = device.connectedDevices.map((d) => d.udid)
     if (udids.length >= 2) {
       const prevPos = sim.currentPosition
@@ -137,16 +178,20 @@ export function useSimActions(args: UseSimActionsArgs) {
       }
     }
     void pushRecent(lat, lng, source === 'coord' ? 'coord_teleport' : 'teleport')
-    // Dep array matches App's original handleTeleport exactly. clampLat /
-    // normalizeLng / setPreviewPin are intentionally NOT listed: they were
-    // unlisted closures in App too (pure / stable-setter), so re-binding on
-    // them would change this callback's referential stability vs the original.
-  }, [sim, device, t, showToast, pushRecent])
+    // [] deps: every value is read from a ref that holds the latest render's
+    // value, so this handler has ONE stable identity yet always acts on the
+    // current sim/device — behaviorally identical to keying on [sim, device, …].
+  }, [])
 
   const handleNavigate = useCallback(async (latIn: number, lngIn: number, source: 'menu' | 'coord' = 'menu') => {
-    const lat = clampLat(latIn)
-    const lng = normalizeLng(lngIn)
-    setPreviewPin(null)
+    const sim = simRef.current
+    const device = deviceRef.current
+    const showToast = showToastRef.current
+    const t = tRef.current
+    const pushRecent = pushRecentRef.current
+    const lat = clampLatRef.current(latIn)
+    const lng = normalizeLngRef.current(lngIn)
+    setPreviewPinRef.current(null)
     const udids = device.connectedDevices.map((d) => d.udid)
     if (udids.length >= 2) {
       const outcome = await sim.navigateAll(udids, lat, lng)
@@ -160,10 +205,14 @@ export function useSimActions(args: UseSimActionsArgs) {
       }
     }
     void pushRecent(lat, lng, source === 'coord' ? 'coord_navigate' : 'navigate')
-    // Dep array matches App's original handleNavigate exactly (see handleTeleport).
-  }, [sim, device, t, showToast, pushRecent])
+    // [] deps via refs (see handleTeleport).
+  }, [])
 
   const handleStartWaypointRoute = useCallback(async () => {
+    const sim = simRef.current
+    const device = deviceRef.current
+    const showToast = showToastRef.current
+    const t = tRef.current
     // UI waypoint list already includes the current position as index 0
     // (see handleAddWaypoint / generateWaypoints), so just hand it straight
     // to the backend. No more prepend-on-start, no more accidental re-inject
@@ -189,9 +238,19 @@ export function useSimActions(args: UseSimActionsArgs) {
         sim.multiStop(route, 0, false)
       }
     }
-  }, [sim, device, showToast, t])
+  }, [])
+  // Mirror so handleStart can call the latest handleStartWaypointRoute without
+  // listing it as a dep (it's already []-stable, but routing through the ref
+  // keeps the pattern uniform and future-proof).
+  const handleStartWaypointRouteRef = useRef(handleStartWaypointRoute)
+  handleStartWaypointRouteRef.current = handleStartWaypointRoute
 
   const handleStart = useCallback(async () => {
+    const sim = simRef.current
+    const device = deviceRef.current
+    const showToast = showToastRef.current
+    const t = tRef.current
+    const randomWalkRadius = randomWalkRadiusRef.current
     const udids = device.connectedDevices.map((d) => d.udid)
     if (sim.mode === SimMode.Joystick) {
       if (!sim.currentPosition) {
@@ -216,11 +275,15 @@ export function useSimActions(args: UseSimActionsArgs) {
         sim.randomWalk(sim.currentPosition, randomWalkRadius)
       }
     } else if (sim.mode === SimMode.Loop || sim.mode === SimMode.MultiStop) {
-      handleStartWaypointRoute()
+      handleStartWaypointRouteRef.current()
     }
-  }, [sim, device, randomWalkRadius, handleStartWaypointRoute, showToast, t])
+  }, [])
 
   const handleStop = useCallback(async () => {
+    const sim = simRef.current
+    const device = deviceRef.current
+    const showToast = showToastRef.current
+    const t = tRef.current
     // Stop the active movement only — keep the simulated location in place
     // so the device stays where the user paused it. Use the 一鍵還原 button
     // separately to clear the simulated location and restore real GPS.
@@ -236,9 +299,13 @@ export function useSimActions(args: UseSimActionsArgs) {
     } else {
       sim.stop()
     }
-  }, [sim, device, t, showToast])
+  }, [])
 
   const handleApplySpeed = useCallback(async () => {
+    const sim = simRef.current
+    const device = deviceRef.current
+    const showToast = showToastRef.current
+    const t = tRef.current
     const udids = device.connectedDevices.map((d) => d.udid)
     try {
       if (udids.length >= 2) {
@@ -251,9 +318,13 @@ export function useSimActions(args: UseSimActionsArgs) {
     } catch (err: any) {
       showToast(t('panel.apply_speed_failed') + (err?.message ? `: ${err.message}` : ''))
     }
-  }, [sim, device, showToast, t])
+  }, [])
 
   const handlePause = useCallback(async () => {
+    const sim = simRef.current
+    const device = deviceRef.current
+    const showToast = showToastRef.current
+    const t = tRef.current
     const udids = device.connectedDevices.map((d) => d.udid)
     if (udids.length >= 2) {
       const outcome = await sim.pauseAll(udids)
@@ -261,9 +332,13 @@ export function useSimActions(args: UseSimActionsArgs) {
     } else {
       sim.pause()
     }
-  }, [sim, device, t, showToast])
+  }, [])
 
   const handleResume = useCallback(async () => {
+    const sim = simRef.current
+    const device = deviceRef.current
+    const showToast = showToastRef.current
+    const t = tRef.current
     const udids = device.connectedDevices.map((d) => d.udid)
     if (udids.length >= 2) {
       const outcome = await sim.resumeAll(udids)
@@ -271,7 +346,7 @@ export function useSimActions(args: UseSimActionsArgs) {
     } else {
       sim.resume()
     }
-  }, [sim, device, t, showToast])
+  }, [])
 
   return {
     handleRestore,
