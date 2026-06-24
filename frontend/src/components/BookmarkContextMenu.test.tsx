@@ -200,3 +200,24 @@ describe('BookmarkContextMenu delete confirmation (U13)', () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('BookmarkContextMenu keyboard a11y (U22)', () => {
+  it('exposes a role=menu container with role=menuitem button action rows', () => {
+    render(<BookmarkContextMenu {...makeProps()} />);
+    expect(screen.getByRole('menu')).toBeTruthy();
+    // Teleport / Delete are menuitems; their text label is the accessible name
+    // (the leading <svg> contributes no name).
+    const teleport = screen.getByRole('menuitem', { name: /map\.teleport_here/ });
+    expect(teleport.tagName).toBe('BUTTON'); // native = keyboard-operable
+    expect(screen.getByRole('menuitem', { name: /generic\.delete/ })).toBeTruthy();
+  });
+
+  it('activating the Teleport menuitem fires its callback and closes', () => {
+    const onTeleport = vi.fn();
+    const onClose = vi.fn();
+    render(<BookmarkContextMenu {...makeProps({ onTeleport, onClose })} />);
+    fireEvent.click(screen.getByRole('menuitem', { name: /map\.teleport_here/ }));
+    expect(onTeleport).toHaveBeenCalledWith(bm.lat, bm.lng);
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+});

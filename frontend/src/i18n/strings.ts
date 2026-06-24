@@ -618,6 +618,7 @@ export const STRINGS = {
   'bm.cat.status_ended':     { zh: '已結束',                      en: 'Ended' },
   'bm.cat.status_upcoming':  { zh: '即將開始 {date}',              en: 'Starts {date}' },
 
+  'bm.menu_label': { zh: '書籤選單', en: 'Bookmark actions' },
   'bm.blank': { zh: '空白', en: 'Empty' },
   'bm.empty': { zh: '尚無收藏', en: 'No bookmarks' },
   'bm.search_placeholder': { zh: '搜尋收藏名稱 / 座標', en: 'Search bookmark name or coords' },

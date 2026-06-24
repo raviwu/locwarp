@@ -52,11 +52,11 @@ const ctxItemStyle: React.CSSProperties = {
   transition: 'background 0.15s',
 };
 
-function ctxHighlight(e: React.MouseEvent<HTMLDivElement>) {
-  (e.currentTarget as HTMLDivElement).style.background = '#3a3a3e';
+function ctxHighlight(e: React.MouseEvent<HTMLElement>) {
+  (e.currentTarget as HTMLElement).style.background = '#3a3a3e';
 }
-function ctxUnhighlight(e: React.MouseEvent<HTMLDivElement>) {
-  (e.currentTarget as HTMLDivElement).style.background = 'transparent';
+function ctxUnhighlight(e: React.MouseEvent<HTMLElement>) {
+  (e.currentTarget as HTMLElement).style.background = 'transparent';
 }
 
 /**
@@ -152,6 +152,8 @@ const BookmarkContextMenu: React.FC<BookmarkContextMenuProps> = ({
     <>
       <div
         data-bookmark-context-menu
+        role="menu"
+        aria-label={t('bm.menu_label')}
         style={{
           position: 'fixed',
           // Clamp to viewport so the menu never falls off-screen.
@@ -242,8 +244,10 @@ const BookmarkContextMenu: React.FC<BookmarkContextMenuProps> = ({
         {/* 2 + 3. Teleport / Navigate (device-gated). */}
         {deviceConnected ? (
           <>
-            <div
-              style={ctxItemStyle}
+            <button
+              type="button"
+              role="menuitem"
+              style={{ ...ctxItemStyle, width: '100%', textAlign: 'left', background: 'transparent', border: 'none', font: 'inherit' }}
               onMouseEnter={ctxHighlight}
               onMouseLeave={ctxUnhighlight}
               onClick={() => {
@@ -259,9 +263,11 @@ const BookmarkContextMenu: React.FC<BookmarkContextMenuProps> = ({
                 <line x1="18" y1="12" x2="22" y2="12" />
               </svg>
               {t('map.teleport_here')}
-            </div>
-            <div
-              style={ctxItemStyle}
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              style={{ ...ctxItemStyle, width: '100%', textAlign: 'left', background: 'transparent', border: 'none', font: 'inherit' }}
               onMouseEnter={ctxHighlight}
               onMouseLeave={ctxUnhighlight}
               onClick={() => {
@@ -273,7 +279,7 @@ const BookmarkContextMenu: React.FC<BookmarkContextMenuProps> = ({
                 <polygon points="3,11 22,2 13,21 11,13" />
               </svg>
               {t('map.navigate_here')}
-            </div>
+            </button>
           </>
         ) : (
           <div
@@ -289,8 +295,10 @@ const BookmarkContextMenu: React.FC<BookmarkContextMenuProps> = ({
 
         {/* 4. Set as Gold Ditto A (always wired in practice). */}
         {onSetAsGoldDittoA && (
-          <div
-            style={ctxItemStyle}
+          <button
+            type="button"
+            role="menuitem"
+            style={{ ...ctxItemStyle, width: '100%', textAlign: 'left', background: 'transparent', border: 'none', font: 'inherit' }}
             onMouseEnter={ctxHighlight}
             onMouseLeave={ctxUnhighlight}
             onClick={() => {
@@ -302,13 +310,15 @@ const BookmarkContextMenu: React.FC<BookmarkContextMenuProps> = ({
               <path d="M12 2 L13.5 9 L21 12 L13.5 15 L12 22 L10.5 15 L3 12 L10.5 9 Z" />
             </svg>
             {t('goldditto.set_as_a')}
-          </div>
+          </button>
         )}
 
         {/* 5. Add as Waypoint (only in a route mode). */}
         {showWaypointOption && onAddWaypoint && (
-          <div
-            style={ctxItemStyle}
+          <button
+            type="button"
+            role="menuitem"
+            style={{ ...ctxItemStyle, width: '100%', textAlign: 'left', background: 'transparent', border: 'none', font: 'inherit' }}
             onMouseEnter={ctxHighlight}
             onMouseLeave={ctxUnhighlight}
             onClick={() => {
@@ -324,14 +334,16 @@ const BookmarkContextMenu: React.FC<BookmarkContextMenuProps> = ({
               <line x1="23" y1="12" x2="19" y2="12" />
             </svg>
             {t('map.add_waypoint')}
-          </div>
+          </button>
         )}
 
         <div style={{ height: 1, background: '#444', margin: '4px 0' }} />
 
         {/* 6. Edit. */}
-        <div
-          style={ctxItemStyle}
+        <button
+          type="button"
+          role="menuitem"
+          style={{ ...ctxItemStyle, width: '100%', textAlign: 'left', background: 'transparent', border: 'none', font: 'inherit' }}
           onMouseEnter={ctxHighlight}
           onMouseLeave={ctxUnhighlight}
           onClick={() => {
@@ -344,11 +356,13 @@ const BookmarkContextMenu: React.FC<BookmarkContextMenuProps> = ({
             <path d="M18.5 2.5a2.12 2.12 0 013 3L12 15l-4 1 1-4 9.5-9.5z" />
           </svg>
           {t('bm.edit')}
-        </div>
+        </button>
 
         {/* 7. Copy (name + lat/lng). */}
-        <div
-          style={ctxItemStyle}
+        <button
+          type="button"
+          role="menuitem"
+          style={{ ...ctxItemStyle, width: '100%', textAlign: 'left', background: 'transparent', border: 'none', font: 'inherit' }}
           onMouseEnter={ctxHighlight}
           onMouseLeave={ctxUnhighlight}
           onClick={() => {
@@ -361,11 +375,13 @@ const BookmarkContextMenu: React.FC<BookmarkContextMenuProps> = ({
             <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />
           </svg>
           {t('bm.copy')}
-        </div>
+        </button>
 
         {/* 8. Delete. */}
-        <div
-          style={ctxItemStyle}
+        <button
+          type="button"
+          role="menuitem"
+          style={{ ...ctxItemStyle, width: '100%', textAlign: 'left', background: 'transparent', border: 'none', font: 'inherit' }}
           onMouseEnter={ctxHighlight}
           onMouseLeave={ctxUnhighlight}
           onClick={() => {
@@ -380,7 +396,7 @@ const BookmarkContextMenu: React.FC<BookmarkContextMenuProps> = ({
             <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2" />
           </svg>
           <span style={{ color: '#f44336' }}>{t('generic.delete')}</span>
-        </div>
+        </button>
 
         {/* 9. Move to category (only when more than one category exists). */}
         {categories.length > 1 && (
@@ -391,9 +407,11 @@ const BookmarkContextMenu: React.FC<BookmarkContextMenuProps> = ({
               {categories
                 .filter((c) => c !== bm.category)
                 .map((cat) => (
-                  <div
+                  <button
                     key={cat}
-                    style={ctxItemStyle}
+                    type="button"
+                    role="menuitem"
+                    style={{ ...ctxItemStyle, width: '100%', textAlign: 'left', background: 'transparent', border: 'none', font: 'inherit' }}
                     onMouseEnter={ctxHighlight}
                     onMouseLeave={ctxUnhighlight}
                     onClick={() => {
@@ -413,7 +431,7 @@ const BookmarkContextMenu: React.FC<BookmarkContextMenuProps> = ({
                       }}
                     />
                     {displayCat(cat)}
-                  </div>
+                  </button>
                 ))}
             </div>
           </>
