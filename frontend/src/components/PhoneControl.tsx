@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { createPortal } from 'react-dom';
 import { useT } from '../i18n';
 import { BASE_URL } from '../contract/endpoints';
+import DialogShell from './DialogShell';
 
 interface PhoneNic {
   ip: string;
@@ -136,29 +136,23 @@ const PhoneControlButton: React.FC<PhoneControlButtonProps> = ({ showToast }) =>
         {t('phone.button')}
       </button>
 
-      {open && createPortal((
-        <div
-          onClick={() => setOpen(false)}
-          style={{
-            position: 'fixed', inset: 0, zIndex: 2000,
-            background: 'rgba(8, 10, 20, 0.55)', backdropFilter: 'blur(4px)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-          }}
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              width: 420, maxWidth: 'calc(100vw - 32px)',
-              background: 'rgba(26, 29, 39, 0.98)',
-              border: '1px solid rgba(108, 140, 255, 0.3)',
-              borderRadius: 12,
-              padding: 22,
-              boxShadow: '0 20px 60px rgba(0,0,0,0.5)',
-              color: '#e6e8ee',
-            }}
-          >
+      <DialogShell
+        open={open}
+        onClose={() => setOpen(false)}
+        labelledBy="phone-modal-title"
+        backdropStyle={{ zIndex: 2000 }}
+        panelStyle={{
+          width: 420, maxWidth: 'calc(100vw - 32px)',
+          background: 'rgba(26, 29, 39, 0.98)',
+          border: '1px solid rgba(108, 140, 255, 0.3)',
+          borderRadius: 12,
+          padding: 22,
+          boxShadow: '0 20px 60px rgba(0,0,0,0.5)',
+          color: '#e6e8ee',
+        }}
+      >
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-              <h2 style={{ margin: 0, fontSize: 16 }}>{t('phone.modal_title')}</h2>
+              <h2 id="phone-modal-title" style={{ margin: 0, fontSize: 16 }}>{t('phone.modal_title')}</h2>
               <button
                 onClick={() => setOpen(false)}
                 style={{
@@ -345,9 +339,7 @@ const PhoneControlButton: React.FC<PhoneControlButtonProps> = ({ showToast }) =>
                 </div>
               </>
             )}
-          </div>
-        </div>
-      ), document.body)}
+      </DialogShell>
     </>
   );
 };

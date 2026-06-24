@@ -263,6 +263,45 @@ describe('DeviceChip trust_required variant', () => {
   })
 })
 
+describe('DeviceChip forget modal a11y (DialogShell)', () => {
+  function openForget() {
+    fireEvent.contextMenu(screen.getByTitle('A · My iPhone'))
+    fireEvent.click(screen.getByText('device.chip_forget'))
+  }
+
+  it('exposes the forget confirm as a role=dialog when open', () => {
+    render(
+      <DeviceChip
+        letter="A"
+        device={makeDevice()}
+        onDisconnect={noop}
+        onForget={noop}
+        onRestoreOne={noop}
+      />,
+    )
+    openForget()
+    expect(screen.getByRole('dialog')).toHaveAttribute('aria-modal', 'true')
+    expect(screen.getByText('device.forget_confirm_title')).toBeInTheDocument()
+  })
+
+  it('closes the forget modal on Escape without calling onForget', () => {
+    const onForget = vi.fn()
+    render(
+      <DeviceChip
+        letter="A"
+        device={makeDevice()}
+        onDisconnect={noop}
+        onForget={onForget}
+        onRestoreOne={noop}
+      />,
+    )
+    openForget()
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(screen.queryByText('device.forget_confirm_title')).not.toBeInTheDocument()
+    expect(onForget).not.toHaveBeenCalled()
+  })
+})
+
 describe('DeviceChip forget confirmation flow', () => {
   function openMenu() {
     fireEvent.contextMenu(screen.getByTitle('A · My iPhone'))

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import { createPortal } from 'react-dom';
 import { wifiTunnelDiscover, wifiTunnelFindPort, wifiRepair, type TunnelInfo } from '../services/api';
 import { useT } from '../i18n';
+import DialogShell from './DialogShell';
 
 const MAX_TUNNEL_DEVICES = 3;
 
@@ -885,173 +885,150 @@ const DeviceStatus: React.FC<DeviceStatusProps> = ({
         </div>
       )}
 
-      {showWifiWarning && createPortal(
-        <div
-          onClick={() => setShowWifiWarning(false)}
-          className="anim-fade-in"
-          style={{
-            position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-            background: 'rgba(8, 10, 20, 0.55)',
-            backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            zIndex: 1000, padding: 20,
-          }}
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            className="anim-scale-in"
+      <DialogShell
+        open={showWifiWarning}
+        onClose={() => setShowWifiWarning(false)}
+        labelledBy="wifi-warning-title"
+        backdropClassName="anim-fade-in"
+        panelClassName="anim-scale-in"
+        panelStyle={{
+          background: 'rgba(26, 29, 39, 0.96)',
+          backdropFilter: 'blur(14px)', WebkitBackdropFilter: 'blur(14px)',
+          border: '1px solid rgba(108, 140, 255, 0.2)', borderRadius: 14,
+          padding: 26, maxWidth: 560, width: '100%',
+          maxHeight: '80vh', overflowY: 'auto',
+          color: '#e8e8e8',
+          boxShadow: '0 20px 60px rgba(12, 18, 40, 0.65), 0 0 0 1px rgba(255, 255, 255, 0.05) inset',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
+          <span style={{
+            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+            width: 32, height: 32, borderRadius: '50%',
+            background: 'rgba(255, 193, 7, 0.15)', color: '#ffc107',
+            fontSize: 20, fontWeight: 700, border: '1px solid rgba(255,193,7,0.5)',
+            flexShrink: 0,
+          }}>!</span>
+          <strong id="wifi-warning-title" style={{ fontSize: 16 }}>{t('wifi.warning_title')}</strong>
+        </div>
+        <div style={{ fontSize: 13, lineHeight: 1.7, whiteSpace: 'pre-line', opacity: 0.92 }}>
+          {t('wifi.warning_body')}
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 20 }}>
+          <button
+            onClick={() => setShowWifiWarning(false)}
             style={{
-              background: 'rgba(26, 29, 39, 0.96)',
-              backdropFilter: 'blur(14px)', WebkitBackdropFilter: 'blur(14px)',
-              border: '1px solid rgba(108, 140, 255, 0.2)', borderRadius: 14,
-              padding: 26, maxWidth: 560, width: '100%',
-              maxHeight: '80vh', overflowY: 'auto',
-              color: '#e8e8e8',
-              boxShadow: '0 20px 60px rgba(12, 18, 40, 0.65), 0 0 0 1px rgba(255, 255, 255, 0.05) inset',
+              padding: '8px 20px', fontSize: 13, borderRadius: 5,
+              background: '#6c8cff', color: '#fff', border: 'none', cursor: 'pointer',
+              fontWeight: 600,
             }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
-              <span style={{
-                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                width: 32, height: 32, borderRadius: '50%',
-                background: 'rgba(255, 193, 7, 0.15)', color: '#ffc107',
-                fontSize: 20, fontWeight: 700, border: '1px solid rgba(255,193,7,0.5)',
-                flexShrink: 0,
-              }}>!</span>
-              <strong style={{ fontSize: 16 }}>{t('wifi.warning_title')}</strong>
-            </div>
+          >{t('wifi.warning_ok')}</button>
+        </div>
+      </DialogShell>
+
+      <DialogShell
+        open={showRepairConfirm}
+        onClose={() => { setShowRepairConfirm(false); setRepairTargetUdid(null); }}
+        busy={repairState === 'running'}
+        labelledBy="wifi-repair-title"
+        backdropClassName="anim-fade-in"
+        panelClassName="anim-scale-in"
+        panelStyle={{
+          background: 'rgba(26, 29, 39, 0.96)',
+          backdropFilter: 'blur(14px)', WebkitBackdropFilter: 'blur(14px)',
+          border: '1px solid rgba(108, 140, 255, 0.2)', borderRadius: 14,
+          padding: 26, maxWidth: 460, width: '100%',
+          color: '#e8e8e8',
+          boxShadow: '0 20px 60px rgba(12, 18, 40, 0.65), 0 0 0 1px rgba(255, 255, 255, 0.05) inset',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
+          <span style={{
+            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+            width: 32, height: 32, borderRadius: '50%',
+            background: 'rgba(108, 140, 255, 0.15)', color: '#6c8cff',
+            fontSize: 18, fontWeight: 700, border: '1px solid rgba(108,140,255,0.5)',
+            flexShrink: 0,
+          }}>↻</span>
+          <strong id="wifi-repair-title" style={{ fontSize: 15 }}>{t('wifi.repair_confirm_title')}</strong>
+        </div>
+
+        {repairState === 'idle' && (
+          <>
             <div style={{ fontSize: 13, lineHeight: 1.7, whiteSpace: 'pre-line', opacity: 0.92 }}>
-              {t('wifi.warning_body')}
+              {t('wifi.repair_confirm_body')}
             </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 20 }}>
+              <button
+                onClick={() => { setShowRepairConfirm(false); setRepairTargetUdid(null); }}
+                style={{ padding: '7px 16px', fontSize: 12, borderRadius: 5,
+                  background: 'transparent', color: '#bbb', border: '1px solid #444', cursor: 'pointer' }}
+              >{t('wifi.repair_cancel')}</button>
+              <button
+                onClick={handleRepair}
+                style={{ padding: '7px 16px', fontSize: 12, borderRadius: 5,
+                  background: '#6c8cff', color: '#fff', border: 'none', cursor: 'pointer', fontWeight: 600 }}
+              >{t('wifi.repair_ok')}</button>
+            </div>
+          </>
+        )}
+
+        {repairState === 'running' && (
+          <div style={{ fontSize: 13, lineHeight: 1.7, textAlign: 'center', padding: '20px 0' }}>
+            <div style={{
+              width: 32, height: 32, margin: '0 auto 12px',
+              border: '3px solid rgba(108,140,255,0.25)',
+              borderTopColor: '#6c8cff', borderRadius: '50%',
+              animation: 'spin 0.8s linear infinite',
+            }} />
+            <div style={{ color: '#ffc107' }}>{t('wifi.repair_running')}</div>
+            <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+          </div>
+        )}
+
+        {repairState === 'success' && (
+          <>
+            <div style={{ fontSize: 13, lineHeight: 1.7, color: '#4caf50' }}>
+              {t('wifi.repair_success')}
+            </div>
+            {repairMessage && (
+              <div style={{ fontSize: 12, opacity: 0.7, marginTop: 8 }}>{repairMessage}</div>
+            )}
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 20 }}>
               <button
-                onClick={() => setShowWifiWarning(false)}
-                style={{
-                  padding: '8px 20px', fontSize: 13, borderRadius: 5,
-                  background: '#6c8cff', color: '#fff', border: 'none', cursor: 'pointer',
-                  fontWeight: 600,
-                }}
+                onClick={() => { setShowRepairConfirm(false); setRepairTargetUdid(null); onScan(); }}
+                style={{ padding: '7px 16px', fontSize: 12, borderRadius: 5,
+                  background: '#6c8cff', color: '#fff', border: 'none', cursor: 'pointer', fontWeight: 600 }}
               >{t('wifi.warning_ok')}</button>
             </div>
-          </div>
-        </div>,
-        document.body,
-      )}
+          </>
+        )}
 
-      {showRepairConfirm && createPortal(
-        <div
-          onClick={() => { if (repairState !== 'running') { setShowRepairConfirm(false); setRepairTargetUdid(null); } }}
-          className="anim-fade-in"
-          style={{
-            position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-            background: 'rgba(8, 10, 20, 0.55)',
-            backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            zIndex: 1000, padding: 20,
-          }}
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            className="anim-scale-in"
-            style={{
-              background: 'rgba(26, 29, 39, 0.96)',
-              backdropFilter: 'blur(14px)', WebkitBackdropFilter: 'blur(14px)',
-              border: '1px solid rgba(108, 140, 255, 0.2)', borderRadius: 14,
-              padding: 26, maxWidth: 460, width: '100%',
-              color: '#e8e8e8',
-              boxShadow: '0 20px 60px rgba(12, 18, 40, 0.65), 0 0 0 1px rgba(255, 255, 255, 0.05) inset',
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
-              <span style={{
-                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                width: 32, height: 32, borderRadius: '50%',
-                background: 'rgba(108, 140, 255, 0.15)', color: '#6c8cff',
-                fontSize: 18, fontWeight: 700, border: '1px solid rgba(108,140,255,0.5)',
-                flexShrink: 0,
-              }}>↻</span>
-              <strong style={{ fontSize: 15 }}>{t('wifi.repair_confirm_title')}</strong>
+        {repairState === 'failed' && (
+          <>
+            <div style={{ fontSize: 13, lineHeight: 1.7, color: '#ff6b6b' }}>
+              {t('wifi.repair_failed')}
             </div>
-
-            {repairState === 'idle' && (
-              <>
-                <div style={{ fontSize: 13, lineHeight: 1.7, whiteSpace: 'pre-line', opacity: 0.92 }}>
-                  {t('wifi.repair_confirm_body')}
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 20 }}>
-                  <button
-                    onClick={() => { setShowRepairConfirm(false); setRepairTargetUdid(null); }}
-                    style={{ padding: '7px 16px', fontSize: 12, borderRadius: 5,
-                      background: 'transparent', color: '#bbb', border: '1px solid #444', cursor: 'pointer' }}
-                  >{t('wifi.repair_cancel')}</button>
-                  <button
-                    onClick={handleRepair}
-                    style={{ padding: '7px 16px', fontSize: 12, borderRadius: 5,
-                      background: '#6c8cff', color: '#fff', border: 'none', cursor: 'pointer', fontWeight: 600 }}
-                  >{t('wifi.repair_ok')}</button>
-                </div>
-              </>
+            {repairMessage && (
+              <div style={{ fontSize: 12, opacity: 0.8, marginTop: 8, padding: 8,
+                background: 'rgba(255,107,107,0.08)', border: '1px solid rgba(255,107,107,0.3)',
+                borderRadius: 4, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{repairMessage}</div>
             )}
-
-            {repairState === 'running' && (
-              <div style={{ fontSize: 13, lineHeight: 1.7, textAlign: 'center', padding: '20px 0' }}>
-                <div style={{
-                  width: 32, height: 32, margin: '0 auto 12px',
-                  border: '3px solid rgba(108,140,255,0.25)',
-                  borderTopColor: '#6c8cff', borderRadius: '50%',
-                  animation: 'spin 0.8s linear infinite',
-                }} />
-                <div style={{ color: '#ffc107' }}>{t('wifi.repair_running')}</div>
-                <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
-              </div>
-            )}
-
-            {repairState === 'success' && (
-              <>
-                <div style={{ fontSize: 13, lineHeight: 1.7, color: '#4caf50' }}>
-                  {t('wifi.repair_success')}
-                </div>
-                {repairMessage && (
-                  <div style={{ fontSize: 12, opacity: 0.7, marginTop: 8 }}>{repairMessage}</div>
-                )}
-                <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 20 }}>
-                  <button
-                    onClick={() => { setShowRepairConfirm(false); setRepairTargetUdid(null); onScan(); }}
-                    style={{ padding: '7px 16px', fontSize: 12, borderRadius: 5,
-                      background: '#6c8cff', color: '#fff', border: 'none', cursor: 'pointer', fontWeight: 600 }}
-                  >{t('wifi.warning_ok')}</button>
-                </div>
-              </>
-            )}
-
-            {repairState === 'failed' && (
-              <>
-                <div style={{ fontSize: 13, lineHeight: 1.7, color: '#ff6b6b' }}>
-                  {t('wifi.repair_failed')}
-                </div>
-                {repairMessage && (
-                  <div style={{ fontSize: 12, opacity: 0.8, marginTop: 8, padding: 8,
-                    background: 'rgba(255,107,107,0.08)', border: '1px solid rgba(255,107,107,0.3)',
-                    borderRadius: 4, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{repairMessage}</div>
-                )}
-                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 20 }}>
-                  <button
-                    onClick={() => { setShowRepairConfirm(false); setRepairTargetUdid(null); }}
-                    style={{ padding: '7px 16px', fontSize: 12, borderRadius: 5,
-                      background: 'transparent', color: '#bbb', border: '1px solid #444', cursor: 'pointer' }}
-                  >{t('wifi.repair_cancel')}</button>
-                  <button
-                    onClick={handleRepair}
-                    style={{ padding: '7px 16px', fontSize: 12, borderRadius: 5,
-                      background: '#6c8cff', color: '#fff', border: 'none', cursor: 'pointer', fontWeight: 600 }}
-                  >{t('wifi.repair_ok')}</button>
-                </div>
-              </>
-            )}
-          </div>
-        </div>,
-        document.body,
-      )}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 20 }}>
+              <button
+                onClick={() => { setShowRepairConfirm(false); setRepairTargetUdid(null); }}
+                style={{ padding: '7px 16px', fontSize: 12, borderRadius: 5,
+                  background: 'transparent', color: '#bbb', border: '1px solid #444', cursor: 'pointer' }}
+              >{t('wifi.repair_cancel')}</button>
+              <button
+                onClick={handleRepair}
+                style={{ padding: '7px 16px', fontSize: 12, borderRadius: 5,
+                  background: '#6c8cff', color: '#fff', border: 'none', cursor: 'pointer', fontWeight: 600 }}
+              >{t('wifi.repair_ok')}</button>
+            </div>
+          </>
+        )}
+      </DialogShell>
     </div>
   );
 };
