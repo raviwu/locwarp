@@ -555,6 +555,30 @@ class SimulationEngine:
         await self._device.set_location(self._udid, lat, lng)
         self.current_position = Coordinate(lat=lat, lng=lng)
 
+    async def _push_with_retry(self, lat: float, lng: float) -> bool:
+        """Push one coordinate to the device with up to 3 attempts.
+
+        Transient (ConnectionError, OSError) -> warn + backoff-sleep
+        0.5*(attempt+1)s and retry. CancelledError propagates. Any other
+        Exception logs and gives up immediately. Returns True iff the push
+        landed. Carved verbatim from the inline loop in _move_along_route.
+        """
+        for attempt in range(3):
+            try:
+                await self._set_position(lat, lng)
+                return True
+            except (ConnectionError, OSError) as exc:
+                logger.warning(
+                    "position push failed (attempt %d/3): %s", attempt + 1, exc,
+                )
+                await self._sleep(0.5 * (attempt + 1))
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.exception("Unexpected error pushing position")
+                return False
+        return False
+
     def apply_speed(
         self,
         speed_profile: "SpeedProfile",
@@ -720,23 +744,7 @@ class SimulationEngine:
                 # Add GPS jitter for realism
                 jittered_lat, jittered_lng = RouteInterpolator.add_jitter(lat, lng, jitter)
 
-                pushed = False
-                for attempt in range(3):
-                    try:
-                        await self._set_position(jittered_lat, jittered_lng)
-                        pushed = True
-                        break
-                    except (ConnectionError, OSError) as exc:
-                        logger.warning(
-                            "position push failed (attempt %d/3): %s", attempt + 1, exc,
-                        )
-                        await self._sleep(0.5 * (attempt + 1))
-                    except asyncio.CancelledError:
-                        raise
-                    except Exception:
-                        logger.exception("Unexpected error pushing position")
-                        break
-                if not pushed:
+                if not await self._push_with_retry(jittered_lat, jittered_lng):
                     logger.error("Giving up on this route after repeated push failures")
                     break
 
