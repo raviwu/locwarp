@@ -78,4 +78,9 @@ describe('RoutePasteDialog', () => {
     fireEvent.click(screen.getByText('panel.route_paste_from_clipboard'));
     await waitFor(() => expect(onClipboardBlocked).toHaveBeenCalledTimes(1));
   });
+
+  it('exposes the panel as a role=dialog (a11y)', () => {
+    render(<RoutePasteDialog {...makeProps()} />);
+    expect(screen.getByRole('dialog')).toHaveAttribute('aria-modal', 'true');
+  });
 });

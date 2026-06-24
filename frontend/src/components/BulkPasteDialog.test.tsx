@@ -86,4 +86,16 @@ describe('BulkPasteDialog', () => {
     fireEvent.click(submit);
     expect(onSubmit).not.toHaveBeenCalled();
   });
+
+  it('exposes the panel as a role=dialog (a11y)', () => {
+    render(<BulkPasteDialog {...makeProps()} />);
+    expect(screen.getByRole('dialog')).toHaveAttribute('aria-modal', 'true');
+  });
+
+  it('does NOT close on Escape when busy', () => {
+    const onClose = vi.fn();
+    render(<BulkPasteDialog {...makeProps({ onClose, busy: true })} />);
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(onClose).not.toHaveBeenCalled();
+  });
 });

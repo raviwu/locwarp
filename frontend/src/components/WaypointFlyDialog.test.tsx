@@ -59,4 +59,21 @@ describe('WaypointFlyDialog', () => {
     fireEvent.click(screen.getByText('generic.cancel'));
     expect(onClose).toHaveBeenCalledTimes(1);
   });
+
+  it('exposes the panel as a role=dialog (a11y)', () => {
+    render(<WaypointFlyDialog {...makeProps()} />);
+    expect(screen.getByRole('dialog')).toHaveAttribute('aria-modal', 'true');
+  });
+
+  it('closes on Escape (added by DialogShell migration)', () => {
+    const onClose = vi.fn();
+    render(<WaypointFlyDialog {...makeProps({ onClose })} />);
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('still shows the target coord to 6 decimals after migration', () => {
+    render(<WaypointFlyDialog {...makeProps()} />);
+    expect(screen.getByText('25.047801, 121.531902')).toBeTruthy();
+  });
 });
