@@ -168,6 +168,16 @@ export const GoldDittoPanel: React.FC<Props> = ({
 
   const disableConfirm = noDevice || !aValid || isCycling
   const disableFirstTry = noDevice || !aValid || !bValid || !waitValid || isCycling
+  // Name the single most-blocking missing INPUT under the disabled ② button so
+  // the user knows WHICH field to fix (mirrors disableFirstTry's short-circuit
+  // order). Suppressed while a cycle is in flight; the no-device case already
+  // has its own dedicated banner above, so we don't duplicate it here.
+  const firstTryHintKey: 'goldditto.need_a' | 'goldditto.need_b' | 'goldditto.need_wait' | null =
+    isCycling || noDevice ? null
+    : !aValid ? 'goldditto.need_a'
+    : !bValid ? 'goldditto.need_b'
+    : !waitValid ? 'goldditto.need_wait'
+    : null
 
   const handleConfirm = useCallback(async () => {
     if (!a) return
@@ -316,6 +326,9 @@ export const GoldDittoPanel: React.FC<Props> = ({
           ② {t('goldditto.first_try')}
         </button>
       </div>
+      {firstTryHintKey && (
+        <div style={{ fontSize: 11, color: '#fbbf24', marginTop: -2 }}>{t(firstTryHintKey)}</div>
+      )}
 
       <BookmarkPickerPopover
         open={pickerSide !== null}

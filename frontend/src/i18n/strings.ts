@@ -167,6 +167,9 @@ export const STRINGS = {
   'goldditto.toast.restored': { zh: '拉金盆: 還原完成,可以開始拉花苞 ✨', en: 'Gold Ditto: restored, pull away ✨' },
   'goldditto.toast.restore_failed': { zh: '⚠ 已瞬移但還原失敗,請手動按一鍵還原', en: '⚠ Teleported but restore failed — please tap 一鍵還原 manually' },
   'goldditto.error.no_device': { zh: '請先連接 iPhone', en: 'Connect an iPhone first' },
+  'goldditto.need_a': { zh: '請先填入有效的 A 點座標', en: 'Enter a valid A coordinate first' },
+  'goldditto.need_b': { zh: '請先填入有效的 B 點座標', en: 'Enter a valid B coordinate first' },
+  'goldditto.need_wait': { zh: '請填入有效的等待秒數 (0.5–10.0)', en: 'Enter a valid wait time (0.5–10.0)' },
   'goldditto.warn_same_ab': { zh: '⚠ A 跟 B 是同一點,輪流會無效', en: '⚠ A and B are identical, alternation has no effect' },
   'goldditto.set_as_a': { zh: '設為拉金盆 A 點', en: 'Set as Gold Ditto A' },
 

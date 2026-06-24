@@ -201,4 +201,22 @@ describe('GoldDittoPanel', () => {
     expect((inputs[1] as HTMLInputElement).value).toBe('3.3, 4.4')
     expect((screen.getByRole('spinbutton') as HTMLInputElement).value).toBe('7.0')
   })
+
+  it('shows the missing-B hint under a disabled ② when only A is filled', async () => {
+    render(<GoldDittoPanel {...baseProps()} />)
+    const inputs = screen.getAllByPlaceholderText('lat, lng')
+    fireEvent.change(inputs[0], { target: { value: '10, 20' } }) // A valid, B empty
+    expect(screen.getByText(/goldditto\.first_try/)).toBeDisabled()
+    expect(screen.getByText('goldditto.need_b')).toBeInTheDocument()
+  })
+
+  it('hides the prerequisite hint once A, B and wait are all valid (② enabled)', async () => {
+    render(<GoldDittoPanel {...baseProps()} />)
+    const inputs = screen.getAllByPlaceholderText('lat, lng')
+    fireEvent.change(inputs[0], { target: { value: '10, 20' } })
+    fireEvent.change(inputs[1], { target: { value: '30, 40' } })
+    expect(screen.getByText(/goldditto\.first_try/)).toBeEnabled()
+    expect(screen.queryByText('goldditto.need_b')).toBeNull()
+    expect(screen.queryByText('goldditto.need_a')).toBeNull()
+  })
 })
