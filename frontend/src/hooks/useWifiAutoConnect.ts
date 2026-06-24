@@ -30,8 +30,10 @@ export interface WifiAutoConnectDevice {
 // saved at least one IP/port AND has the auto-connect toggle on. Runs
 // once per app session — not on every WS reconnect — to avoid re-
 // triggering after a backend restart that already restored the tunnel
-// via the backend's own watchdog. Failures are silent (the WiFi panel
-// will surface them when the user opens it).
+// via the backend's own watchdog. On a full failure (every candidate
+// rejected) the injected onError callback fires a toast — the WiFi panel
+// does NOT surface auto-pass failures on its own (its tunnelError is only
+// set by the manual connect / discover paths).
 //
 // Multi-device: tries every IP/port pair in `locwarp.tunnel.savedips`
 // in parallel (up to MAX_TUNNEL_DEVICES = 3) so a user with two or
@@ -47,6 +49,7 @@ export function useWifiAutoConnect(
   connected: boolean,
   api: ApiGateway,
   device: WifiAutoConnectDevice,
+  onError?: (msg: string) => void,
 ) {
   const wifiAutoConnectAttemptedRef = useRef(false)
   // Mirror the latest connectedDevices so the deferred guard below reads the
@@ -59,6 +62,8 @@ export function useWifiAutoConnect(
   // ~27s reconnect before a route moves).
   const connectedDevicesRef = useRef(device.connectedDevices)
   connectedDevicesRef.current = device.connectedDevices
+  const onErrorRef = useRef(onError)
+  onErrorRef.current = onError
   useEffect(() => {
     if (!connected) return
     if (wifiAutoConnectAttemptedRef.current) return
@@ -144,13 +149,20 @@ export function useWifiAutoConnect(
           // tries the right pair record FIRST — without the hint, the
           // second device's request can stall on the wrong candidate's
           // 8s handshake timeout and bail.
-          await Promise.allSettled(
+          const results = await Promise.allSettled(
             limited.map((entry) =>
-              device.startWifiTunnel(entry.ip, entry.port, entry.udid).catch(() => {}),
+              device.startWifiTunnel(entry.ip, entry.port, entry.udid),
             ),
           )
+          // The WiFi panel does NOT surface auto-pass failures (its
+          // tunnelError is manual-path only), so if EVERY candidate
+          // rejected, fire the injected toast so the user isn't left
+          // wondering why nothing connected.
+          const anyOk = results.some((r) => r.status === 'fulfilled')
+          if (!anyOk) onErrorRef.current?.('wifi.autoconnect_failed')
         } catch {
-          // Silent — tunnel section will show its own error when opened.
+          // Pre-flight (wifiTunnelStatus/discover) threw — same surfacing.
+          onErrorRef.current?.('wifi.autoconnect_failed')
         }
       })()
     }, 1500)

@@ -247,7 +247,7 @@ const App: React.FC = () => {
   // device injected from useServices()/useDevice()). The savedips parse,
   // dedupe, cap-at-3 parallel attempts, and the run-once guard are all
   // preserved inside the hook; see its header for the full behavior notes.
-  useWifiAutoConnect(connected, api, device)
+  useWifiAutoConnect(connected, api, device, useCallback((k: string) => showToast(t(k as any)), [showToast, t]))
 
   // Poll cooldown
   useEffect(() => {

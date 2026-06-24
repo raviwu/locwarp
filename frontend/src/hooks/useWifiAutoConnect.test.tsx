@@ -169,4 +169,37 @@ describe('useWifiAutoConnect', () => {
 
     expect(startWifiTunnel).not.toHaveBeenCalled()
   })
+
+  it('calls onError when every auto-connect attempt fails', async () => {
+    localStorage.setItem(
+      'locwarp.tunnel.savedips',
+      JSON.stringify([{ ip: '10.0.0.1', port: 49152, udid: 'a' }]),
+    )
+    const { api } = makeApi()
+    const { device, startWifiTunnel } = makeDevice()
+    // Force the only attempt to reject.
+    startWifiTunnel.mockRejectedValue(new Error('tunnel down'))
+    const onError = vi.fn()
+
+    renderHook(() => useWifiAutoConnect(true, api, device, onError))
+    await act(async () => { await vi.advanceTimersByTimeAsync(1600) })
+
+    expect(startWifiTunnel).toHaveBeenCalledTimes(1)
+    expect(onError).toHaveBeenCalledTimes(1)
+  })
+
+  it('does NOT call onError when at least one attempt succeeds', async () => {
+    localStorage.setItem(
+      'locwarp.tunnel.savedips',
+      JSON.stringify([{ ip: '10.0.0.1', port: 49152, udid: 'a' }]),
+    )
+    const { api } = makeApi()
+    const { device } = makeDevice() // default startWifiTunnel resolves
+    const onError = vi.fn()
+
+    renderHook(() => useWifiAutoConnect(true, api, device, onError))
+    await act(async () => { await vi.advanceTimersByTimeAsync(1600) })
+
+    expect(onError).not.toHaveBeenCalled()
+  })
 })
