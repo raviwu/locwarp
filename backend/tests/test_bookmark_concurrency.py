@@ -184,10 +184,10 @@ def test_watcher_handler_triggers_on_moved_to_target(tmp_path, monkeypatch):
     whose src_path is the temp name and dest_path is the real file. The
     handler must recognise this as a write to our target.
 
-    Capture strategy: monkeypatch ``services.bookmarks._watcher_schedule`` to
-    intercept the REAL nested ``_Handler`` instance that ``start_watcher``
+    Capture strategy: monkeypatch ``services.file_watch_binding._schedule`` to
+    intercept the REAL nested ``_Handler`` instance that ``FileWatchBinding.start``
     passes to it — no re-implementation.  If the handler logic relocates away
-    from ``start_watcher`` the capture will be None and the assertion fails,
+    from ``FileWatchBinding`` the capture will be None and the assertion fails,
     which is exactly the signal we want.
     """
     _patch_paths(tmp_path, monkeypatch)
@@ -197,24 +197,27 @@ def test_watcher_handler_triggers_on_moved_to_target(tmp_path, monkeypatch):
 
     from unittest.mock import MagicMock, sentinel
 
-    # Capture the real handler that start_watcher passes to _watcher_schedule.
+    # Capture the real handler that FileWatchBinding.start passes to _schedule.
     captured = []
 
     def _fake_schedule(handler, parent):
         captured.append(handler)
         return sentinel.watch  # dummy ObservedWatch — unschedule is also patched
 
-    monkeypatch.setattr("services.bookmarks._watcher_schedule", _fake_schedule)
-    monkeypatch.setattr("services.bookmarks._watcher_unschedule", lambda w: None)
+    monkeypatch.setattr("services.file_watch_binding._schedule", _fake_schedule)
+    monkeypatch.setattr("services.file_watch_binding._unschedule", lambda w: None)
 
-    # Patch _schedule_reconcile BEFORE start_watcher so the captured handler
-    # already holds the patched manager method.
+    # Patch the binding's internal _schedule method BEFORE start_watcher so
+    # the captured handler already sees the patched callback path.
     fired = []
-    monkeypatch.setattr(mgr, "_schedule_reconcile", lambda: fired.append(True))
 
     mgr.start_watcher(on_change=lambda: None)
 
-    assert captured, "start_watcher never called _watcher_schedule"
+    # Patch the binding's debounce _schedule so we can assert it fires.
+    assert mgr._watch_binding is not None, "start_watcher must create _watch_binding"
+    monkeypatch.setattr(mgr._watch_binding, "_schedule", lambda: fired.append(True))
+
+    assert captured, "start_watcher never called file_watch_binding._schedule"
     real_handler = captured[0]
 
     fake_event = MagicMock()

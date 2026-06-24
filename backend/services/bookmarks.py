@@ -10,13 +10,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
 
-from watchdog.events import FileSystemEventHandler
-from watchdog.observers.api import ObservedWatch
-
 from config import BOOKMARKS_FILE, get_bookmarks_path
 from domain.ports.bookmark_repository import BookmarkRepository
 from models.schemas import Bookmark, BookmarkCategory, BookmarkStore, Tombstone
-from services.file_watcher import schedule as _watcher_schedule, unschedule as _watcher_unschedule
+from services.file_watch_binding import FileWatchBinding
 from domain.store_merge import force_seed_items
 from services.store_merge import merge_stores
 from services.geo_offline import resolve as _geo_resolve
@@ -131,10 +128,10 @@ class BookmarkManager:
         self._store_lock = threading.Lock()
         self._repo = repo
         self._load()
-        # Handle to the watch on the shared file_watcher Observer; set
-        # by start_watcher, cleared by stop_watcher.
-        self._watch: ObservedWatch | None = None
-        self._watcher_debounce_timer: threading.Timer | None = None
+        # FileWatchBinding owns the watchdog plumbing + debounce; set by
+        # start_watcher, cleared by stop_watcher. _on_external_change is still
+        # set in start_watcher and fired inside _watcher_tick (after _store_lock).
+        self._watch_binding: FileWatchBinding | None = None
         self._on_external_change: Callable[[], None] | None = None
 
     # ------------------------------------------------------------------
@@ -195,51 +192,14 @@ class BookmarkManager:
         via run_coroutine_threadsafe).
         """
         self.stop_watcher()
-        path = self._repo.path()
-        parent = path.parent
-        if not parent.exists():
-            logger.warning("Bookmark folder does not exist; watcher not started: %s", parent)
-            return
         self._on_external_change = on_change
-
-        manager = self
-
-        class _Handler(FileSystemEventHandler):
-            def on_modified(self, event):
-                if event.is_directory:
-                    return
-                if Path(event.src_path) != manager._bookmarks_path():
-                    return
-                manager._schedule_reconcile()
-
-            on_created = on_modified
-
-            def on_moved(self, event):
-                if event.is_directory:
-                    return
-                bm = manager._bookmarks_path()
-                if Path(event.src_path) != bm and Path(getattr(event, "dest_path", "")) != bm:
-                    return
-                manager._schedule_reconcile()
-
-        self._watch = _watcher_schedule(_Handler(), parent)
-        logger.info("Bookmark watcher scheduled on %s", parent)
+        self._watch_binding = FileWatchBinding(self._bookmarks_path, self._watcher_tick)
+        self._watch_binding.start()
 
     def stop_watcher(self) -> None:
-        if self._watcher_debounce_timer is not None:
-            self._watcher_debounce_timer.cancel()
-            self._watcher_debounce_timer = None
-        if self._watch is not None:
-            _watcher_unschedule(self._watch)
-            self._watch = None
-
-    def _schedule_reconcile(self) -> None:
-        """Debounce rapid mtime events from a single sync burst."""
-        if self._watcher_debounce_timer is not None:
-            self._watcher_debounce_timer.cancel()
-        self._watcher_debounce_timer = threading.Timer(0.5, self._watcher_tick)
-        self._watcher_debounce_timer.daemon = True
-        self._watcher_debounce_timer.start()
+        if self._watch_binding is not None:
+            self._watch_binding.stop()
+            self._watch_binding = None
 
     def _watcher_tick(self) -> None:
         try:
