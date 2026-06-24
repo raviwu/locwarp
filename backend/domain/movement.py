@@ -116,6 +116,42 @@ def build_resume_snapshot(
     return snap
 
 
+def match_waypoints_to_coords(
+    user_wps: list[Coordinate],
+    planned_coords: list[Coordinate],
+    start_index: int,
+) -> list[int]:
+    """For each user waypoint at index >= start_index, find the nearest
+    planned_coord index via a MONOTONIC forward scan (each waypoint's match
+    must lie strictly after the previous waypoint's match). Stops as soon as
+    a waypoint can't be matched further along than the previous one, meaning
+    it belongs to a later leg (multi_stop) or isn't on planned_coords.
+
+    Pure extraction of the wp_seg_idx precompute from
+    SimulationEngine._move_along_route. Behavior is byte-identical.
+    """
+    wp_seg_idx: list[int] = []
+    last_ci = -1
+    for wi in range(start_index, len(user_wps)):
+        wp = user_wps[wi]
+        start_ci = max(last_ci + 1, 0)
+        best_ci = -1
+        best_d = float("inf")
+        for ci in range(start_ci, len(planned_coords)):
+            d = RouteInterpolator.haversine(
+                wp.lat, wp.lng,
+                planned_coords[ci].lat, planned_coords[ci].lng,
+            )
+            if d < best_d:
+                best_d = d
+                best_ci = ci
+        if best_ci < 0:
+            break
+        wp_seg_idx.append(best_ci)
+        last_ci = best_ci
+    return wp_seg_idx
+
+
 class RouteInterpolator:
     """Stateless utilities for dense-point interpolation along a polyline."""
 

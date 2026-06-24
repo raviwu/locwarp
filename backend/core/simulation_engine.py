@@ -29,7 +29,7 @@ from core.goldditto import GoldDittoHandler
 # EtaTracker moved to domain/movement.py (Phase 3); re-exported here so
 # `core.EtaTracker`, `from core.simulation_engine import EtaTracker`, and the
 # `self.eta_tracker = EtaTracker()` construction keep working.
-from domain.movement import EtaTracker, build_resume_snapshot, RouteInterpolator
+from domain.movement import (EtaTracker, build_resume_snapshot, RouteInterpolator, match_waypoints_to_coords,)
 
 logger = logging.getLogger(__name__)
 
@@ -672,25 +672,9 @@ class SimulationEngine:
             # a waypoint can't be matched further along than the previous
             # one, meaning it belongs to a later leg (multi_stop) or isn't
             # on this planned_coords at all.
-            wp_seg_idx: list[int] = []
-            last_ci = -1
-            for wi in range(self._user_waypoint_next, len(user_wps)):
-                wp = user_wps[wi]
-                start_ci = max(last_ci + 1, 0)
-                best_ci = -1
-                best_d = float("inf")
-                for ci in range(start_ci, len(planned_coords)):
-                    d = RouteInterpolator.haversine(
-                        wp.lat, wp.lng,
-                        planned_coords[ci].lat, planned_coords[ci].lng,
-                    )
-                    if d < best_d:
-                        best_d = d
-                        best_ci = ci
-                if best_ci < 0:
-                    break
-                wp_seg_idx.append(best_ci)
-                last_ci = best_ci
+            wp_seg_idx = match_waypoints_to_coords(
+                user_wps, planned_coords, self._user_waypoint_next,
+            )
             wp_hit_ptr = 0
 
             accumulated_distance = 0.0
