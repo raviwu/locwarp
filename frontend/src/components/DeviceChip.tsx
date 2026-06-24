@@ -38,6 +38,7 @@ export function DeviceChip({ letter, device, runtime, variant = 'connected', onD
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null)
   const [confirmForget, setConfirmForget] = useState(false)
   const ref = useRef<HTMLDivElement | null>(null)
+  const actionsBtnRef = useRef<HTMLButtonElement | null>(null)
   const kind = stateKind(runtime?.state)
 
   useEffect(() => {
@@ -120,9 +121,29 @@ export function DeviceChip({ letter, device, runtime, variant = 'connected', onD
         ) : (
           <span style={{ opacity: 0.6, marginLeft: 2 }}>· {label}</span>
         )}
+        <button
+          ref={actionsBtnRef}
+          type="button"
+          aria-label={t('device.chip_actions')}
+          aria-haspopup="menu"
+          aria-expanded={!!menu}
+          onClick={(e) => {
+            e.stopPropagation()
+            const r = (e.currentTarget as HTMLButtonElement).getBoundingClientRect()
+            setMenu({ x: r.left, y: r.bottom })
+          }}
+          style={{
+            marginLeft: 2, padding: '0 2px',
+            background: 'none', border: 'none',
+            color: 'inherit', cursor: 'pointer',
+            fontSize: 13, lineHeight: 1,
+          }}
+        >⋯</button>
       </div>
       {menu && createPortal(
         <div
+          role="menu"
+          aria-label={t('device.chip_actions')}
           onClick={(e) => e.stopPropagation()}
           style={{
             position: 'fixed', left: menu.x, top: menu.y,
@@ -186,18 +207,22 @@ export function DeviceChip({ letter, device, runtime, variant = 'connected', onD
 function MenuItem({ children, onClick }: { children: React.ReactNode; onClick: () => void }) {
   const [hover, setHover] = useState(false)
   return (
-    <div
+    <button
+      type="button"
+      role="menuitem"
       onClick={onClick}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
       style={{
+        display: 'block', width: '100%', textAlign: 'left',
         padding: '6px 10px',
         borderRadius: 6,
+        border: 'none', font: 'inherit', color: 'inherit',
         cursor: 'pointer',
         background: hover ? 'rgba(108,140,255,0.18)' : 'transparent',
       }}
     >
       {children}
-    </div>
+    </button>
   )
 }

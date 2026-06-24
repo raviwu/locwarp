@@ -129,6 +129,7 @@ export const STRINGS = {
   // ── Device chip ──────────────────────────────
   'device.add_device': { zh: '掃描 iPhone', en: 'Scan iPhone' },
   'device.max_reached': { zh: '已連接最多 3 台', en: 'Maximum 3 devices connected' },
+  'device.chip_actions': { zh: '裝置操作', en: 'Device actions' },
   'device.chip_disconnect': { zh: '中斷此裝置', en: 'Disconnect this device' },
   'device.chip_forget': { zh: '忘記此裝置', en: 'Forget this device' },
   'device.forget_confirm_title': { zh: '忘記此裝置?', en: 'Forget this device?' },

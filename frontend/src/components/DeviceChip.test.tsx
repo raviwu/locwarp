@@ -363,3 +363,39 @@ describe('DeviceChip forget confirmation flow', () => {
     expect(screen.queryByText('device.forget_confirm_title')).not.toBeInTheDocument()
   })
 })
+
+describe('DeviceChip discoverable + keyboard-reachable actions (U21)', () => {
+  it('exposes a keyboard-reachable actions button that opens a role=menu of menuitem buttons', () => {
+    render(
+      <DeviceChip
+        letter="A"
+        device={makeDevice()}
+        onDisconnect={noop}
+        onForget={noop}
+        onRestoreOne={noop}
+      />,
+    )
+    const actions = screen.getByRole('button', { name: /device\.chip_actions/ })
+    expect(actions.tagName).toBe('BUTTON') // natively focusable + Enter/Space-operable
+    fireEvent.click(actions)
+    expect(screen.getByRole('menu')).toBeTruthy()
+    const disc = screen.getByRole('menuitem', { name: /device\.chip_disconnect/ })
+    expect(disc.tagName).toBe('BUTTON')
+  })
+
+  it('fires onDisconnect when the menuitem is activated', () => {
+    const props = baseProps()
+    render(
+      <DeviceChip
+        letter="A"
+        device={makeDevice()}
+        onDisconnect={props.onDisconnect}
+        onForget={props.onForget}
+        onRestoreOne={props.onRestoreOne}
+      />,
+    )
+    fireEvent.click(screen.getByRole('button', { name: /device\.chip_actions/ }))
+    fireEvent.click(screen.getByRole('menuitem', { name: /device\.chip_disconnect/ }))
+    expect(props.onDisconnect).toHaveBeenCalledTimes(1)
+  })
+})
