@@ -70,6 +70,12 @@
   --z-modal: 1000;
   --z-toast: 1500;
   --z-tooltip: 2000;
+  /*
+   * Full-screen BLOCKING overlay — must sit above all raw z-index values still
+   * present in legacy CSS (.context-menu: 10000, .error-toast: 9999, etc.).
+   * Keep this value strictly above 10000 until those are tokenized.
+   */
+  --z-overlay-blocking: 10001;
 }
 
 /* ---------- Reset & Base ---------- */

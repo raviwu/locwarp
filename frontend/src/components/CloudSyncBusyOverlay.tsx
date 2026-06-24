@@ -17,7 +17,7 @@ export function CloudSyncBusyOverlay() {
     position: 'fixed',
     inset: 0,
     background: 'rgba(8, 10, 16, 0.62)',
-    zIndex: 'var(--z-modal)',
+    zIndex: 'var(--z-overlay-blocking)',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',

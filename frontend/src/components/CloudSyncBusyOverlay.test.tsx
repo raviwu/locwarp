@@ -73,12 +73,18 @@ describe('CloudSyncBusyOverlay', () => {
     expect(region).toHaveAttribute('aria-live', 'assertive')
   })
 
-  it('reads its z-index from the --z-modal token, not an off-scale literal', () => {
+  it('reads its z-index from the --z-overlay-blocking token (must sit above context menus/toasts)', () => {
     busyValue = true
     render(<CloudSyncBusyOverlay />)
     const region = screen.getByRole('alert')
     // jsdom preserves the literal var() string in the inline style.
-    expect(region.style.zIndex).toBe('var(--z-modal)')
+    // --z-overlay-blocking (10001) must exceed the highest raw z-index still in
+    // legacy CSS (.context-menu: 10000, .error-toast: 9999) so the full-screen
+    // blocking overlay is never visually overdrawn by menus or toasts.
+    // This test exists to prevent a regression where the token was downgraded to
+    // --z-modal (1000), which let context menus render above the blocking overlay.
+    expect(region.style.zIndex).toBe('var(--z-overlay-blocking)')
+    expect(region.style.zIndex).not.toBe('var(--z-modal)')
     expect(region.style.zIndex).not.toBe('9999')
   })
 })
