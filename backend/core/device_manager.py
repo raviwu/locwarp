@@ -604,6 +604,20 @@ class DeviceManager:
             logger.warning("Disconnect requested for unknown device %s", udid)
             return
 
+        await self._teardown_connection(udid, conn)
+        logger.info("Disconnected device %s", udid)
+
+    async def _teardown_connection(self, udid: str, conn: "_ActiveConnection") -> None:
+        """Release the heavy resources held by an already-removed connection.
+
+        MUST be called WITHOUT holding ``self._lock`` — it awaits I/O
+        (location clear / DVT close / RSD close / helper tunnel close) and is
+        shared by ``disconnect`` and ``connect_wifi_tunnel``'s stale-replace
+        path. The caller is responsible for first removing ``conn`` from
+        ``self._connections`` (under the lock) so this teardown never re-takes
+        ``self._lock`` (``asyncio.Lock`` is non-reentrant — taking it here would
+        self-deadlock a caller that tears down while holding the lock).
+        """
         # Clear any active location simulation first.
         if conn.location_service is not None:
             try:
@@ -639,8 +653,6 @@ class DeviceManager:
                     await _helper_client.close_tunnel(udid=udid)
             except Exception:
                 logger.exception("Error closing helper-owned USB tunnel for %s", udid)
-
-        logger.info("Disconnected device %s", udid)
 
     # ------------------------------------------------------------------
     # Location service
@@ -983,16 +995,21 @@ class DeviceManager:
             rsd=rsd,
         )
 
+        # Atomically claim the udid: pop any stale same-udid connection and
+        # install the fresh one under the lock, so a concurrent same-udid
+        # connect can't interleave between the check and the swap and
+        # leak/clobber a connection. We must NOT call self.disconnect() here —
+        # it re-takes self._lock (non-reentrant -> self-deadlock); instead we
+        # tear the displaced connection down AFTER releasing the lock via the
+        # lock-free _teardown_connection helper. (The ~20 other lock-free
+        # _connections accesses stay as-is — deliberate single-event-loop
+        # atomics.)
         async with self._lock:
-            # Check-then-act for a stale same-udid connection must be atomic
-            # with the assignment: doing the existence check + disconnect
-            # OUTSIDE the lock let a concurrent connect interleave between the
-            # check and the swap and leak/clobber a connection. (The ~20 other
-            # lock-free _connections accesses stay as-is — they are deliberate
-            # single-event-loop atomics.)
-            if udid in self._connections:
-                await self.disconnect(udid)
+            displaced = self._connections.pop(udid, None)
             self._connections[udid] = conn
+
+        if displaced is not None:
+            await self._teardown_connection(udid, displaced)
 
         logger.info("WiFi tunnel connected to %s (iOS %s)", udid, ios_version_str)
 
