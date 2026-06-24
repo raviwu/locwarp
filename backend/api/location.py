@@ -44,137 +44,21 @@ async def _engine(udid: str | None = None, registry=None):
         )
 
 
-_DEVICE_LOST_REASON_MESSAGES: dict[str, str] = {
-    DeviceLostError.REASON_TUNNEL_DEAD: (
-        "WiFi 連線中斷,請確認手機 WiFi 與電腦同網段、解鎖手機後再試"
-    ),
-    DeviceLostError.REASON_LOCKDOWN_DEAD: (
-        "裝置回應停止,請解鎖手機螢幕後再試"
-    ),
-    DeviceLostError.REASON_DDI_MISSING: (
-        "Developer Disk Image 未掛載,請重新插拔 USB 或重新啟動裝置"
-    ),
-    DeviceLostError.REASON_USB_GONE: (
-        "USB 已拔除,請重新插上後再操作"
-    ),
-    DeviceLostError.REASON_UNKNOWN: (
-        "裝置連線中斷(USB 拔除或 Tunnel 死亡),請重新插上 USB 後再操作"
-    ),
-}
-
-
-def _device_lost_message(exc: Exception) -> tuple[str, str]:
-    """Map a DeviceLostError (or wrapped) to a (reason, message) tuple."""
-    cause: Exception | None = exc
-    seen: set[int] = set()
-    while cause is not None and id(cause) not in seen:
-        seen.add(id(cause))
-        if isinstance(cause, DeviceLostError):
-            reason = getattr(cause, "reason", DeviceLostError.REASON_UNKNOWN) or DeviceLostError.REASON_UNKNOWN
-            return reason, _DEVICE_LOST_REASON_MESSAGES.get(
-                reason, _DEVICE_LOST_REASON_MESSAGES[DeviceLostError.REASON_UNKNOWN],
-            )
-        cause = cause.__cause__
-    return (
-        DeviceLostError.REASON_UNKNOWN,
-        _DEVICE_LOST_REASON_MESSAGES[DeviceLostError.REASON_UNKNOWN],
-    )
-
-
 async def _try_with_recovery_retry(udid: str | None, op, registry=None):
-    """Run *op* (a 0-arg async callable). On DeviceLostError, attempt
-    one ``device_manager.full_reconnect(udid)``; if that succeeds, retry
-    *op* once. Caller is responsible for re-resolving the engine inside
-    *op* (full_reconnect rebuilds it, so a captured reference is stale).
-
-    This is the (B) safety net — last-chance recovery on top of the (A)
-    factory-driven _reconnect inside the location service. Most failures
-    are caught by (A); (B) only matters when the WiFi tunnel watchdog has
-    already given up, or USB really did blip and re-enumerate.
-    """
-    try:
-        return await op()
-    except DeviceLostError:
-        if not udid:
-            raise
-        app_state = _engine_registry_or_main(registry)
-        import logging as _logging
-        _log = _logging.getLogger("locwarp")
-        _log.warning(
-            "DeviceLostError on %s; attempting full_reconnect safety-net retry", udid,
-        )
-        try:
-            recovered = await app_state.device_manager.full_reconnect(udid)
-        except Exception:
-            _log.exception("full_reconnect raised during safety-net retry")
-            recovered = False
-        if not recovered:
-            _log.warning("full_reconnect failed for %s; surfacing original error", udid)
-            raise
-        _log.info("full_reconnect succeeded for %s; retrying op once", udid)
-        return await op()
+    from services.engine_resolver import EngineResolver
+    app_state = _engine_registry_or_main(registry)
+    resolver = EngineResolver(app_state, app_state.device_manager)
+    return await resolver.with_recovery(udid, op)
 
 
 async def _handle_device_lost(exc: Exception, udid: str, registry=None) -> "HTTPException":
-    """Clean up after a DeviceLostError for the SPECIFIC udid that failed.
-
-    Previous behaviour disconnected every currently-connected device, which
-    was a dual-device mode bug: unplug A while B is fine → B also gets
-    torn down. Now the caller passes the udid of the failing action and
-    only that device is cleaned up. The caller always passes the udid of
-    the failing action; only that device is cleaned up.
-    """
+    from services.engine_resolver import EngineResolver
     app_state = _engine_registry_or_main(registry)
-    import logging as _logging
-    _log = _logging.getLogger("locwarp")
-
-    dm = app_state.device_manager
-    lost_udids = [udid] if udid in dm._connections else []
-    if not lost_udids:
-        _log.info("device_lost: udid %s no longer in _connections; nothing to clean", udid)
-
-    for u in lost_udids:
-        # Stop any in-flight simulation on THIS engine so random-walk /
-        # loop / multi-stop handlers exit cleanly instead of flooding a
-        # dead DVT channel with push attempts.
-        old_eng = app_state.simulation_engines.get(u)
-        if old_eng is not None:
-            try:
-                old_eng._stop_event.set()
-                old_eng._pause_event.set()
-                active = getattr(old_eng, "_active_task", None)
-                if active is not None and not active.done():
-                    active.cancel()
-            except Exception:
-                _log.debug("device_lost: failed to stop old engine %s", u, exc_info=True)
-        try:
-            await dm.disconnect(u)
-            _log.info("device_lost cleanup: disconnected %s", u)
-        except Exception:
-            _log.exception("device_lost cleanup: disconnect failed for %s", u)
-        # Only remove this udid's engine; the legacy `= None` setter clears
-        # every engine (bad for dual mode). remove_engine pops+promotes under
-        # _engines_lock so a concurrent create cannot race the mutation.
-        await app_state.remove_engine(u)
-
-    try:
-        await dm._events.publish(("device_disconnected", {
-            "udids": lost_udids,
-            "reason": "device_lost",
-            "error": str(exc),
-            "remaining_count": len(dm._connections),
-        }))
-    except Exception:
-        _log.exception("Failed to broadcast device_disconnected")
-
-    reason, message = _device_lost_message(exc)
+    resolver = EngineResolver(app_state, app_state.device_manager)
+    reason, message = await resolver.cleanup_device_lost(exc, udid)
     return HTTPException(
         status_code=503,
-        detail={
-            "code": "device_lost",
-            "reason": reason,
-            "message": message,
-        },
+        detail={"code": "device_lost", "reason": reason, "message": message},
     )
 
 
