@@ -133,6 +133,8 @@ const MapContextMenu: React.FC<MapContextMenuProps> = ({
   return (
     <div
       ref={contextMenuElRef}
+      role="menu"
+      aria-label={t('map.menu_label')}
       className="context-menu anim-scale-in-tl"
       style={{
         position: 'fixed',
@@ -235,9 +237,11 @@ const MapContextMenu: React.FC<MapContextMenuProps> = ({
       {/* 2 + 3. Teleport / Navigate (device-gated). */}
       {deviceConnected ? (
         <>
-          <div
+          <button
+            type="button"
+            role="menuitem"
             className="context-menu-item"
-            style={contextMenuItemStyle}
+            style={{ ...contextMenuItemStyle, width: '100%', textAlign: 'left', background: 'transparent', border: 'none', font: 'inherit' }}
             onMouseEnter={highlightItem}
             onMouseLeave={unhighlightItem}
             onClick={() => {
@@ -253,10 +257,12 @@ const MapContextMenu: React.FC<MapContextMenuProps> = ({
               <line x1="18" y1="12" x2="22" y2="12" />
             </svg>
             {t('map.teleport_here')}
-          </div>
-          <div
+          </button>
+          <button
+            type="button"
+            role="menuitem"
             className="context-menu-item"
-            style={contextMenuItemStyle}
+            style={{ ...contextMenuItemStyle, width: '100%', textAlign: 'left', background: 'transparent', border: 'none', font: 'inherit' }}
             onMouseEnter={highlightItem}
             onMouseLeave={unhighlightItem}
             onClick={() => {
@@ -268,11 +274,13 @@ const MapContextMenu: React.FC<MapContextMenuProps> = ({
               <polygon points="3,11 22,2 13,21 11,13" />
             </svg>
             {t('map.navigate_here')}
-          </div>
+          </button>
           {onSetAsGoldDittoA && (
-            <div
+            <button
+              type="button"
+              role="menuitem"
               className="context-menu-item"
-              style={contextMenuItemStyle}
+              style={{ ...contextMenuItemStyle, width: '100%', textAlign: 'left', background: 'transparent', border: 'none', font: 'inherit' }}
               onMouseEnter={highlightItem}
               onMouseLeave={unhighlightItem}
               onClick={() => {
@@ -284,7 +292,7 @@ const MapContextMenu: React.FC<MapContextMenuProps> = ({
                 <path d="M12 2 L13.5 9 L21 12 L13.5 15 L12 22 L10.5 15 L3 12 L10.5 9 Z" />
               </svg>
               {t('goldditto.set_as_a')}
-            </div>
+            </button>
           )}
         </>
       ) : (
@@ -300,9 +308,11 @@ const MapContextMenu: React.FC<MapContextMenuProps> = ({
       )}
 
       {/* 4. Copy coordinates to clipboard. */}
-      <div
+      <button
+        type="button"
+        role="menuitem"
         className="context-menu-item"
-        style={contextMenuItemStyle}
+        style={{ ...contextMenuItemStyle, width: '100%', textAlign: 'left', background: 'transparent', border: 'none', font: 'inherit' }}
         onMouseEnter={highlightItem}
         onMouseLeave={unhighlightItem}
         onClick={() => {
@@ -315,7 +325,7 @@ const MapContextMenu: React.FC<MapContextMenuProps> = ({
           <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />
         </svg>
         {t('map.copy_coords')}
-      </div>
+      </button>
 
       {/* 5. Add to bookmarks — disabled when the coord matches an
           existing bookmark, to prevent duplicates. Visual mirrors
@@ -331,9 +341,11 @@ const MapContextMenu: React.FC<MapContextMenuProps> = ({
           {t('map.already_bookmarked')}
         </div>
       ) : (
-        <div
+        <button
+          type="button"
+          role="menuitem"
           className="context-menu-item"
-          style={contextMenuItemStyle}
+          style={{ ...contextMenuItemStyle, width: '100%', textAlign: 'left', background: 'transparent', border: 'none', font: 'inherit' }}
           onMouseEnter={highlightItem}
           onMouseLeave={unhighlightItem}
           onClick={() => {
@@ -345,16 +357,18 @@ const MapContextMenu: React.FC<MapContextMenuProps> = ({
             <path d="M19 21l-7-5-7 5V5a2 2 0 012-2h10a2 2 0 012 2z" />
           </svg>
           {t('map.add_bookmark')}
-        </div>
+        </button>
       )}
 
       {/* 6. Add waypoint (only when in a route mode). */}
       {showWaypointOption && onAddWaypoint && (
         <>
           <div style={{ height: 1, background: '#444', margin: '4px 0' }} />
-          <div
+          <button
+            type="button"
+            role="menuitem"
             className="context-menu-item"
-            style={contextMenuItemStyle}
+            style={{ ...contextMenuItemStyle, width: '100%', textAlign: 'left', background: 'transparent', border: 'none', font: 'inherit' }}
             onMouseEnter={highlightItem}
             onMouseLeave={unhighlightItem}
             onClick={() => {
@@ -370,7 +384,7 @@ const MapContextMenu: React.FC<MapContextMenuProps> = ({
               <line x1="23" y1="12" x2="19" y2="12" />
             </svg>
             {t('map.add_waypoint')}
-          </div>
+          </button>
         </>
       )}
     </div>

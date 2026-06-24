@@ -222,3 +222,22 @@ describe('MapContextMenu', () => {
     expect(outerClick).not.toHaveBeenCalled();
   });
 });
+
+describe('MapContextMenu keyboard a11y (U22)', () => {
+  it('exposes a role=menu container with role=menuitem button action rows', () => {
+    render(<MapContextMenu {...makeProps()} />);
+    expect(screen.getByRole('menu')).toBeTruthy();
+    const copy = screen.getByRole('menuitem', { name: /map\.copy_coords/ });
+    expect(copy.tagName).toBe('BUTTON'); // native = keyboard-operable
+    expect(screen.getByRole('menuitem', { name: /map\.add_bookmark/ })).toBeTruthy();
+  });
+
+  it('activating the Copy menuitem fires onCopy and closes', () => {
+    const onCopy = vi.fn();
+    const onClose = vi.fn();
+    render(<MapContextMenu {...makeProps({ onCopy, onClose })} />);
+    fireEvent.click(screen.getByRole('menuitem', { name: /map\.copy_coords/ }));
+    expect(onCopy).toHaveBeenCalledTimes(1);
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+});

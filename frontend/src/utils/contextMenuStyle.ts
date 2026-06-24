@@ -14,10 +14,10 @@ export const contextMenuItemStyle: React.CSSProperties = {
   transition: 'background 0.15s',
 };
 
-export function highlightItem(e: React.MouseEvent<HTMLDivElement>) {
-  (e.currentTarget as HTMLDivElement).style.background = '#3a3a3e';
+export function highlightItem(e: React.MouseEvent<HTMLElement>) {
+  (e.currentTarget as HTMLElement).style.background = '#3a3a3e';
 }
 
-export function unhighlightItem(e: React.MouseEvent<HTMLDivElement>) {
-  (e.currentTarget as HTMLDivElement).style.background = 'transparent';
+export function unhighlightItem(e: React.MouseEvent<HTMLElement>) {
+  (e.currentTarget as HTMLElement).style.background = 'transparent';
 }

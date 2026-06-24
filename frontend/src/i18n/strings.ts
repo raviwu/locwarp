@@ -415,6 +415,7 @@ export const STRINGS = {
   'map.click_not_locate': { zh: '此功能非定位', en: 'This is NOT teleport' },
   'map.click_use_right': { zh: '請用右鍵「瞬移到這裡」', en: 'Right-click to "Teleport here"' },
   'map.device_disconnected': { zh: 'USB 已斷開,請重新插入', en: 'USB disconnected, please reconnect' },
+  'map.menu_label': { zh: '地圖選單', en: 'Map actions' },
   'map.teleport_here': { zh: '瞬移到這裡', en: 'Teleport here' },
   'map.whats_here': { zh: '這是哪裡?', en: "What's here?" },
   'map.whats_here_tooltip': { zh: '點擊查詢此座標的地址', en: 'Click to look up this address' },
