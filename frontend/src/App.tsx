@@ -170,7 +170,7 @@ const App: React.FC = () => {
 
   const generateWaypoints = useCallback((radius: number, count: number) => {
     if (!sim.currentPosition) {
-      alert(t('toast.no_position_random'))
+      showToast(t('toast.no_position_random'))
       return
     }
     const { lat, lng } = sim.currentPosition
@@ -212,7 +212,7 @@ const App: React.FC = () => {
       { lat, lng },
       ...ordered.map(({ lat, lng }) => ({ lat, lng })),
     ])
-  }, [sim, t])
+  }, [sim, t, showToast])
 
   const handleGenerateRandomWaypoints = useCallback(() => {
     generateWaypoints(wpGenRadius, wpGenCount)
