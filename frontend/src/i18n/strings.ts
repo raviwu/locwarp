@@ -476,6 +476,7 @@ export const STRINGS = {
   'route.search_placeholder': { zh: '搜尋路線名稱', en: 'Search routes' },
   'route.search_no_results': { zh: '沒有符合的路線', en: 'No matching routes' },
   'route.points_unit': { zh: '點', en: 'pts' },
+  'route.menu_label': { zh: '路線選單', en: 'Route actions' },
   'route.load': { zh: '載入路線', en: 'Load route' },
   'route.export_gpx': { zh: '匯出 GPX', en: 'Export GPX' },
   'route.manage_categories': { zh: '管理路線分類', en: 'Manage route categories' },

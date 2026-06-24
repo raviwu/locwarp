@@ -833,6 +833,8 @@ const RouteList: React.FC<RouteListProps> = ({
       {contextMenu && createPortal(
         <div
           data-route-context-menu
+          role="menu"
+          aria-label={t('route.menu_label')}
           style={{
             position: 'fixed',
             left: Math.min(contextMenu.x, window.innerWidth - 180),
@@ -843,8 +845,10 @@ const RouteList: React.FC<RouteListProps> = ({
             minWidth: 160,
           }}
         >
-          <div
-            style={ctxItemStyle}
+          <button
+            type="button"
+            role="menuitem"
+            style={{ ...ctxItemStyle, width: '100%', textAlign: 'left', background: 'transparent', border: 'none', font: 'inherit' }}
             onMouseEnter={ctxHighlight} onMouseLeave={ctxUnhighlight}
             onClick={() => { onRouteLoad(contextMenu.route.id); setContextMenu(null); }}
           >
@@ -852,9 +856,11 @@ const RouteList: React.FC<RouteListProps> = ({
               <polyline points="22,12 18,12 15,21 9,3 6,12 2,12" />
             </svg>
             {t('route.load')}
-          </div>
-          <div
-            style={ctxItemStyle}
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            style={{ ...ctxItemStyle, width: '100%', textAlign: 'left', background: 'transparent', border: 'none', font: 'inherit' }}
             onMouseEnter={ctxHighlight} onMouseLeave={ctxUnhighlight}
             onClick={() => {
               setEditingRouteId(contextMenu.route.id);
@@ -867,10 +873,12 @@ const RouteList: React.FC<RouteListProps> = ({
               <path d="M18.5 2.5a2.12 2.12 0 013 3L12 15l-4 1 1-4 9.5-9.5z" />
             </svg>
             {t('bm.edit')}
-          </div>
+          </button>
           {onRouteGpxExport && (
-            <div
-              style={ctxItemStyle}
+            <button
+              type="button"
+              role="menuitem"
+              style={{ ...ctxItemStyle, width: '100%', textAlign: 'left', background: 'transparent', border: 'none', font: 'inherit' }}
               onMouseEnter={ctxHighlight} onMouseLeave={ctxUnhighlight}
               onClick={() => { onRouteGpxExport(contextMenu.route.id); setContextMenu(null); }}
             >
@@ -880,10 +888,12 @@ const RouteList: React.FC<RouteListProps> = ({
                 <line x1="12" y1="15" x2="12" y2="3" />
               </svg>
               {t('route.export_gpx')}
-            </div>
+            </button>
           )}
-          <div
-            style={ctxItemStyle}
+          <button
+            type="button"
+            role="menuitem"
+            style={{ ...ctxItemStyle, width: '100%', textAlign: 'left', background: 'transparent', border: 'none', font: 'inherit' }}
             onMouseEnter={ctxHighlight} onMouseLeave={ctxUnhighlight}
             onClick={() => {
               const r = contextMenu.route;
@@ -898,7 +908,7 @@ const RouteList: React.FC<RouteListProps> = ({
               <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2" />
             </svg>
             <span style={{ color: '#f44336' }}>{t('generic.delete')}</span>
-          </div>
+          </button>
           {onRouteMove && categories.length > 1 && (
             <>
               <div style={{ height: 1, background: '#444', margin: '4px 0' }} />
@@ -906,9 +916,11 @@ const RouteList: React.FC<RouteListProps> = ({
               {categories
                 .filter((c) => c.id !== (contextMenu.route.category_id || 'default'))
                 .map((cat) => (
-                  <div
+                  <button
                     key={cat.id}
-                    style={ctxItemStyle}
+                    type="button"
+                    role="menuitem"
+                    style={{ ...ctxItemStyle, width: '100%', textAlign: 'left', background: 'transparent', border: 'none', font: 'inherit' }}
                     onMouseEnter={ctxHighlight} onMouseLeave={ctxUnhighlight}
                     onClick={() => {
                       onRouteMove([contextMenu.route.id], cat.id);
@@ -922,7 +934,7 @@ const RouteList: React.FC<RouteListProps> = ({
                       }}
                     />
                     {displayCat(cat.name)}
-                  </div>
+                  </button>
                 ))}
             </>
           )}
@@ -1027,6 +1039,9 @@ const RouteList: React.FC<RouteListProps> = ({
       <div
         key={route.id}
         className="bookmark-item"
+        role="button"
+        tabIndex={isEditing ? -1 : 0}
+        aria-label={route.name}
         style={{
           display: 'flex', alignItems: 'center', gap: 6,
           padding: '6px 6px', borderRadius: 4, fontSize: 12,
@@ -1036,6 +1051,14 @@ const RouteList: React.FC<RouteListProps> = ({
         onClick={() => {
           if (multiSelect) toggleSelected(route.id);
           else if (!isEditing) onRouteLoad(route.id);
+        }}
+        onKeyDown={(e) => {
+          if (isEditing) return;
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            if (multiSelect) toggleSelected(route.id);
+            else onRouteLoad(route.id);
+          }
         }}
         onContextMenu={(e) => {
           if (multiSelect) { e.preventDefault(); return; }
@@ -1113,11 +1136,11 @@ const ctxItemStyle: React.CSSProperties = {
   transition: 'background 0.15s',
 };
 
-function ctxHighlight(e: React.MouseEvent<HTMLDivElement>) {
-  (e.currentTarget as HTMLDivElement).style.background = '#3a3a3e';
+function ctxHighlight(e: React.MouseEvent<HTMLElement>) {
+  (e.currentTarget as HTMLElement).style.background = '#3a3a3e';
 }
-function ctxUnhighlight(e: React.MouseEvent<HTMLDivElement>) {
-  (e.currentTarget as HTMLDivElement).style.background = 'transparent';
+function ctxUnhighlight(e: React.MouseEvent<HTMLElement>) {
+  (e.currentTarget as HTMLElement).style.background = 'transparent';
 }
 
 export default RouteList;

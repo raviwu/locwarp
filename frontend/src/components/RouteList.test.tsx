@@ -96,3 +96,24 @@ describe('RouteList single-delete confirmation (U13)', () => {
     expect(onRouteDelete).toHaveBeenCalledWith('r1');
   });
 })
+
+describe('RouteList keyboard a11y (U22)', () => {
+  it('list rows are role=button and Enter (via onKeyDown) loads the route', () => {
+    const onRouteLoad = vi.fn();
+    render(<RouteList {...(makeProps({ onRouteLoad }) as any)} />);
+    const row = screen.getByRole('button', { name: /Morning Loop/ });
+    row.focus();
+    fireEvent.keyDown(row, { key: 'Enter' });
+    expect(onRouteLoad).toHaveBeenCalledWith('r1');
+  });
+
+  it('right-click opens a role=menu with role=menuitem button actions', () => {
+    render(<RouteList {...(makeProps() as any)} />);
+    const row = screen.getByRole('button', { name: /Morning Loop/ });
+    fireEvent.contextMenu(row);
+    expect(screen.getByRole('menu')).toBeTruthy();
+    const load = screen.getByRole('menuitem', { name: /route\.load/ });
+    expect(load.tagName).toBe('BUTTON');
+    expect(screen.getByRole('menuitem', { name: /generic\.delete/ })).toBeTruthy();
+  });
+});
