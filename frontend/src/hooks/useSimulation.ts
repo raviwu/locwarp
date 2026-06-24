@@ -331,25 +331,6 @@ export function useSimulation(
       }
     })
 
-    const offSimState = ws.subscribe('simulation_state', (e: WsEvent) => {
-      const msgUdid = e.udid as string | undefined
-      const primary = primaryUdidRef.current
-      if (primary && msgUdid && msgUdid !== primary) return
-      setStatus({
-        running: !!(e.running),
-        paused: !!(e.paused),
-        speed: (e.speed as number) ?? 0,
-        state: e.state as string | undefined,
-        distance_remaining: e.distance_remaining as number | undefined,
-        distance_traveled: e.distance_traveled as number | undefined,
-      })
-      if (e.mode) _setMode(e.mode as any)
-      if (e.progress != null) setProgress(e.progress as number)
-      if (e.eta != null) setEta(e.eta as number)
-      if (e.destination) setDestination(e.destination as any)
-      if (e.waypoints) setWaypoints(e.waypoints as any)
-    })
-
     const handleComplete = (e: WsEvent) => {
       const msgUdid = e.udid as string | undefined
       const primary = primaryUdidRef.current
@@ -367,15 +348,15 @@ export function useSimulation(
       // gate suppresses playback when disabled.
       playCompletionAlert()
     }
-    const offSimComplete = ws.subscribe('simulation_complete', (e: WsEvent) => {
+    const completeWithRuntime = (e: WsEvent) => {
       // ── Group mode ──────────────────────────────────────────────────────
       const udid = e.udid as string | undefined
       if (udid) updateRuntime(udid, { progress: 1, state: 'idle' })
       handleComplete(e)
-    })
-    const offNavComplete = ws.subscribe('navigation_complete', handleComplete)
-    const offMultiComplete = ws.subscribe('multi_stop_complete', handleComplete)
-    const offLoopComplete = ws.subscribe('loop_complete', handleComplete)
+    }
+    const offNavComplete = ws.subscribe('navigation_complete', completeWithRuntime)
+    const offMultiComplete = ws.subscribe('multi_stop_complete', completeWithRuntime)
+    const offLoopComplete = ws.subscribe('loop_complete', completeWithRuntime)
 
     const offWpProgress = ws.subscribe('waypoint_progress', (e: WsEvent) => {
       // ── Group mode ──────────────────────────────────────────────────────
@@ -547,7 +528,6 @@ export function useSimulation(
       }
     }
     const offPauseCountdown = ws.subscribe('pause_countdown', handlePauseStart)
-    const offRandomWalkPause = ws.subscribe('random_walk_pause', handlePauseStart)
 
     const handlePauseEnd = (e: WsEvent) => {
       const msgUdid = e.udid as string | undefined
@@ -556,7 +536,6 @@ export function useSimulation(
       setPauseEndAt(null)
     }
     const offPauseCountdownEnd = ws.subscribe('pause_countdown_end', handlePauseEnd)
-    const offRandomWalkPauseEnd = ws.subscribe('random_walk_pause_end', handlePauseEnd)
 
     const offRoutePath = ws.subscribe('route_path', (e: WsEvent) => {
       // ── Group mode ──────────────────────────────────────────────────────
@@ -611,20 +590,13 @@ export function useSimulation(
       }
     })
 
-    const offSimError = ws.subscribe('simulation_error', (e: WsEvent) => {
-      const msgUdid = e.udid as string | undefined
-      const primary = primaryUdidRef.current
-      if (primary && msgUdid && msgUdid !== primary) return
-      setError((e.message as string) ?? 'Simulation error')
-    })
-
     return () => {
-      offPos(); offSimState(); offSimComplete(); offNavComplete(); offMultiComplete(); offLoopComplete()
+      offPos(); offNavComplete(); offMultiComplete(); offLoopComplete()
       offWpProgress(); offLapComplete(); offDdiMounting(); offDdiMounted(); offDdiMountFailed()
       offDdiNotMounted(); offTunnelDegraded(); offTunnelRecovered(); offTunnelLost()
       offDisc(); offReconn(); offConnected()
-      offPauseCountdown(); offRandomWalkPause(); offPauseCountdownEnd(); offRandomWalkPauseEnd()
-      offRoutePath(); offStateChange(); offSimError()
+      offPauseCountdown(); offPauseCountdownEnd()
+      offRoutePath(); offStateChange()
     }
   }, [ws, updateRuntime])
 

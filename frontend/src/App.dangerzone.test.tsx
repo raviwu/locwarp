@@ -58,6 +58,8 @@ vi.mock('./components/ControlPanel', () => ({
         <button data-testid="cp-start" onClick={() => props.onStart()} />
         <button data-testid="cp-stop" onClick={() => props.onStop()} />
         <button data-testid="cp-click-to-add-on" onClick={() => props.onClickToAddWaypointChange(true)} />
+        <button data-testid="cp-mode-joystick" onClick={() => props.onModeChange('joystick')} />
+        <button data-testid="cp-mode-loop" onClick={() => props.onModeChange('loop')} />
       </div>
     )
   },
@@ -166,9 +168,8 @@ describe('sim action fan-out (single vs dual device)', () => {
     const router = createWsRouter()
     await act(async () => { renderApp(router) })
     await connectDevices(router, ['A'])
-    // Put the sim in Joystick mode via a simulation_state frame (no udid → passes
-    // the single-device filter).
-    await act(async () => { router.dispatch({ type: 'simulation_state', mode: 'joystick' }) })
+    // Put the sim in Joystick mode via the ControlPanel mode-change button.
+    await act(async () => { fireEvent.click(screen.getByTestId('cp-mode-joystick')) })
 
     await act(async () => { fireEvent.click(screen.getByTestId('cp-start')) })
 
@@ -184,7 +185,8 @@ describe('sim action fan-out (single vs dual device)', () => {
     const router = createWsRouter()
     await act(async () => { renderApp(router) })
     await connectDevices(router, ['A', 'B'])
-    await act(async () => { router.dispatch({ type: 'simulation_state', mode: 'joystick', udid: 'A' }) })
+    // Put the sim in Joystick mode via the ControlPanel mode-change button.
+    await act(async () => { fireEvent.click(screen.getByTestId('cp-mode-joystick')) })
 
     await act(async () => { fireEvent.click(screen.getByTestId('cp-start')) })
     await act(async () => { await Promise.resolve(); await Promise.resolve() })
@@ -265,7 +267,7 @@ describe('go-around-sim.teleport: route-paste submit', () => {
   async function openAndSubmitRoutePaste(router: WsRouterImpl, text: string) {
     // Put sim in Loop mode so showBulkPasteOnMap would be true (and we can
     // detect a mode-flip-to-Teleport as showBulkPasteOnMap going false).
-    await act(async () => { router.dispatch({ type: 'simulation_state', mode: 'loop' }) })
+    await act(async () => { fireEvent.click(screen.getByTestId('cp-mode-loop')) })
     // Open the route-paste modal via the MapView-surfaced callback.
     await act(async () => { fireEvent.click(screen.getByTestId('map-open-bulk-paste')) })
     const textarea = document.querySelector('textarea') as HTMLTextAreaElement
@@ -315,10 +317,10 @@ describe('go-around-sim.teleport: route-paste submit', () => {
     const router = createWsRouter()
     await act(async () => { renderApp(router) })
     await connectDevices(router, ['A', 'B'])
-    await act(async () => { router.dispatch({ type: 'simulation_state', mode: 'loop', udid: 'A' }) })
+    // Put sim in Loop mode via the ControlPanel mode-change button.
+    await act(async () => { fireEvent.click(screen.getByTestId('cp-mode-loop')) })
 
-    // Open + submit (mode already loop from the frame above; re-dispatch inside
-    // helper is harmless/idempotent).
+    // Open + submit (mode already loop from above; re-click inside helper is harmless/idempotent).
     await act(async () => { fireEvent.click(screen.getByTestId('map-open-bulk-paste')) })
     const textarea = document.querySelector('textarea') as HTMLTextAreaElement
     await act(async () => { fireEvent.change(textarea, { target: { value: '25.05 121.55\n25.06 121.56' } }) })
@@ -365,12 +367,8 @@ describe('handleMapClick modes', () => {
     const router = createWsRouter()
     await act(async () => { renderApp(router) })
     await connectDevices(router, ['A'])
-    await act(async () => {
-      router.dispatch({
-        type: 'simulation_state', mode: 'loop',
-        waypoints: [{ lat: 1, lng: 1 }, { lat: 2, lng: 2 }, { lat: 3, lng: 3 }],
-      })
-    })
+    // Put sim in Loop mode via the ControlPanel mode-change button.
+    await act(async () => { fireEvent.click(screen.getByTestId('cp-mode-loop')) })
 
     // Triggering the surfaced onInsertAfterWp button is a no-op because App passes
     // undefined for that prop (the stub's optional-chain swallows the call), so no
@@ -385,7 +383,8 @@ describe('handleMapClick modes', () => {
     await act(async () => { fireEvent.click(screen.getByTestId('map-click')) })
     await act(async () => { await Promise.resolve(); await Promise.resolve() })
 
-    expect(readWaypoints()).toHaveLength(3)
+    // No waypoints were seeded; the splice branch never runs, so count stays 0.
+    expect(readWaypoints()).toHaveLength(0)
     expect(api.insertWaypoint).not.toHaveBeenCalled()
   })
 
@@ -393,23 +392,19 @@ describe('handleMapClick modes', () => {
     const router = createWsRouter()
     await act(async () => { renderApp(router) })
     await connectDevices(router, ['A'])
-    // Loop mode, NOT running, seed 2 waypoints.
-    await act(async () => {
-      router.dispatch({
-        type: 'simulation_state', mode: 'loop',
-        waypoints: [{ lat: 1, lng: 1 }, { lat: 2, lng: 2 }],
-      })
-    })
+    // Loop mode, NOT running.
+    await act(async () => { fireEvent.click(screen.getByTestId('cp-mode-loop')) })
     // Turn the click-to-add toggle on (ControlPanel-surfaced callback).
     await act(async () => { fireEvent.click(screen.getByTestId('cp-click-to-add-on')) })
 
     await act(async () => { fireEvent.click(screen.getByTestId('map-click')) })
 
+    // No pre-seeded waypoints; clicking once adds 1 waypoint (click-to-add toggle ON).
     const wps = readWaypoints()
-    expect(wps).toHaveLength(3)
+    expect(wps).toHaveLength(1)
     // normalizeLng float: 121.55 → 121.5499999…
-    expect(wps[2].lat).toBe(25.05)
-    expect(wps[2].lng).toBeCloseTo(121.55, 6)
+    expect(wps[0].lat).toBe(25.05)
+    expect(wps[0].lng).toBeCloseTo(121.55, 6)
     // No teleport/insert side effects in this branch.
     expect(api.teleport).not.toHaveBeenCalled()
     expect(api.insertWaypoint).not.toHaveBeenCalled()
@@ -423,18 +418,14 @@ describe('handleMapClick modes', () => {
     const router = createWsRouter()
     await act(async () => { renderApp(router) })
     await connectDevices(router, ['A'])
-    await act(async () => {
-      router.dispatch({
-        type: 'simulation_state', mode: 'loop',
-        waypoints: [{ lat: 1, lng: 1 }, { lat: 2, lng: 2 }],
-      })
-    })
+    // Loop mode so showWaypointOption is true.
+    await act(async () => { fireEvent.click(screen.getByTestId('cp-mode-loop')) })
 
     // No insert armed, toggle OFF (default).
     await act(async () => { fireEvent.click(screen.getByTestId('map-click')) })
 
-    // Waypoints unchanged; no api side effects.
-    expect(readWaypoints()).toHaveLength(2)
+    // Waypoints unchanged (no pre-seeded waypoints, no click-to-add); no api side effects.
+    expect(readWaypoints()).toHaveLength(0)
     expect(api.teleport).not.toHaveBeenCalled()
     expect(api.insertWaypoint).not.toHaveBeenCalled()
   })

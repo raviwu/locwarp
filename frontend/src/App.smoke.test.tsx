@@ -113,20 +113,18 @@ describe('App render smoke (characterization)', () => {
     expect(document.querySelectorAll('button.mode-btn').length).toBeGreaterThan(0)
   })
 
-  it('surfaces a red error banner when a simulation_error WS frame arrives', async () => {
+  it('simulation_error WS frame is silently ignored (subscription removed — backend never emits it)', async () => {
+    // simulation_error was a dead subscription (backend has no emit site for it).
+    // After cleanup the frame is a no-op: no error banner appears.
     const router = createWsRouter()
     await act(async () => { renderApp(router) })
 
-    // No banner before the error event.
-    expect(screen.queryByText('boom from device')).not.toBeInTheDocument()
-
-    // useSimulation subscribes to 'simulation_error' and setError(message);
-    // App renders sim.error in the red banner div.
     await act(async () => {
       router.dispatch({ type: 'simulation_error', message: 'boom from device' })
     })
 
-    expect(screen.getByText('boom from device')).toBeInTheDocument()
+    // Frame dispatched, but no hook subscribed → error banner stays absent.
+    expect(screen.queryByText('boom from device')).not.toBeInTheDocument()
   })
 
   it('surfaces the disconnect banner when the last device drops (remaining_count 0)', async () => {

@@ -170,6 +170,22 @@ describe('WS event-type subscribe wiring', () => {
     ).toEqual([])
   })
 
+  it('does NOT subscribe to event types the backend never emits', () => {
+    const subscribed = collectSubscribedTypes()
+    // These five were dead listeners — the backend has no emit site for any
+    // of them (see CANONICAL_BACKEND_EVENT_TYPES). A subscription here is a
+    // silent no-op that misleads future readers.
+    const NEVER_EMITTED = [
+      'simulation_state', 'simulation_complete', 'simulation_error',
+      'random_walk_pause', 'random_walk_pause_end',
+    ]
+    const stillSubscribed = NEVER_EMITTED.filter((t) => subscribed.has(t))
+    expect(
+      stillSubscribed,
+      `Hooks still subscribe to never-emitted types: ${stillSubscribed.join(', ')}`,
+    ).toEqual([])
+  })
+
   it('POSITIVE CONTROL: the subset check would FAIL if a required key were dropped', () => {
     // Prove the assertion has teeth: simulate a hook that "renamed" its
     // state_change subscription by feeding the same check a subscribed set
