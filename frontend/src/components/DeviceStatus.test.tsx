@@ -96,4 +96,21 @@ describe('DeviceStatus', () => {
     // that post-click state settle so no act() warning leaks.
     await waitFor(() => expect(screen.getByText('device.scan_none')).toBeInTheDocument())
   })
+
+  it('auto-expands the dropdown when a device needs re-trust', () => {
+    const trust = makeDevice({ id: 't', udid: 'ut', name: 'Needs Trust', pair_status: 'trust_required' } as any)
+    render(<DeviceStatus {...baseProps} devices={[trust]} />)
+    // No user click: the dropdown is auto-opened, so the device row + the
+    // existing trust badge (device.pair_chip_trust) render immediately.
+    expect(screen.getByText('Needs Trust')).toBeInTheDocument()
+    expect(screen.getByText('device.pair_chip_trust')).toBeInTheDocument()
+  })
+
+  it('does NOT auto-expand when all devices are healthy', () => {
+    const ok = makeDevice({ id: 'a', udid: 'ua', name: 'Healthy' })
+    render(<DeviceStatus {...baseProps} devices={[ok]} />)
+    // Collapsed by default: the row is not rendered until the summary is clicked.
+    expect(screen.queryByText('Healthy')).not.toBeInTheDocument()
+    expect(screen.getByText('1 devices found')).toBeInTheDocument()
+  })
 })

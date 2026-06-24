@@ -115,6 +115,25 @@ const DeviceStatus: React.FC<DeviceStatusProps> = ({
   React.useEffect(() => () => {
     if (scanResultTimer.current) clearTimeout(scanResultTimer.current);
   }, []);
+
+  // Auto-expand the device dropdown the first time a device reports
+  // trust_required, so the Re-trust button (the real next step after a
+  // Forget) is reachable without the user hunting through a collapsed
+  // panel. One-shot via a ref latch: once we've auto-opened for a given
+  // trust event we don't re-open if the user manually collapses it; the
+  // latch resets when the trust condition clears so a FUTURE re-trust
+  // event re-triggers the auto-expand.
+  const autoExpandedForTrustRef = React.useRef(false);
+  React.useEffect(() => {
+    const hasTrust = devices.some((d) => d.pair_status === 'trust_required');
+    if (hasTrust && !autoExpandedForTrustRef.current) {
+      autoExpandedForTrustRef.current = true;
+      setShowDropdown(true);
+    } else if (!hasTrust) {
+      autoExpandedForTrustRef.current = false;
+    }
+  }, [devices]);
+
   // WiFi tunnel remains iOS 17+ only; iOS 16 devices are supported over USB.
 
   // Multi-result detect: keep the full list and let the user pick one when
