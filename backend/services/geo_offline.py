@@ -16,13 +16,15 @@ import logging
 import math
 import sys
 import threading
+import time
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
 _lock = threading.Lock()
 _loaded = False
-_load_failed = False
+_last_warn_ts = 0.0           # monotonic ts of the last "tables unavailable" WARNING
+_WARN_THROTTLE_S = 60.0       # at most one such WARNING per minute
 
 _tf = None                    # TimezoneFinderL instance
 _lat = None                   # numpy array — city latitudes
@@ -52,18 +54,18 @@ def _geo_data_dir() -> Path:
 
 def _ensure_loaded() -> bool:
     """Lazily load timezonefinder + the bundled tables. Returns False if
-    anything is unavailable — resolve() then degrades to empty results."""
-    global _loaded, _load_failed, _tf, _lat, _lng, _name, _cc, _admin1
+    anything is unavailable — resolve() then degrades to empty results.
+
+    No permanent failure latch: a transient failure (e.g. an iCloud-evicted
+    data file, a not-yet-installed numpy in the venv) is retried on the next
+    call. Only success is cached (via _loaded)."""
+    global _loaded, _tf, _lat, _lng, _name, _cc, _admin1
     global _zone_to_country, _admin1_names
     if _loaded:
         return True
-    if _load_failed:
-        return False
     with _lock:
         if _loaded:
             return True
-        if _load_failed:
-            return False
         try:
             import numpy as np
             from timezonefinder import TimezoneFinderL
@@ -86,8 +88,9 @@ def _ensure_loaded() -> bool:
             logger.info("geo_offline loaded %d cities", len(_name))
             return True
         except Exception:
-            logger.exception("geo_offline failed to load; geo fields stay empty")
-            _load_failed = True
+            logger.exception(
+                "geo_offline failed to load; geo fields stay empty (will retry)"
+            )
             return False
 
 
@@ -100,6 +103,14 @@ def resolve(lat: float, lng: float) -> tuple[str, str, str, str]:
     lowercase ISO 3166-1 alpha-2; timezone is an IANA zone string.
     """
     if not _ensure_loaded():
+        global _last_warn_ts
+        now = time.monotonic()
+        if now - _last_warn_ts >= _WARN_THROTTLE_S:
+            _last_warn_ts = now
+            logger.warning(
+                "geo_offline tables unavailable; bookmark geo fields stay "
+                "empty (throttled, retrying each call)"
+            )
         return ("", "", "", "")
     try:
         import numpy as np
