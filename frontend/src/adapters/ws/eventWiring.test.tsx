@@ -81,7 +81,6 @@ const UI_IGNORED_BY_DESIGN = new Set<string>([
   // tunnel_degraded / tunnel_recovered are now consumed by useSimulation (the
   // three-state WiFi-tunnel indicator: degraded → "reconnecting…", recovered →
   // clear + toast, lost → terminal banner) — so they are REQUIRED, not ignored.
-  'device_error', // logged server-side; no renderer banner for it
   'connection_lost', // random-walk internal recovery signal
   'random_walk_arrived', // intermediate mover progress, not surfaced
   'random_walk_complete', // folded into the generic *_complete UI? no — no subscriber

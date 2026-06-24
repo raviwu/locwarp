@@ -506,6 +506,21 @@ export function useSimulation(
       setTunnelReconnecting(false)
     })
 
+    const offDeviceError = ws.subscribe('device_error', (e: WsEvent) => {
+      const msgUdid = e.udid as string | undefined
+      const primary = primaryUdidRef.current
+      if (primary && msgUdid && msgUdid !== primary) return
+      // Backend hit an internal failure outside the request/response path
+      // (e.g. USB-fallback engine rebuild after a tunnel stop). Surface it on
+      // the terminal banner so the user isn't left thinking the device is
+      // still healthy. Payload carries {stage, error}.
+      const stage = typeof e.stage === 'string' ? e.stage as string : ''
+      const detail = typeof e.error === 'string' ? e.error as string : ''
+      const isEn = typeof localStorage !== 'undefined' && localStorage.getItem('locwarp.lang') === 'en'
+      const base = isEn ? 'Device error' : '裝置發生錯誤'
+      setError(detail ? `${base}: ${detail}` : (stage ? `${base} (${stage})` : base))
+    })
+
     const handlePauseStart = (e: WsEvent) => {
       const msgUdid = e.udid as string | undefined
       const primary = primaryUdidRef.current
@@ -582,7 +597,7 @@ export function useSimulation(
       offPos(); offNavComplete(); offMultiComplete(); offLoopComplete()
       offWpProgress(); offLapComplete(); offDdiMounting(); offDdiMounted(); offDdiMountFailed()
       offDdiNotMounted(); offTunnelDegraded(); offTunnelRecovered(); offTunnelLost()
-      offDisc(); offConnected()
+      offDisc(); offConnected(); offDeviceError()
       offPauseCountdown(); offPauseCountdownEnd()
       offRoutePath(); offStateChange()
     }
