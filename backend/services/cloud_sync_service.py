@@ -23,7 +23,7 @@ from models.schemas import (
     CloudSyncEnableRequest, CloudSyncResource, CloudSyncStatus,
 )
 from services.cloud_sync import (
-    detect_icloud_path, migrate_pair, setup_sync_folder,
+    detect_icloud_path, materialize_if_placeholder, migrate_pair, setup_sync_folder,
 )
 
 logger = logging.getLogger(__name__)
@@ -65,6 +65,15 @@ class CloudSyncService:
             ),
         )
 
+    @staticmethod
+    def _materialize_src(src_dir: Path) -> None:
+        """Force-download any iCloud-evicted bookmarks/routes placeholder under
+        *src_dir* before a migrate, so cold-evicted data is not silently
+        skipped by migrate_pair's `not src.exists()` no-op. No-op when the
+        files are already local / not under iCloud / brctl is unavailable."""
+        for name in ("bookmarks.json", "routes.json"):
+            materialize_if_placeholder(src_dir / name)
+
     async def enable(self, req: CloudSyncEnableRequest) -> CloudSyncStatus:
         if req.folder:
             parent = Path(req.folder)
@@ -79,6 +88,9 @@ class CloudSyncService:
         except (FileNotFoundError, OSError) as exc:
             raise HTTPException(400, str(exc))
 
+        # Pull any iCloud-evicted source files local first, else migrate_pair
+        # silently skips a placeholder it sees as a missing src.
+        self._materialize_src(_config.DATA_DIR)
         try:
             migrate_pair(_config.DATA_DIR, target_folder)
         except Exception as exc:
@@ -132,6 +144,10 @@ class CloudSyncService:
             self._app.route_manager.stop_watcher()
 
         current = Path(self._app._sync_folder)
+        # Pull any iCloud-evicted files in the sync folder local first, else
+        # the migrate-back silently drops a cloud-only-evicted store and the
+        # canonical link is cut with _sync_folder=None below (A19).
+        self._materialize_src(current)
         try:
             migrate_pair(current, _config.DATA_DIR)
         except Exception as exc:
