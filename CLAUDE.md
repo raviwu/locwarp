@@ -13,7 +13,7 @@ Project-specific instructions for Claude / agentic workers. Layered on top of `~
 **Why Pragmatic Hexagonal-lite, not strict L1–L4:** real clean architecture (inward-only rings, inner-owned ports, repository, composition-root DI, CI-enforced layering) **without** per-verb interactor classes, numbered `l1–l4` folders, or a presenter layer (`response_model` already serves that role). For a solo dev on real hardware, the strict form multiplies file count for substitutability we never use.
 
 **Backend rings — dependencies point inward only:**
-`bootstrap/` (composition root, the ONLY ring that imports every other ring) → `api/` + `infra/` (outermost adapters) → `services/` (use-cases) → `core/` (engine + movers) → `domain/` (pure: models, `events.py`, `movement.py`, `errors.py`, `ports/`).
+`bootstrap/` (composition root, the ONLY ring that imports every other ring) → `api/` + `infra/` (outermost adapters) → `services/` (use-cases) → `core/` (engine + movers) → `domain/` (pure: models, `events.py`, `movement.py`, `errors.py`, `store_merge.py`, `backup.py`, `ports/`).
 
 **Import bans (will become import-linter contracts — the "353rd test"):**
 - `domain/` imports stdlib + pydantic ONLY — never fastapi, httpx, asyncio I/O, pymobiledevice3, or any outer ring.

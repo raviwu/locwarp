@@ -14,7 +14,7 @@ LocWarp is a macOS/Windows desktop app that spoofs iOS device GPS: a **FastAPI b
 
 ### Backend rings (dependencies point inward only)
 
-`bootstrap/` (composition root — the ONLY ring allowed to import every other ring) → `api/` + `infra/` (outermost adapters) → `services/` (use-cases) → `core/` (engine + movers) → `domain/` (pure: `models/`, `events.py`, `movement.py`, `errors.py`, `ports/`).
+`bootstrap/` (composition root — the ONLY ring allowed to import every other ring) → `api/` + `infra/` (outermost adapters) → `services/` (use-cases) → `core/` (engine + movers) → `domain/` (pure: `models/`, `events.py`, `movement.py`, `errors.py`, `store_merge.py`, `backup.py`, `ports/`).
 
 Import bans (to be enforced by import-linter as a pytest — the "353rd test"; report-only in Phase 0, enforced at each phase's exit):
 - `domain/` imports stdlib + pydantic ONLY — never fastapi, httpx, asyncio I/O, pymobiledevice3, or any outer ring.
