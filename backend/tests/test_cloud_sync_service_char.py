@@ -207,6 +207,36 @@ def test_dismiss_prompt_sets_flag_and_saves(tmp_path):
     assert status.prompt_dismissed is True
 
 
+async def test_disable_stops_outgoing_watchers_before_migrate_pair(
+    monkeypatch, tmp_path
+):
+    """A10: the outgoing bookmark + route watchers must be stopped BEFORE
+    migrate_pair moves their files back to DATA_DIR — symmetric with enable().
+    Otherwise the live file_watcher fires on files being migrated away."""
+    log: list[str] = []
+    app = _SpyAppState(log, tmp_path)
+    app._sync_folder = str(tmp_path / "LocWarp")
+    bc = _CapBroadcast()
+
+    def _spy_migrate(*a, **k):
+        log.append("migrate_pair")
+        return (0, 0)
+
+    monkeypatch.setattr(css_mod, "detect_icloud_path", lambda: tmp_path)
+    monkeypatch.setattr(css_mod, "migrate_pair", _spy_migrate)
+    _patch_managers(monkeypatch, app, log)
+
+    svc = CloudSyncService(app_state=app, broadcast=bc)
+    await svc.disable()
+
+    # outgoing watchers stopped BEFORE the files are migrated away
+    assert log.index("stop:bm-old") < log.index("migrate_pair")
+    assert log.index("stop:rm-old") < log.index("migrate_pair")
+    # ...and (as before) the rebuilt watchers restart AFTER the rebuild
+    assert log.index("new:bm") < log.index("restart:bm")
+    assert log.index("new:rm") < log.index("restart:rm")
+
+
 def test_build_status_reflects_app_state(tmp_path):
     log: list[str] = []
     app = _SpyAppState(log, tmp_path)

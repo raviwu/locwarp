@@ -123,6 +123,14 @@ class CloudSyncService:
         if self._app._sync_folder is None:
             return self.build_status()
 
+        # Stop the OUTGOING managers' watches first — otherwise their live
+        # handles on the shared file_watcher Observer fire on files that
+        # migrate_pair is moving back to DATA_DIR (symmetric with enable()).
+        if self._app.bookmark_manager is not None:
+            self._app.bookmark_manager.stop_watcher()
+        if self._app.route_manager is not None:
+            self._app.route_manager.stop_watcher()
+
         current = Path(self._app._sync_folder)
         try:
             migrate_pair(current, _config.DATA_DIR)
