@@ -382,6 +382,11 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
   const [exportAnchor, setExportAnchor] = useState<DOMRect | null>(null);
 
   const t = useT();
+  // A full random speed range (both min AND max set) takes precedence over the
+  // fixed/custom speed in the backend mover, so the custom-speed input becomes
+  // a dead control — dim + disable it and explain why, mirroring the other
+  // "this control is overridden" hints in the panel.
+  const rangeOverridesCustom = speedMinKmh != null && speedMaxKmh != null;
   const [coordLat, setCoordLat] = useState('');
   const [coordLng, setCoordLng] = useState('');
   const [libraryOpen, setLibraryOpen] = useState(false);
@@ -748,7 +753,8 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
                     if (!isNaN(n) && n > 0) onCustomSpeedChange(n)
                   }
                 }}
-                style={{ flex: 1, maxWidth: 80 }}
+                disabled={rangeOverridesCustom}
+                style={{ flex: 1, maxWidth: 80, opacity: rangeOverridesCustom ? 0.45 : 1 }}
                 min="0.1"
                 step="0.5"
               />
@@ -763,7 +769,12 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
                 </button>
               )}
             </div>
-            {customSpeedKmh && (
+            {customSpeedKmh && rangeOverridesCustom && (
+              <div style={{ fontSize: 11, color: '#ffb74d', marginTop: 4 }}>
+                {t('panel.range_overrides_custom')}
+              </div>
+            )}
+            {customSpeedKmh && !rangeOverridesCustom && (
               <div style={{ fontSize: 11, color: '#4caf50', marginTop: 4 }}>
                 {t('panel.custom_speed_active')}: {customSpeedKmh} km/h ({(customSpeedKmh / 3.6).toFixed(1)} m/s)
               </div>

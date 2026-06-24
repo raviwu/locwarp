@@ -100,3 +100,20 @@ describe('ControlPanel', () => {
     expect(document.querySelectorAll('button.mode-btn').length).toBe(0)
   })
 })
+
+describe('ControlPanel — range overrides custom speed', () => {
+  it('disables the custom-speed input and shows the override hint when a full range is set', () => {
+    render(<ControlPanel {...(makeProps({ customSpeedKmh: 12, speedMinKmh: 5, speedMaxKmh: 20 }) as any)} />)
+    const custom = screen.getByPlaceholderText('km/h') as HTMLInputElement
+    expect(custom.disabled).toBe(true)
+    expect(screen.getByText('panel.range_overrides_custom')).toBeInTheDocument()
+    // the normal 'custom active' green line is suppressed while overridden
+    expect(screen.queryByText(/panel\.custom_speed_active/)).toBeNull()
+  })
+  it('keeps the custom input enabled when no full range is set', () => {
+    render(<ControlPanel {...(makeProps({ customSpeedKmh: 12, speedMinKmh: null, speedMaxKmh: null }) as any)} />)
+    const custom = screen.getByPlaceholderText('km/h') as HTMLInputElement
+    expect(custom.disabled).toBe(false)
+    expect(screen.queryByText('panel.range_overrides_custom')).toBeNull()
+  })
+})

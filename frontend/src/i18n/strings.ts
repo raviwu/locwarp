@@ -190,6 +190,7 @@ export const STRINGS = {
   'panel.speed': { zh: '速度', en: 'Speed' },
   'panel.custom_speed': { zh: '自訂', en: 'Custom' },
   'panel.custom_speed_active': { zh: '使用自訂速度', en: 'Using custom speed' },
+  'panel.range_overrides_custom': { zh: '已設隨機範圍,自訂速度將被忽略', en: 'Range is set — custom speed is ignored' },
   'panel.apply_speed': { zh: '套用新速度', en: 'Apply new speed' },
   'panel.apply_speed_tooltip': { zh: '套用目前輸入框中的速度到進行中的路線', en: 'Apply the speed in the inputs to the running route' },
   'panel.apply_speed_success': { zh: '已套用新速度', en: 'New speed applied' },
