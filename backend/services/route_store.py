@@ -29,6 +29,7 @@ from models.schemas import RouteCategory, RouteStore, SavedRoute, Tombstone
 from services.file_watcher import schedule as _watcher_schedule, unschedule as _watcher_unschedule
 from services.json_safe import safe_load_json, safe_write_json
 from services.store_merge import merge_stores
+from domain.store_merge import force_seed_items
 
 logger = logging.getLogger(__name__)
 
@@ -411,6 +412,7 @@ class RouteManager:
                 self.store.categories.append(cat)
                 existing_cat_ids.add(cat.id)
 
+        now = _now_iso()
         existing_route_ids = {r.id for r in self.store.routes}
         imported = 0
         for r in incoming.routes:
@@ -425,7 +427,11 @@ class RouteManager:
             if siblings:
                 r.name = f"{r.name} (匯入)"
             if not r.created_at:
-                r.created_at = _now_iso()
+                r.created_at = now
+            # Stamp updated_at=now so a re-imported id whose prior delete left a
+            # real-timestamp tombstone is resurrected by merge_stores in _save()
+            # (the empty-updated_at pitfall). Mirrors bookmark import + catalog.
+            force_seed_items([r], now)
             self.store.routes.append(r)
             existing_route_ids.add(r.id)
             imported += 1

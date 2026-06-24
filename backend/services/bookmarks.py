@@ -582,6 +582,7 @@ class BookmarkManager:
                 self.store.categories.append(cat)
                 existing_cat_ids.add(cat.id)
 
+        now = _now_iso()
         existing_bm_ids = {b.id for b in self.store.bookmarks}
         imported = 0
         skipped = 0
@@ -591,6 +592,11 @@ class BookmarkManager:
                 if bm.category_id not in existing_cat_ids:
                     bm.category_id = "default"
                 enrich_bookmark(bm)  # fill any geo fields the import lacked
+                # Stamp updated_at=now so a re-imported id whose prior delete
+                # left a real-timestamp tombstone is resurrected by the
+                # merge_stores _alive() check inside _save() (the
+                # empty-updated_at pitfall). Mirrors import_catalog.
+                force_seed_items([bm], now)
                 self.store.bookmarks.append(bm)
                 existing_bm_ids.add(bm.id)
                 imported += 1
