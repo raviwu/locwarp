@@ -415,10 +415,18 @@ class RouteManager:
         now = _now_iso()
         existing_route_ids = {r.id for r in self.store.routes}
         imported = 0
+        skipped = 0
         for r in incoming.routes:
+            # Idempotency: a route whose id already exists in the live store is
+            # the same route (e.g. a re-imported export) — skip it instead of
+            # minting a fresh uuid, which used to duplicate every route on a
+            # second import. Mirrors BookmarkManager.import_json's id-skip.
+            if r.id and r.id in existing_route_ids:
+                skipped += 1
+                continue
             if r.category_id not in existing_cat_ids:
                 r.category_id = "default"
-            if not r.id or r.id in existing_route_ids:
+            if not r.id:
                 r.id = str(uuid.uuid4())
             siblings = [
                 s for s in self.store.routes
@@ -438,5 +446,5 @@ class RouteManager:
 
         if imported:
             self._save()
-        logger.info("Imported %d routes", imported)
+        logger.info("Imported %d routes (%d skipped as duplicates)", imported, skipped)
         return imported
