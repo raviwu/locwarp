@@ -30,8 +30,8 @@ export function CloudSyncSection() {
     if (!status) return
     setError(null)
     try {
-      const next = await run(() =>
-        status.enabled ? cloudSyncDisable() : cloudSyncEnable(),
+      const next = await run((signal) =>
+        status.enabled ? cloudSyncDisable(signal) : cloudSyncEnable(undefined, signal),
       )
       setStatus(next)
     } catch (e) {

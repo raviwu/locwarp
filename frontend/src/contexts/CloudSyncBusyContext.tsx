@@ -20,16 +20,24 @@ import React, {
  */
 type AfterFn = () => Promise<void> | void
 
+/**
+ * Hard ceiling on a single cloud-sync toggle. A backend stuck mid
+ * ``migrate_pair`` (cold iCloud cache, hung atomic write) must not pin
+ * the zIndex-9999 busy overlay open forever — at this deadline we abort
+ * the in-flight request so ``run``'s ``finally`` clears ``busy``.
+ */
+export const CLOUD_SYNC_TIMEOUT_MS = 35000
+
 type CloudSyncBusyContextValue = {
   busy: boolean
-  run<T>(fn: () => Promise<T>): Promise<T>
+  run<T>(fn: (signal: AbortSignal) => Promise<T>): Promise<T>
   /** Internal: replace the post-toggle hook. Prefer ``useCloudSyncAfter``. */
   _setAfter(fn: AfterFn | null): void
 }
 
 const Ctx = createContext<CloudSyncBusyContextValue>({
   busy: false,
-  run: async (fn) => fn(),
+  run: async (fn) => fn(new AbortController().signal),
   _setAfter: () => undefined,
 })
 
@@ -41,10 +49,12 @@ export function CloudSyncBusyProvider({ children }: { children: React.ReactNode 
     afterRef.current = fn
   }, [])
 
-  const run = useCallback(async <T,>(fn: () => Promise<T>) => {
+  const run = useCallback(async <T,>(fn: (signal: AbortSignal) => Promise<T>) => {
     setBusy(true)
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), CLOUD_SYNC_TIMEOUT_MS)
     try {
-      const result = await fn()
+      const result = await fn(controller.signal)
       try {
         await afterRef.current?.()
       } catch {
@@ -52,6 +62,7 @@ export function CloudSyncBusyProvider({ children }: { children: React.ReactNode 
       }
       return result
     } finally {
+      clearTimeout(timer)
       setBusy(false)
     }
   }, [])

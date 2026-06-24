@@ -3,12 +3,20 @@ const API = BASE_URL
 
 // Connection-refused means backend isn't up yet, retry with backoff.
 // Other HTTP errors (4xx/5xx) are real errors and propagate immediately.
-async function fetchWithRetry(url: string, opts: RequestInit, maxAttempts = 15): Promise<Response> {
+// An AbortError (caller timeout / Cancel) is terminal — never retry it,
+// or the busy overlay would re-arm against a fresh attempt.
+async function fetchWithRetry(
+  url: string,
+  opts: RequestInit,
+  maxAttempts = 15,
+  signal?: AbortSignal,
+): Promise<Response> {
   let lastErr: unknown
   for (let i = 0; i < maxAttempts; i++) {
     try {
-      return await fetch(url, opts)
+      return await fetch(url, { ...opts, ...(signal ? { signal } : {}) })
     } catch (e) {
+      if (e instanceof DOMException && e.name === 'AbortError') throw e
       lastErr = e
       const delay = Math.min(500 + i * 300, 2000)
       await new Promise((r) => setTimeout(r, delay))
@@ -109,13 +117,13 @@ export class HttpError extends Error {
   }
 }
 
-async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+async function request<T>(method: string, path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
   const opts: RequestInit = {
     method,
     headers: { 'Content-Type': 'application/json' },
   }
   if (body !== undefined) opts.body = JSON.stringify(body)
-  const res = await fetchWithRetry(`${API}${path}`, opts)
+  const res = await fetchWithRetry(`${API}${path}`, opts, 15, signal)
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }))
     throw new HttpError(formatError(err.detail, res.statusText), res.status)
@@ -520,11 +528,11 @@ export interface CloudSyncStatus {
 export const cloudSyncStatus = () =>
   request<CloudSyncStatus>('GET', '/api/cloud-sync/status')
 
-export const cloudSyncEnable = (folder?: string) =>
-  request<CloudSyncStatus>('POST', '/api/cloud-sync/enable', { folder: folder ?? null })
+export const cloudSyncEnable = (folder?: string, signal?: AbortSignal) =>
+  request<CloudSyncStatus>('POST', '/api/cloud-sync/enable', { folder: folder ?? null }, signal)
 
-export const cloudSyncDisable = () =>
-  request<CloudSyncStatus>('POST', '/api/cloud-sync/disable')
+export const cloudSyncDisable = (signal?: AbortSignal) =>
+  request<CloudSyncStatus>('POST', '/api/cloud-sync/disable', undefined, signal)
 
 export const cloudSyncDismissPrompt = () =>
   request<CloudSyncStatus>('POST', '/api/cloud-sync/dismiss-prompt')
