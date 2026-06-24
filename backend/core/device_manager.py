@@ -974,9 +974,6 @@ class DeviceManager:
         if bonjour_id:
             _remember_wifi_alias(bonjour_id, udid, device_name)
 
-        if udid in self._connections:
-            await self.disconnect(udid)
-
         conn = _ActiveConnection(
             udid=udid,
             lockdown=rsd,
@@ -987,6 +984,14 @@ class DeviceManager:
         )
 
         async with self._lock:
+            # Check-then-act for a stale same-udid connection must be atomic
+            # with the assignment: doing the existence check + disconnect
+            # OUTSIDE the lock let a concurrent connect interleave between the
+            # check and the swap and leak/clobber a connection. (The ~20 other
+            # lock-free _connections accesses stay as-is — they are deliberate
+            # single-event-loop atomics.)
+            if udid in self._connections:
+                await self.disconnect(udid)
             self._connections[udid] = conn
 
         logger.info("WiFi tunnel connected to %s (iOS %s)", udid, ios_version_str)
