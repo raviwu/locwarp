@@ -130,6 +130,30 @@ describe('useSimActions — teleport', () => {
     await act(async () => { await result.current.handleTeleport(10, 20) })
     expect(showToast).toHaveBeenCalledWith('Teleport failed')
   })
+
+  it('dual device, total failure: reverts the optimistic marker to the prior position', async () => {
+    const failed = { ok: [], failed: [{ udid: 'A', reason: 'x' }, { udid: 'B', reason: 'y' }] }
+    const sim = makeSim({
+      currentPosition: { lat: 1, lng: 2 },
+      teleportAll: vi.fn(async () => failed),
+    })
+    const { result } = setup({ udids: ['A', 'B'], sim })
+    await act(async () => { await result.current.handleTeleport(10, 20) })
+    // optimistic set first, then revert to the snapshot { lat: 1, lng: 2 }
+    expect(sim.setCurrentPosition).toHaveBeenCalledWith({ lat: 10, lng: 20 })
+    expect(sim.setCurrentPosition).toHaveBeenLastCalledWith({ lat: 1, lng: 2 })
+  })
+
+  it('dual device, partial success: does NOT revert the marker', async () => {
+    const partial = { ok: [{ udid: 'A', value: {} }], failed: [{ udid: 'B', reason: 'y' }] }
+    const sim = makeSim({
+      currentPosition: { lat: 1, lng: 2 },
+      teleportAll: vi.fn(async () => partial),
+    })
+    const { result } = setup({ udids: ['A', 'B'], sim })
+    await act(async () => { await result.current.handleTeleport(10, 20) })
+    expect(sim.setCurrentPosition).toHaveBeenLastCalledWith({ lat: 10, lng: 20 })
+  })
 })
 
 describe('useSimActions — navigate', () => {

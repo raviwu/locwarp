@@ -118,8 +118,15 @@ export function useSimActions(args: UseSimActionsArgs) {
     setPreviewPin(null)
     const udids = device.connectedDevices.map((d) => d.udid)
     if (udids.length >= 2) {
+      const prevPos = sim.currentPosition
       sim.setCurrentPosition({ lat, lng })
       const outcome = await sim.teleportAll(udids, lat, lng)
+      // Total failure: the marker jumped but no device actually moved —
+      // revert so the map doesn't lie. Partial / full success keeps the
+      // optimistic position (dual pre-sync wants both phones co-located).
+      if (outcome.ok.length === 0 && outcome.failed.length > 0) {
+        sim.setCurrentPosition(prevPos ?? null)
+      }
       showToast(toastForFanout(t, t('mode.teleport'), outcome, device.connectedDevices))
     } else {
       try {
