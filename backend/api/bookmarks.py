@@ -244,25 +244,15 @@ async def import_bookmarks(data: dict, bm=Depends(get_bookmark_manager)):
 
 @router.get("/ui-state")
 async def get_bookmark_ui_state(registry=Depends(get_engine_registry)):
-    return {
-        "expanded_categories": registry._bookmark_expanded_categories,
-        "hidden_categories": registry._bookmark_hidden_categories,
-    }
+    return registry.get_bookmark_ui_state()
 
 
 @router.post("/ui-state")
 async def set_bookmark_ui_state(req: BookmarkUiState, registry=Depends(get_engine_registry)):
-    # Per-field update: only touch a field the request actually carries.
-    if req.expanded_categories is not None:
-        registry._bookmark_expanded_categories = list(req.expanded_categories)
-    if req.hidden_categories is not None:
-        registry._bookmark_hidden_categories = list(req.hidden_categories)
-    registry.save_settings()
-    return {
-        "status": "ok",
-        "expanded_categories": registry._bookmark_expanded_categories,
-        "hidden_categories": registry._bookmark_hidden_categories,
-    }
+    registry.set_bookmark_ui_state(
+        expanded=req.expanded_categories, hidden=req.hidden_categories
+    )
+    return {"status": "ok", **registry.get_bookmark_ui_state()}
 
 
 # ── Catalog (bundled curated event seed) ──────────────────

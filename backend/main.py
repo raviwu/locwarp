@@ -307,6 +307,32 @@ class AppState:
         }
         safe_write_json(SETTINGS_FILE, payload)
 
+    def get_primary_udid(self) -> str | None:
+        return self._primary_udid
+
+    def get_initial_map_position(self) -> dict | None:
+        return self._initial_map_position
+
+    def set_initial_map_position(self, pos: dict | None) -> None:
+        self._initial_map_position = pos
+        self.save_settings()
+
+    def get_bookmark_ui_state(self) -> dict:
+        return {
+            "expanded_categories": self._bookmark_expanded_categories,
+            "hidden_categories": self._bookmark_hidden_categories,
+        }
+
+    def set_bookmark_ui_state(self, *, expanded: list[str] | None = None,
+                              hidden: list[str] | None = None) -> None:
+        # Per-field: only touch a field whose value is not None, mirroring the
+        # frontend's independent expand/hide persistence.
+        if expanded is not None:
+            self._bookmark_expanded_categories = list(expanded)
+        if hidden is not None:
+            self._bookmark_hidden_categories = list(hidden)
+        self.save_settings()
+
     def get_initial_position(self) -> dict:
         if self._last_position:
             return self._last_position

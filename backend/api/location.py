@@ -138,7 +138,7 @@ async def teleport(req: TeleportRequest, registry=Depends(get_engine_registry)):
     old_pos = engine.current_position
     # Resolve which udid this action was targeting so device_lost cleanup
     # can be scoped to JUST that device in dual-device mode.
-    action_udid = getattr(req, "udid", None) or registry._primary_udid
+    action_udid = getattr(req, "udid", None) or registry.get_primary_udid()
 
     # The op closure re-resolves the engine each call: full_reconnect
     # rebuilds it, so a captured reference would point at the dead one.
@@ -308,7 +308,7 @@ async def resume(udid: str | None = None, registry=Depends(get_engine_registry))
 
 @router.post("/restore")
 async def restore(udid: str | None = None, registry=Depends(get_engine_registry)):
-    action_udid = udid or registry._primary_udid
+    action_udid = udid or registry.get_primary_udid()
 
     async def _do_restore():
         eng = await _engine(action_udid, registry)
@@ -339,7 +339,7 @@ async def goldditto_cycle(req: GoldDittoCycleRequest, registry=Depends(get_engin
                     "message": "拉金盆 cycle already in progress, wait for it to finish"},
         )
     except DeviceLostError as e:
-        action_udid = req.udid or registry._primary_udid
+        action_udid = req.udid or registry.get_primary_udid()
         raise (await _handle_device_lost(e, action_udid, registry))
     except Exception as e:
         import logging, traceback
@@ -442,8 +442,7 @@ class _InitialPosRequest(BaseModel):
 
 @router.get("/settings/initial-position", tags=["settings"])
 async def get_initial_position(registry=Depends(get_engine_registry)):
-    pos = registry._initial_map_position
-    return {"position": pos}  # {"position": null} or {"position": {"lat","lng"}}
+    return {"position": registry.get_initial_map_position()}
 
 
 @router.put("/settings/initial-position", tags=["settings"])
@@ -451,13 +450,12 @@ async def set_initial_position(req: _InitialPosRequest, registry=Depends(get_eng
     """Pass `{lat: null, lng: null}` (or omit) to clear the custom initial
     map center and fall back to the default on next launch."""
     if req.lat is None or req.lng is None:
-        registry._initial_map_position = None
+        registry.set_initial_map_position(None)
     else:
         if not (-90 <= req.lat <= 90) or not (-180 <= req.lng <= 180):
             raise HTTPException(
                 status_code=400,
                 detail={"code": "invalid_coord", "message": "lat must be in [-90, 90], lng in [-180, 180]"},
             )
-        registry._initial_map_position = {"lat": float(req.lat), "lng": float(req.lng)}
-    registry.save_settings()
-    return {"position": registry._initial_map_position}
+        registry.set_initial_map_position({"lat": float(req.lat), "lng": float(req.lng)})
+    return {"position": registry.get_initial_map_position()}
