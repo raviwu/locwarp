@@ -1050,17 +1050,26 @@ const App: React.FC = () => {
             }
             bm.updateBookmark(id, patch)
           }}
-          onCategoryAdd={(name: string) => {
+          onCategoryAdd={async (name: string) => {
             // Pick a random preset color at creation so different categories
             // start visually distinct; the color is persisted and stays put
             // across rename (was previously hashed from name → jumped on rename).
             const palette = ['#ef4444', '#f97316', '#eab308', '#22c55e', '#14b8a6', '#3b82f6', '#6366f1', '#a855f7', '#ec4899', '#64748b']
             const color = palette[Math.floor(Math.random() * palette.length)]
-            bm.createCategory({ name, color })
+            try {
+              await bm.createCategory({ name, color })
+            } catch (err: any) {
+              showToast(t('bm.cat.add_failed', { error: err?.message || '' }))
+            }
           }}
-          onCategoryDelete={(name: string) => {
+          onCategoryDelete={async (name: string) => {
             const cat = bm.categories.find(c => c.name === name)
-            if (cat) bm.deleteCategory(cat.id)
+            if (!cat) return
+            try {
+              await bm.deleteCategory(cat.id)
+            } catch (err: any) {
+              showToast(t('bm.cat.delete_failed', { error: err?.message || '' }))
+            }
           }}
           onCategoryEdit={(oldName: string, patch) => {
             const cat = bm.categories.find(c => c.name === oldName);
@@ -1137,9 +1146,13 @@ const App: React.FC = () => {
           onGoldDittoCycle={handleGoldDittoCycle}
           goldDittoBookmarks={bm.bookmarks}
           goldDittoCategories={bm.categories}
-          onCategoryDeleteCascade={(categoryId: string) =>
-            bm.deleteCategory(categoryId, true)
-          }
+          onCategoryDeleteCascade={async (categoryId: string) => {
+            try {
+              await bm.deleteCategory(categoryId, true)
+            } catch (err: any) {
+              showToast(t('bm.cat.delete_failed', { error: err?.message || '' }))
+            }
+          }}
           modeExtraSection={(sim.mode === SimMode.Loop || sim.mode === SimMode.MultiStop) ? (
             <WaypointEditor
               mode={sim.mode}

@@ -608,6 +608,8 @@ export const STRINGS = {
   'bm.cat.dates_hint':       { zh: '留空 = 永久(不會自動隱藏)',    en: 'Leave empty for evergreen (never auto-hide)' },
   'bm.cat.dates_clear':      { zh: '清空',                        en: 'Clear' },
   'bm.cat.dates_invalid':    { zh: '結束日期須晚於或等於開始日期', en: 'End date must be on or after start date' },
+  'bm.cat.add_failed': { zh: '新增分類失敗:{error}', en: 'Add category failed: {error}' },
+  'bm.cat.delete_failed': { zh: '刪除分類失敗:{error}', en: 'Delete category failed: {error}' },
   'bm.cat.save':             { zh: '儲存',                        en: 'Save' },
   'bm.cat.name':             { zh: '名稱',                        en: 'Name' },
   'bm.cat.color':            { zh: '顏色',                        en: 'Color' },
