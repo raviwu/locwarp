@@ -43,3 +43,41 @@ describe('parseCoord', () => {
     expect(parseCoord('40.0,-120.5')).toEqual({ lat: 40.0, lng: -120.5 })
   })
 })
+
+import { trySplitLatLng } from './coords'
+
+describe('trySplitLatLng (consolidated into coords.ts)', () => {
+  // Pin the EXACT current acceptance — these mirror latlng.test.ts so a
+  // regression in either dialog's accepted input is caught immediately.
+  it('splits a comma-separated pair into raw string halves', () => {
+    expect(trySplitLatLng('24.14, 120.65')).toEqual(['24.14', '120.65'])
+  })
+  it('splits a pair with no space after the comma', () => {
+    expect(trySplitLatLng('24.14,120.65')).toEqual(['24.14', '120.65'])
+  })
+  it('splits a whitespace-separated pair', () => {
+    expect(trySplitLatLng('24.14 120.65')).toEqual(['24.14', '120.65'])
+  })
+  it('splits a tab-separated pair', () => {
+    expect(trySplitLatLng('24.14\t120.65')).toEqual(['24.14', '120.65'])
+  })
+  it('handles negative coordinates', () => {
+    expect(trySplitLatLng('-33.86, -151.20')).toEqual(['-33.86', '-151.20'])
+  })
+  it('splits integer (no-decimal) pairs', () => {
+    expect(trySplitLatLng('25, 121')).toEqual(['25', '121'])
+  })
+  it('does NOT range-check (returns raw out-of-range halves)', () => {
+    // Distinguishes trySplitLatLng from parseCoord, which WOULD reject this.
+    expect(trySplitLatLng('95, 200')).toEqual(['95', '200'])
+  })
+  it('returns null while still typing the first number', () => {
+    expect(trySplitLatLng('24.1')).toBeNull()
+  })
+  it('returns null for a single trailing comma', () => {
+    expect(trySplitLatLng('24.14,')).toBeNull()
+  })
+  it('returns null for non-numeric input', () => {
+    expect(trySplitLatLng('Taipei 101')).toBeNull()
+  })
+})

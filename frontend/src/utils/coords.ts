@@ -48,3 +48,13 @@ export function parseCoord(raw: string): { lat: number; lng: number } | null {
   }
   return null;
 }
+
+// Strict whole-input pair splitter. Unlike parseCoord (which scrapes the
+// first valid pair out of arbitrary text and range-checks it), this returns
+// the RAW string halves with NO range check, so the bookmark dialogs can keep
+// partial text while the user is still typing. Separator class is exactly one
+// comma / tab / space — intentionally narrower than parseCoord's fallback.
+export function trySplitLatLng(s: string): [string, string] | null {
+  const m = s.trim().match(/^(-?\d+(?:\.\d+)?)\s*[,\t ]\s*(-?\d+(?:\.\d+)?)\s*$/);
+  return m ? [m[1], m[2]] : null;
+}

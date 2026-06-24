@@ -41,4 +41,9 @@ describe('trySplitLatLng', () => {
   it('returns null for non-numeric input', () => {
     expect(trySplitLatLng('Taipei 101')).toBeNull();
   });
+
+  it('still exports trySplitLatLng from the latlng module (shim)', () => {
+    expect(typeof trySplitLatLng).toBe('function')
+    expect(trySplitLatLng('1.0, 2.0')).toEqual(['1.0', '2.0'])
+  })
 });
