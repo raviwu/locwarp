@@ -909,7 +909,13 @@ const App: React.FC = () => {
           }))}
           isConnected={device.connectedDevice !== null}
           onScan={() => { device.scan() }}
-          onSelect={(id: string) => { device.connect(id) }}
+          onSelect={async (id: string) => {
+            try {
+              await device.connect(id)
+            } catch (e: any) {
+              showToast(e?.message ?? t('device.connect_failed'))
+            }
+          }}
           onStartWifiTunnel={device.startWifiTunnel}
           onStopTunnel={device.stopTunnel}
           tunnelStatus={device.tunnelStatus}
