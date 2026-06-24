@@ -605,6 +605,7 @@ export const STRINGS = {
 
   // — Edit-category dialog (replaces inline rename) —
   'bm.cat.edit_title':       { zh: '編輯分類',                    en: 'Edit category' },
+  'bm.cat.delete_title':     { zh: '刪除分類',                    en: 'Delete category' },
   'bm.cat.starts':           { zh: '開始日期',                    en: 'Starts' },
   'bm.cat.ends':             { zh: '結束日期',                    en: 'Ends' },
   'bm.cat.dates_hint':       { zh: '留空 = 永久(不會自動隱藏)',    en: 'Leave empty for evergreen (never auto-hide)' },

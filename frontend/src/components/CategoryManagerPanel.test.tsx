@@ -101,3 +101,25 @@ describe('CategoryManagerPanel', () => {
     expect(onCategoryDeleteCascade).toHaveBeenCalledWith('Trips', 3)
   })
 })
+
+describe('CategoryManagerPanel delete-dropdown a11y (U22)', () => {
+  it('the delete trigger exposes an accessible name', () => {
+    render(<CategoryManagerPanel {...makeProps()} />)
+    // One trigger per non-default category (Work, Trips).
+    expect(screen.getAllByRole('button', { name: /bm\.cat\.delete_title/ }).length).toBe(2)
+  })
+
+  it('opens a role=menu of role=menuitem choices; clicking soft-delete triggers it', () => {
+    const onCategoryDelete = vi.fn()
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    render(<CategoryManagerPanel {...makeProps({ onCategoryDelete })} />)
+    const trigger = screen.getAllByRole('button', { name: /bm\.cat\.delete_title/ })[0]
+    fireEvent.click(trigger)
+    expect(screen.getByRole('menu')).toBeTruthy()
+    const soft = screen.getByRole('menuitem', { name: /bm\.delete\.softdelete_label/ })
+    expect(soft.tagName).toBe('BUTTON')
+    fireEvent.click(soft)
+    expect(onCategoryDelete).toHaveBeenCalledWith('Work')
+    confirmSpy.mockRestore()
+  })
+})

@@ -80,8 +80,10 @@ const CategoryManagerPanel: React.FC<CategoryManagerPanelProps> = ({
           <span style={{ flex: 1 }}>{displayCat(cat)}</span>
           {cat !== 'Default' && cat !== '預設' && onCategoryEdit && (
             <button
+              type="button"
               onClick={() => onCategoryEdit(cat)}
               title={t('bm.cat.edit_title')}
+              aria-label={t('bm.cat.edit_title')}
               style={{
                 background: 'none',
                 border: 'none',
@@ -184,7 +186,12 @@ const CategoryDeleteDropdown: React.FC<DropdownProps> = ({
   return (
     <div ref={ref} style={{ position: 'relative' }}>
       <button
+        type="button"
         onClick={() => setOpen((v) => !v)}
+        title={t('bm.cat.delete_title')}
+        aria-label={t('bm.cat.delete_title')}
+        aria-haspopup="menu"
+        aria-expanded={open}
         style={{
           background: 'none', border: 'none',
           color: '#f44336', cursor: 'pointer',
@@ -198,6 +205,7 @@ const CategoryDeleteDropdown: React.FC<DropdownProps> = ({
       </button>
       {open && (
         <div
+          role="menu"
           style={{
             position: 'absolute',
             top: '100%', right: 0, zIndex: 50,
@@ -209,26 +217,31 @@ const CategoryDeleteDropdown: React.FC<DropdownProps> = ({
             boxShadow: '0 6px 18px rgba(0,0,0,0.5)',
           }}
         >
-          <div
+          <button
+            type="button"
+            role="menuitem"
             onClick={() => { setOpen(false); confirmSoft() }}
-            style={{ padding: '6px 12px', fontSize: 11, cursor: 'pointer' }}
-            onMouseEnter={(e) => { (e.currentTarget as HTMLDivElement).style.background = '#3a3a3e' }}
-            onMouseLeave={(e) => { (e.currentTarget as HTMLDivElement).style.background = 'transparent' }}
+            style={{ display: 'block', width: '100%', textAlign: 'left', background: 'transparent', border: 'none', font: 'inherit', padding: '6px 12px', fontSize: 11, cursor: 'pointer' }}
+            onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = '#3a3a3e' }}
+            onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = 'transparent' }}
           >
             {t('bm.delete.softdelete_label')}
-          </div>
+          </button>
           {onCascadeDelete && (
-            <div
+            <button
+              type="button"
+              role="menuitem"
               onClick={() => { setOpen(false); confirmCascade() }}
               style={{
+                display: 'block', width: '100%', textAlign: 'left', background: 'transparent', border: 'none', font: 'inherit',
                 padding: '6px 12px', fontSize: 11, cursor: 'pointer',
                 color: '#ff6b6b',
               }}
-              onMouseEnter={(e) => { (e.currentTarget as HTMLDivElement).style.background = '#3a3a3e' }}
-              onMouseLeave={(e) => { (e.currentTarget as HTMLDivElement).style.background = 'transparent' }}
+              onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = '#3a3a3e' }}
+              onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = 'transparent' }}
             >
               {t('bm.delete.cascade_label').replace('{n}', String(bookmarkCount))}
-            </div>
+            </button>
           )}
         </div>
       )}
