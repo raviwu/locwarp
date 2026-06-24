@@ -1610,6 +1610,8 @@ const App: React.FC = () => {
         {toastMsg && (
           <div
             key={toastMsg}
+            role="status"
+            aria-live="polite"
             className="anim-fade-slide-down"
             style={{
               position: 'fixed',
