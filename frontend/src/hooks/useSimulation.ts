@@ -491,16 +491,6 @@ export function useSimulation(
       }
     })
 
-    const offReconn = ws.subscribe('device_reconnected', (e: WsEvent) => {
-      const msgUdid = e.udid as string | undefined
-      const primary = primaryUdidRef.current
-      if (primary && msgUdid && msgUdid !== primary) return
-      // Auto-reconnected by the usbmux watchdog after a re-plug, clear
-      // the banner; the success is already visible via DeviceStatus.
-      setError(null)
-      setTunnelReconnecting(false)
-    })
-
     const offConnected = ws.subscribe('device_connected', (e: WsEvent) => {
       // ── Group mode ──────────────────────────────────────────────────────
       const udid = e.udid as string | undefined
@@ -508,9 +498,7 @@ export function useSimulation(
         setRuntimes((prev) => prev[udid] ? prev : { ...prev, [udid]: emptyRuntime(udid) })
       }
       // A device reconnecting implicitly resolves any prior connection-
-      // loss banner (watchdog auto-connect now broadcasts `device_connected`
-      // rather than `device_reconnected`; the legacy case still handles
-      // the latter).
+      // loss banner (watchdog auto-connect broadcasts `device_connected`).
       const msgUdid = udid
       const primary = primaryUdidRef.current
       if (primary && msgUdid && msgUdid !== primary) return
@@ -594,7 +582,7 @@ export function useSimulation(
       offPos(); offNavComplete(); offMultiComplete(); offLoopComplete()
       offWpProgress(); offLapComplete(); offDdiMounting(); offDdiMounted(); offDdiMountFailed()
       offDdiNotMounted(); offTunnelDegraded(); offTunnelRecovered(); offTunnelLost()
-      offDisc(); offReconn(); offConnected()
+      offDisc(); offConnected()
       offPauseCountdown(); offPauseCountdownEnd()
       offRoutePath(); offStateChange()
     }

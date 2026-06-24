@@ -494,7 +494,7 @@ async def _usbmux_presence_watchdog():
       unplug: disconnect, clear simulation_engine, broadcast device_disconnected.
     * **Appearance** — a USB device showing up while we have no active
       connection triggers an auto-connect + engine rebuild, broadcasting
-      device_reconnected when it succeeds. Failed attempts are throttled
+      device_connected when it succeeds. Failed attempts are throttled
       (min 5 s between retries per UDID) so we don't spam connect() while
       the device is still in the "Trust this computer?" dialog.
 

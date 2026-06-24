@@ -84,15 +84,7 @@ export function useDevice(ws?: WsRouter) {
         setConnectedDevice((prev) => prev ?? match ?? list.find((d) => d.is_connected) ?? null)
       }).catch(() => {})
     })
-    const offReconn = ws.subscribe('device_reconnected', (e: WsEvent) => {
-      listDevices().then((list) => {
-        setDevices(list)
-        const udid = e.udid as string | undefined
-        const match = udid ? list.find((d) => d.udid === udid) : null
-        setConnectedDevice(match ?? list.find((d) => d.is_connected) ?? null)
-      }).catch(() => {})
-    })
-    return () => { offDisc(); offConn(); offReconn() }
+    return () => { offDisc(); offConn() }
   }, [ws])
   const [scanning, setScanning] = useState(false)
   const [wifiScanning, setWifiScanning] = useState(false)

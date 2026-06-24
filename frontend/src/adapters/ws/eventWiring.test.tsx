@@ -176,6 +176,7 @@ describe('WS event-type subscribe wiring', () => {
     // of them (see CANONICAL_BACKEND_EVENT_TYPES). A subscription here is a
     // silent no-op that misleads future readers.
     const NEVER_EMITTED = [
+      'device_reconnected',
       'simulation_state', 'simulation_complete', 'simulation_error',
       'random_walk_pause', 'random_walk_pause_end',
     ]
