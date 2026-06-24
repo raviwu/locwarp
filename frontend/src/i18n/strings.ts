@@ -535,6 +535,8 @@ export const STRINGS = {
 
   // ── Toasts extra ─────────────────────────────
   'toast.no_position_random': { zh: '尚未取得目前位置,無法產生隨機路徑點', en: 'No current position, cannot generate random waypoints' },
+  'toast.teleport_failed': { zh: '瞬移失敗', en: 'Teleport failed' },
+  'toast.navigate_failed': { zh: '導航失敗', en: 'Navigate failed' },
   'toast.route_optimized': { zh: '路線已最佳化', en: 'Route optimized' },
   // Settings panel opened from the bottom status bar.
   'status.settings': { zh: '設定', en: 'Settings' },

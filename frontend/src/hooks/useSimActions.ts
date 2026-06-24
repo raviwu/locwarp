@@ -122,7 +122,12 @@ export function useSimActions(args: UseSimActionsArgs) {
       const outcome = await sim.teleportAll(udids, lat, lng)
       showToast(toastForFanout(t, t('mode.teleport'), outcome, device.connectedDevices))
     } else {
-      sim.teleport(lat, lng)
+      try {
+        await sim.teleport(lat, lng)
+      } catch {
+        showToast(t('toast.teleport_failed'))
+        return
+      }
     }
     void pushRecent(lat, lng, source === 'coord' ? 'coord_teleport' : 'teleport')
     // Dep array matches App's original handleTeleport exactly. clampLat /
@@ -140,7 +145,12 @@ export function useSimActions(args: UseSimActionsArgs) {
       const outcome = await sim.navigateAll(udids, lat, lng)
       showToast(toastForFanout(t, t('mode.navigate'), outcome, device.connectedDevices))
     } else {
-      sim.navigate(lat, lng)
+      try {
+        await sim.navigate(lat, lng)
+      } catch {
+        showToast(t('toast.navigate_failed'))
+        return
+      }
     }
     void pushRecent(lat, lng, source === 'coord' ? 'coord_navigate' : 'navigate')
     // Dep array matches App's original handleNavigate exactly (see handleTeleport).

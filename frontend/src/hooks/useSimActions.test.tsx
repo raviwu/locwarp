@@ -39,6 +39,8 @@ const t = ((k: any, v?: Record<string, string | number>) => {
     'status.restore_failed': 'restore failed',
     'toast.no_position_random': 'no position',
     'toast.no_waypoints': 'no waypoints',
+    'toast.teleport_failed': 'Teleport failed',
+    'toast.navigate_failed': 'Navigate failed',
   }
   return map[k] ?? k
 }) as UseSimActionsArgs['t']
@@ -121,6 +123,13 @@ describe('useSimActions — teleport', () => {
     expect(sim.teleportAll).toHaveBeenCalledWith(['A', 'B'], 10, 20)
     expect(showToast).toHaveBeenCalledWith('Teleport started on all devices')
   })
+
+  it('single device: toasts teleport_failed when sim.teleport throws', async () => {
+    const sim = makeSim({ teleport: vi.fn(async () => { throw new Error('DVT error') }) })
+    const { result, showToast } = setup({ udids: ['A'], sim })
+    await act(async () => { await result.current.handleTeleport(10, 20) })
+    expect(showToast).toHaveBeenCalledWith('Teleport failed')
+  })
 })
 
 describe('useSimActions — navigate', () => {
@@ -137,6 +146,13 @@ describe('useSimActions — navigate', () => {
     await act(async () => { await result.current.handleNavigate(10, 20) })
     expect(sim.navigateAll).toHaveBeenCalledWith(['A', 'B'], 10, 20)
     expect(showToast).toHaveBeenCalledWith('Navigate started on all devices')
+  })
+
+  it('single device: toasts navigate_failed when sim.navigate throws', async () => {
+    const sim = makeSim({ navigate: vi.fn(async () => { throw new Error('DVT error') }) })
+    const { result, showToast } = setup({ udids: ['A'], sim })
+    await act(async () => { await result.current.handleNavigate(10, 20) })
+    expect(showToast).toHaveBeenCalledWith('Navigate failed')
   })
 })
 
