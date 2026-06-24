@@ -1,5 +1,4 @@
 import React, { useEffect, useState } from 'react';
-import { createPortal } from 'react-dom';
 import { useT } from '../i18n';
 import {
   isAlertSoundEnabled,
@@ -8,6 +7,7 @@ import {
 } from '../services/alertSound';
 import type { RenderMode, RenderModeInfo } from '../types/electron';
 import { CloudSyncSection } from './CloudSyncSection';
+import DialogShell from './DialogShell';
 
 interface Props {
   open: boolean;
@@ -95,28 +95,23 @@ const SettingsModal: React.FC<Props> = ({ open, onClose }) => {
     userSelect: 'none',
   };
 
-  return createPortal((
-    <div
-      onClick={onClose}
-      style={{
-        position: 'fixed', inset: 0, zIndex: 2000,
-        background: 'rgba(8, 10, 20, 0.55)', backdropFilter: 'blur(4px)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
+  return (
+    <DialogShell
+      open={open}
+      onClose={onClose}
+      labelledBy="settings-title"
+      backdropStyle={{ zIndex: 2000 }}
+      panelStyle={{
+        width: 560, maxWidth: 'calc(100vw - 48px)',
+        maxHeight: 'calc(100vh - 80px)',
+        position: 'relative',
+        background: 'rgba(26, 29, 39, 0.96)',
+        border: '1px solid rgba(108, 140, 255, 0.25)', borderRadius: 14,
+        padding: '28px 32px', color: '#e8eaf0',
+        boxShadow: '0 20px 60px rgba(12, 18, 40, 0.65)',
+        overflowY: 'auto',
       }}
     >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        style={{
-          width: 560, maxWidth: 'calc(100vw - 48px)',
-          maxHeight: 'calc(100vh - 80px)',
-          position: 'relative',
-          background: 'rgba(26, 29, 39, 0.96)',
-          border: '1px solid rgba(108, 140, 255, 0.25)', borderRadius: 14,
-          padding: '28px 32px', color: '#e8eaf0',
-          boxShadow: '0 20px 60px rgba(12, 18, 40, 0.65)',
-          overflowY: 'auto',
-        }}
-      >
         <button
           onClick={onClose}
           title={t('generic.close')}
@@ -135,7 +130,7 @@ const SettingsModal: React.FC<Props> = ({ open, onClose }) => {
           </svg>
         </button>
 
-        <div style={{ fontSize: 18, fontWeight: 600, marginBottom: 24, paddingRight: 32 }}>
+        <div id="settings-title" style={{ fontSize: 18, fontWeight: 600, marginBottom: 24, paddingRight: 32 }}>
           {t('settings.title')}
         </div>
 
@@ -220,9 +215,8 @@ const SettingsModal: React.FC<Props> = ({ open, onClose }) => {
         )}
 
         <CloudSyncSection />
-      </div>
-    </div>
-  ), document.body);
+    </DialogShell>
+  );
 };
 
 export default SettingsModal;

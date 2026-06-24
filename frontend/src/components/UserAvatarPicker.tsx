@@ -99,6 +99,14 @@ const UserAvatarPicker: React.FC<Props> = ({ avatar, customPng, onSave, onClose,
     onClose();
   };
 
+  const closeBtnRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => { closeBtnRef.current?.focus(); }, []);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') handleCancel(); };
+    document.addEventListener('keydown', onKey, true);
+    return () => document.removeEventListener('keydown', onKey, true);
+  }, [handleCancel]);
+
   // Drag support: clicking the title bar lets the user park this panel
   // anywhere on the map so it doesn't cover the coord / pin they're
   // trying to see. Offset persists for the panel's lifetime. Use
@@ -161,6 +169,7 @@ const UserAvatarPicker: React.FC<Props> = ({ avatar, customPng, onSave, onClose,
       >
         <div style={{ fontWeight: 600, fontSize: 13 }}>{t('avatar.title')}</div>
         <button
+          ref={closeBtnRef}
           onClick={handleCancel}
           style={{
             marginLeft: 'auto',

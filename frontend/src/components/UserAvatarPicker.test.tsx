@@ -182,4 +182,17 @@ describe('UserAvatarPicker', () => {
     expect(props.onClose).toHaveBeenCalledTimes(1)
     expect(props.onSave).not.toHaveBeenCalled()
   })
+
+  it('closes (cancel) on Escape without saving', () => {
+    const props = baseProps()
+    render(<UserAvatarPicker {...props} />)
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(props.onClose).toHaveBeenCalledTimes(1)
+    expect(props.onSave).not.toHaveBeenCalled()
+  })
+
+  it('focuses the close (×) button on mount', () => {
+    render(<UserAvatarPicker {...baseProps()} />)
+    expect(document.activeElement).toBe(screen.getByTitle('avatar.close_no_save'))
+  })
 })

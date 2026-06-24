@@ -87,11 +87,18 @@ describe('SettingsModal', () => {
     fireEvent.click(screen.getByText('settings.title'));
     expect(onClose).not.toHaveBeenCalled();
 
-    // Clicking the backdrop closes. The backdrop is the outermost portal
-    // element (position: fixed, inset: 0) — the panel's parent.
-    const panel = screen.getByText('settings.title').closest('div')!.parentElement!;
-    const backdrop = panel.parentElement!;
+    // Clicking the backdrop closes. After DialogShell migration, the panel is
+    // the role=dialog element; its parent is the backdrop.
+    const backdrop = screen.getByRole('dialog').parentElement!;
     fireEvent.click(backdrop);
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('exposes the modal as role=dialog and closes on Escape', () => {
+    const onClose = vi.fn();
+    render(<SettingsModal open onClose={onClose} />);
+    expect(screen.getByRole('dialog')).toHaveAttribute('aria-modal', 'true');
+    fireEvent.keyDown(document, { key: 'Escape' });
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
