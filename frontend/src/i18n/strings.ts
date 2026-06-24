@@ -585,6 +585,7 @@ export const STRINGS = {
   'bm.export': { zh: '匯出', en: 'Export' },
   'bm.export_tooltip': { zh: '匯出所有收藏與分類為 JSON', en: 'Export all bookmarks and categories as JSON' },
   'bm.import': { zh: '匯入', en: 'Import' },
+  'bm.import_busy': { zh: '匯入中…', en: 'Importing…' },
   'bm.import_tooltip': { zh: '從 JSON 匯入收藏與分類(合併,不覆蓋既有)', en: 'Import bookmarks and categories from JSON (merge, does not overwrite existing)' },
   'bm.import_success': { zh: '匯入成功:共 {n} 筆', en: 'Imported {n} entries' },
   'bm.import_failed': { zh: '匯入失敗:{error}', en: 'Import failed: {error}' },

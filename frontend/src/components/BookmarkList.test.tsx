@@ -415,6 +415,31 @@ describe('BookmarkList characterization', () => {
   });
 });
 
+describe('BookmarkList import busy state (U14)', () => {
+  it('disables the import control while an import is in flight, re-enables after', async () => {
+    let resolveImport!: () => void;
+    const onImport = vi.fn(() => new Promise<void>((res) => { resolveImport = res; }));
+    renderWithServices(<BookmarkList {...makeProps({ onImport })} />);
+    await waitFor(() => expect(getBookmarkUiState).toHaveBeenCalledTimes(1));
+
+    const label = screen.getByTitle('bm.import_tooltip');
+    const input = label.querySelector('input[type="file"]') as HTMLInputElement;
+    const file = new File(['{}'], 'b.json', { type: 'application/json' });
+
+    await act(async () => {
+      fireEvent.change(input, { target: { files: [file] } });
+    });
+    // In-flight: control is marked busy (aria-disabled) and shows the busy label.
+    expect(label).toHaveAttribute('aria-disabled', 'true');
+    expect(screen.getByText('bm.import_busy')).toBeTruthy();
+    expect(onImport).toHaveBeenCalledTimes(1);
+
+    await act(async () => { resolveImport(); await Promise.resolve(); });
+    // Settled: no longer busy.
+    expect(label).toHaveAttribute('aria-disabled', 'false');
+  });
+});
+
 describe('BookmarkList left-click teleport gating + feedback (U16/U17)', () => {
   afterEach(() => { try { localStorage.clear(); } catch { /* ignore */ } });
 

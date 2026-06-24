@@ -200,6 +200,7 @@ const BookmarkList: React.FC<BookmarkListProps> = ({
   const [customLng, setCustomLng] = useState('');
   const [customCategory, setCustomCategory] = useState(categories[0] || 'Default');
   const [search, setSearch] = useState('');
+  const [importing, setImporting] = useState(false);
   // Multi-select mode: tick rows and batch-delete. When active, row clicks
   // toggle selection instead of teleporting. State + bulk-delete logic lives in
   // a dedicated hook so the confirm/fan-out semantics stay in one place.
@@ -371,22 +372,38 @@ const BookmarkList: React.FC<BookmarkListProps> = ({
         {onImport && (
           <label
             className="action-btn"
-            style={{ padding: '3px 6px', fontSize: 12, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', marginLeft: (onExportClick || exportUrl || onBulkPaste) ? 0 : 'auto' }}
+            aria-disabled={importing}
+            style={{
+              padding: '3px 6px', fontSize: 12,
+              cursor: importing ? 'not-allowed' : 'pointer',
+              opacity: importing ? 0.5 : 1,
+              display: 'inline-flex', alignItems: 'center', gap: 4,
+              marginLeft: (onExportClick || exportUrl || onBulkPaste) ? 0 : 'auto',
+            }}
             title={t('bm.import_tooltip')}
+            onClick={(e) => { if (importing) e.preventDefault(); }}
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
               <polyline points="17 8 12 3 7 8" />
               <line x1="12" y1="3" x2="12" y2="15" />
             </svg>
+            {importing && <span style={{ fontSize: 11 }}>{t('bm.import_busy')}</span>}
             <input
               type="file"
               accept="application/json,.json"
               style={{ display: 'none' }}
+              disabled={importing}
               onChange={async (e) => {
                 const f = e.target.files?.[0];
-                if (f) await onImport(f);
-                e.target.value = '';
+                if (!f) return;
+                setImporting(true);
+                try {
+                  await onImport(f);
+                } finally {
+                  setImporting(false);
+                  e.target.value = '';
+                }
               }}
             />
           </label>
