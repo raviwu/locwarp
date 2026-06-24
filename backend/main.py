@@ -368,14 +368,16 @@ class AppState:
 
     @simulation_engine.setter
     def simulation_engine(self, value):
-        """Legacy setter. Only `= None` (clear all) is meaningful."""
-        if value is None:
-            self.simulation_engines.clear()
-            self._primary_udid = None
-        else:
-            # Best-effort: stash under a synthetic key if udid unknown
-            self.simulation_engines["__legacy__"] = value
-            self._primary_udid = "__legacy__"
+        """Legacy setter. ONLY `= None` (clear all) is supported. Engines are
+        created via create_engine_for_device(udid) and removed via
+        remove_engine(udid); there is no per-udid-less assignment path."""
+        if value is not None:
+            raise TypeError(
+                "simulation_engine assignment is clear-only; use "
+                "create_engine_for_device(udid) to register an engine"
+            )
+        self.simulation_engines.clear()
+        self._primary_udid = None
 
     def get_engine(self, udid: str | None):
         """Return the engine for *udid*, or the primary engine if udid is None."""
