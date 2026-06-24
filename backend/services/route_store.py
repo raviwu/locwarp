@@ -27,7 +27,6 @@ from config import ROUTES_FILE, get_routes_path
 from domain.ports.route_repository import RouteRepository
 from models.schemas import RouteCategory, RouteStore, SavedRoute, Tombstone
 from services.file_watcher import schedule as _watcher_schedule, unschedule as _watcher_unschedule
-from services.json_safe import safe_load_json, safe_write_json
 from services.store_merge import merge_stores
 from domain.store_merge import force_seed_items
 

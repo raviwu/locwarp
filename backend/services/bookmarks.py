@@ -17,7 +17,6 @@ from config import BOOKMARKS_FILE, get_bookmarks_path
 from domain.ports.bookmark_repository import BookmarkRepository
 from models.schemas import Bookmark, BookmarkCategory, BookmarkStore, Tombstone
 from services.file_watcher import schedule as _watcher_schedule, unschedule as _watcher_unschedule
-from services.json_safe import safe_load_json, safe_write_json
 from domain.store_merge import force_seed_items
 from services.store_merge import merge_stores
 from services.geo_offline import resolve as _geo_resolve
@@ -262,10 +261,12 @@ class BookmarkManager:
                 self._reconcile_from_disk()
                 after_payload = self.store.model_dump_json()
                 if before_payload != after_payload:
-                    # Persist the merged state so disk reflects local edits we
-                    # may have reapplied on top of the remote update.
-                    payload = json.loads(after_payload)
-                    safe_write_json(path, payload)
+                    # Persist the merged state through the repo (read-merge-write +
+                    # tombstone GC) so disk reflects local edits we may have
+                    # reapplied on top of the remote update. We already hold
+                    # _store_lock, so call the repo directly rather than _save()
+                    # (which would re-acquire the non-reentrant lock).
+                    self.store = self._repo.save(self.store)
                     self._record_disk_mtime()
                     fire_callback = True
                 else:
