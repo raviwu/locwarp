@@ -88,3 +88,49 @@ def test_route_import_json_resurrects_deleted_id(rt_mgr):
         "route import_json must stamp updated_at so the item beats the tombstone on disk"
     )
     assert any(r.id == rt_id for r in rt_mgr.store.routes)
+
+
+# ---------------------------------------------------------------------------
+# A13 data-safety regression: old-timestamp re-import MUST NOT clobber a
+# still-live local bookmark (SH1 safety invariant).
+# ---------------------------------------------------------------------------
+
+def test_bookmark_import_json_does_not_clobber_live_bookmark_with_old_timestamp(bm_mgr):
+    """An old-timestamp re-import of a STILL-LIVE local bookmark id must NOT
+    overwrite the newer local edit (A13 invariant).
+
+    import_json skips ids already present in the live store, so the
+    unconditional stamp_now on imported items is safe: live ids are filtered
+    upstream before the stamp ever touches them.
+    """
+    # Create a live bookmark and update its name to simulate a recent local edit.
+    created = bm_mgr.create_bookmark(name="Local New", lat=3.0, lng=4.0)
+    bm_id = created.id
+
+    # Verify it's live (not tombstoned).
+    assert any(b.id == bm_id for b in bm_mgr.store.bookmarks)
+    assert not any(t.id == bm_id for t in bm_mgr.store.tombstones)
+
+    # Attempt to re-import the SAME id with an older payload (name "Old Import").
+    # In practice this happens when a stale export is re-imported after a local edit.
+    payload = json.dumps({
+        "categories": [],
+        "bookmarks": [
+            {"id": bm_id, "name": "Old Import", "lat": 3.0, "lng": 4.0,
+             "category_id": "default", "created_at": "", "last_used_at": "",
+             "updated_at": "2000-01-01T00:00:00+00:00"},
+        ],
+    })
+    result = bm_mgr.import_json(payload)
+
+    # The import reports the id as skipped (existing live id wins).
+    assert result == {"imported": 0, "skipped": 1}, (
+        "import_json must skip ids already present in the live store"
+    )
+
+    # The stored bookmark must retain the LOCAL name, not be overwritten.
+    live = next((b for b in bm_mgr.store.bookmarks if b.id == bm_id), None)
+    assert live is not None
+    assert live.name == "Local New", (
+        "import_json must not clobber a still-live bookmark with an old-timestamp import"
+    )

@@ -1,6 +1,5 @@
 """Characterization: /wifi/tunnel/stop USB-fallback re-attaches a udid that is
-now visible as USB, skips sticky-denied udids, and (rollback path) emits the
-exact device_error payload. Deep-equal events.
+now visible as USB, and skips sticky-denied udids.
 """
 from __future__ import annotations
 

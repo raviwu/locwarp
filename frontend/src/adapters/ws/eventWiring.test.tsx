@@ -40,7 +40,7 @@ const CANONICAL_BACKEND_EVENT_TYPES = [
   'tunnel_recovered', // api/device.py:832
   'tunnel_degraded', // api/device.py:900
   'tunnel_lost', // api/device.py:996
-  'device_error', // api/device.py:1289
+  'device_error', // services/wifi_tunnel_service.py:90
   // --- api/cloud_sync.py broadcast() ---
   'bookmarks_changed', // api/cloud_sync.py:115,150
   'routes_changed', // api/cloud_sync.py:116,151

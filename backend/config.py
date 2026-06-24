@@ -185,11 +185,6 @@ COOLDOWN_TABLE = [
     (float("inf"), 7200),
 ]
 
-# Reconnect
-RECONNECT_BASE_DELAY = 2.0
-RECONNECT_MAX_DELAY = 60.0
-RECONNECT_MAX_RETRIES = 30
-
 # Default location (Taipei City Hall)
 DEFAULT_LOCATION = {"lat": 25.0375, "lng": 121.5637}
 

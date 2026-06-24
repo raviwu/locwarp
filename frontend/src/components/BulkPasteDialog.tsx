@@ -104,7 +104,7 @@ const BulkPasteDialog: React.FC<BulkPasteDialogProps> = ({
       </div>
       <div style={{ display: 'flex', gap: 8, marginTop: 16, justifyContent: 'flex-end' }}>
         <button
-          onClick={() => { if (!busy) onClose(); }}
+          onClick={onClose}
           disabled={busy}
           style={{
             padding: '6px 14px', fontSize: 12, cursor: busy ? 'not-allowed' : 'pointer',

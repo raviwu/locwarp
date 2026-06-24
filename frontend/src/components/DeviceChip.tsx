@@ -38,7 +38,6 @@ export function DeviceChip({ letter, device, runtime, variant = 'connected', onD
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null)
   const [confirmForget, setConfirmForget] = useState(false)
   const ref = useRef<HTMLDivElement | null>(null)
-  const actionsBtnRef = useRef<HTMLButtonElement | null>(null)
   const kind = stateKind(runtime?.state)
 
   useEffect(() => {
@@ -122,7 +121,6 @@ export function DeviceChip({ letter, device, runtime, variant = 'connected', onD
           <span style={{ opacity: 0.6, marginLeft: 2 }}>· {label}</span>
         )}
         <button
-          ref={actionsBtnRef}
           type="button"
           aria-label={t('device.chip_actions')}
           aria-haspopup="menu"

@@ -206,6 +206,7 @@ const CategoryDeleteDropdown: React.FC<DropdownProps> = ({
       {open && (
         <div
           role="menu"
+          aria-label={t('bm.cat.delete_title')}
           style={{
             position: 'absolute',
             top: '100%', right: 0, zIndex: 50,

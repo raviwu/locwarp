@@ -122,4 +122,15 @@ describe('CategoryManagerPanel delete-dropdown a11y (U22)', () => {
     expect(onCategoryDelete).toHaveBeenCalledWith('Work')
     confirmSpy.mockRestore()
   })
+
+  it('the delete-dropdown menu container has an accessible name', () => {
+    render(<CategoryManagerPanel {...makeProps()} />)
+    // Open the first non-default category's delete dropdown.
+    const trigger = screen.getAllByRole('button', { name: /bm\.cat\.delete_title/ })[0]
+    fireEvent.click(trigger)
+    // The role="menu" container must have an accessible name so screen-reader
+    // users know what the menu controls (U22 a11y requirement).
+    const menu = screen.getByRole('menu', { name: /bm\.cat\.delete_title/ })
+    expect(menu).toBeTruthy()
+  })
 })
