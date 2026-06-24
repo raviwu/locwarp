@@ -9,6 +9,7 @@ interface EtaBarProps {
   traveledDistance: number; // meters
   eta: number; // seconds remaining
   runtimes?: RuntimesMap;
+  isPaused?: boolean;
 }
 
 const ACTIVE_STATES = ['navigating', 'looping', 'multi_stop', 'random_walk'];
@@ -37,6 +38,7 @@ const EtaBar: React.FC<EtaBarProps> = ({
   traveledDistance,
   eta,
   runtimes,
+  isPaused = false,
 }) => {
   const t = useT();
 
@@ -92,6 +94,24 @@ const EtaBar: React.FC<EtaBarProps> = ({
         letterSpacing: '-0.005em',
       }}
     >
+      {isPaused && (
+        <span
+          data-testid="eta-paused-chip"
+          style={{
+            fontSize: 10,
+            fontWeight: 700,
+            letterSpacing: '0.06em',
+            color: '#ffb74d',
+            background: 'rgba(255, 183, 77, 0.15)',
+            border: '1px solid rgba(255, 183, 77, 0.35)',
+            borderRadius: 6,
+            padding: '1px 6px',
+          }}
+        >
+          {t('eta.paused')}
+        </span>
+      )}
+
       {/* Progress bar */}
       <div
         style={{
@@ -104,12 +124,14 @@ const EtaBar: React.FC<EtaBarProps> = ({
         }}
       >
         <div
+          className="eta-progress-fill"
           style={{
             height: '100%',
             width: `${percent}%`,
             borderRadius: 2,
             background: 'linear-gradient(90deg, #4285f4, #34a853)',
             transition: 'width 0.5s ease-out',
+            opacity: isPaused ? 0.4 : 1,
           }}
         />
       </div>

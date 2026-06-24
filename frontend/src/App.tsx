@@ -1183,6 +1183,7 @@ const App: React.FC = () => {
           remainingDistance={sim.status?.distance_remaining ?? 0}
           traveledDistance={sim.status?.distance_traveled ?? 0}
           eta={sim.eta ?? 0}
+          isPaused={isPaused}
         />
         {sim.ddiMounting && (
           <div

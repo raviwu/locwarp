@@ -442,6 +442,7 @@ export const STRINGS = {
   'eta.eta': { zh: '預計到達', en: 'ETA' },
   'eta.traveled': { zh: '已行', en: 'Traveled' },
   'eta.pause_countdown': { zh: '到點暫停中 · 剩餘 {n}s', en: 'Paused at waypoint · {n}s left' },
+  'eta.paused': { zh: '已暫停', en: 'PAUSED' },
 
   // ── Joystick ─────────────────────────────────
   'joy.drag_or_keys': { zh: '拖曳或按 WASD / 方向鍵', en: 'Drag or press WASD / arrow keys' },

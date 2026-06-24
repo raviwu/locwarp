@@ -95,6 +95,34 @@ describe('EtaBar — single-device formatting', () => {
   });
 });
 
+describe('EtaBar — paused state', () => {
+  it('shows a paused chip when isPaused=true', () => {
+    render(<EtaBar {...baseProps} isPaused={true} />);
+    expect(screen.getByTestId('eta-paused-chip')).toBeInTheDocument();
+  });
+
+  it('does not show the paused chip when isPaused=false', () => {
+    render(<EtaBar {...baseProps} isPaused={false} />);
+    expect(screen.queryByTestId('eta-paused-chip')).not.toBeInTheDocument();
+  });
+
+  it('progress fill is dimmed (opacity<1) when isPaused=true', () => {
+    const { container } = render(<EtaBar {...baseProps} isPaused={true} />);
+    const fill = container.querySelector('.eta-progress-fill') as HTMLElement;
+    expect(fill).not.toBeNull();
+    const opacity = parseFloat(fill.style.opacity);
+    expect(opacity).toBeLessThan(1);
+  });
+
+  it('progress fill has full opacity when isPaused=false', () => {
+    const { container } = render(<EtaBar {...baseProps} isPaused={false} />);
+    const fill = container.querySelector('.eta-progress-fill') as HTMLElement;
+    expect(fill).not.toBeNull();
+    const opacity = fill.style.opacity === '' ? 1 : parseFloat(fill.style.opacity);
+    expect(opacity).toBe(1);
+  });
+});
+
 describe('EtaBar — group-mode aggregation (2+ active runtimes)', () => {
   const runtimes: RuntimesMap = {
     A: runtime({
