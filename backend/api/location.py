@@ -178,28 +178,23 @@ async def _try_with_recovery_retry(udid: str | None, op, registry=None):
         return await op()
 
 
-async def _handle_device_lost(exc: Exception, udid: str | None = None, registry=None) -> "HTTPException":
+async def _handle_device_lost(exc: Exception, udid: str, registry=None) -> "HTTPException":
     """Clean up after a DeviceLostError for the SPECIFIC udid that failed.
 
     Previous behaviour disconnected every currently-connected device, which
     was a dual-device mode bug: unplug A while B is fine → B also gets
     torn down. Now the caller passes the udid of the failing action and
-    only that device is cleaned up. When udid is None (legacy callers not
-    yet updated), we fall back to disconnecting all as before to preserve
-    behaviour, but log a warning.
+    only that device is cleaned up. The caller always passes the udid of
+    the failing action; only that device is cleaned up.
     """
     app_state = _engine_registry_or_main(registry)
     import logging as _logging
     _log = _logging.getLogger("locwarp")
 
     dm = app_state.device_manager
-    if udid is not None:
-        lost_udids = [udid] if udid in dm._connections else []
-        if not lost_udids:
-            _log.info("device_lost: udid %s no longer in _connections; nothing to clean", udid)
-    else:
-        _log.warning("device_lost called without udid; falling back to clearing all devices")
-        lost_udids = list(dm._connections.keys())
+    lost_udids = [udid] if udid in dm._connections else []
+    if not lost_udids:
+        _log.info("device_lost: udid %s no longer in _connections; nothing to clean", udid)
 
     for u in lost_udids:
         # Stop any in-flight simulation on THIS engine so random-walk /

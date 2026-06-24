@@ -74,3 +74,45 @@ async def test_handle_device_lost_emits_via_injected_publisher():
     assert data["reason"] == "device_lost"
     assert data["error"] == "device gone"
     assert data["remaining_count"] == 0
+
+
+async def test_handle_device_lost_requires_udid():
+    """udid is a required positional — the old all-devices fallback is gone."""
+    import inspect
+    sig = inspect.signature(location_mod._handle_device_lost)
+    udid_param = sig.parameters["udid"]
+    assert udid_param.default is inspect.Parameter.empty, (
+        "_handle_device_lost(exc, udid) must require udid (no None default)"
+    )
+
+
+async def test_handle_device_lost_only_touches_named_udid():
+    """Only the failing udid is disconnected — a co-connected device is left alone."""
+    from main import app_state
+
+    failing = "UDID-FAILING"
+    survivor = "UDID-SURVIVOR"
+    dm = app_state.device_manager
+
+    disconnected: list[str] = []
+    fake_connections = {failing: object(), survivor: object()}
+
+    async def _fake_disconnect(u):
+        disconnected.append(u)
+        fake_connections.pop(u, None)
+
+    class _CapPublisher:
+        async def publish(self, event):
+            pass
+
+    with (
+        patch.object(dm, "_events", _CapPublisher()),
+        patch.object(dm, "_connections", fake_connections),
+        patch.object(dm, "disconnect", side_effect=_fake_disconnect),
+        patch.object(app_state, "remove_engine", new=AsyncMock(return_value=None)),
+        patch.object(app_state, "simulation_engines", {}),
+    ):
+        await location_mod._handle_device_lost(Exception("gone"), failing)
+
+    assert disconnected == [failing]
+    assert survivor in fake_connections
