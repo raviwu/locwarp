@@ -856,7 +856,13 @@ const BookmarkList: React.FC<BookmarkListProps> = ({
             }
             if (onShowToast) onShowToast(t('map.coords_copied'));
           }}
-          onDelete={onBookmarkDelete}
+          onDelete={async (id) => {
+            try {
+              await onBookmarkDelete(id);
+            } catch (err: any) {
+              if (onShowToast) onShowToast(t('bm.delete_failed', { error: err?.message || '' }));
+            }
+          }}
           onMoveToCategory={(id, cat) => onBookmarkEdit(id, { category: cat })}
           categories={categories}
           resolveColor={resolveColor}

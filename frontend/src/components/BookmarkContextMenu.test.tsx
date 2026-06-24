@@ -165,8 +165,37 @@ describe('BookmarkContextMenu', () => {
   it('fires onDelete(bm.id) and closes when Delete is clicked', () => {
     const onDelete = vi.fn();
     const onClose = vi.fn();
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
     render(<BookmarkContextMenu {...makeProps({ onDelete, onClose })} />);
     fireEvent.click(screen.getByText('generic.delete'));
+    expect(onDelete).toHaveBeenCalledWith(bm.id);
+    expect(onClose).toHaveBeenCalledTimes(1);
+    confirmSpy.mockRestore();
+  });
+});
+
+describe('BookmarkContextMenu delete confirmation (U13)', () => {
+  afterEach(() => { vi.restoreAllMocks(); });
+
+  it('does NOT call onDelete when the confirm is dismissed', () => {
+    const onDelete = vi.fn();
+    const onClose = vi.fn();
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    render(<BookmarkContextMenu {...makeProps({ onDelete, onClose })} />);
+    fireEvent.click(screen.getByText('generic.delete'));
+    expect(confirmSpy).toHaveBeenCalledTimes(1);
+    expect(onDelete).not.toHaveBeenCalled();
+    // Menu still closes either way (parity with the other action rows).
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('calls onDelete(bm.id) when the confirm is accepted', () => {
+    const onDelete = vi.fn();
+    const onClose = vi.fn();
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    render(<BookmarkContextMenu {...makeProps({ onDelete, onClose })} />);
+    fireEvent.click(screen.getByText('generic.delete'));
+    expect(confirmSpy).toHaveBeenCalledTimes(1);
     expect(onDelete).toHaveBeenCalledWith(bm.id);
     expect(onClose).toHaveBeenCalledTimes(1);
   });

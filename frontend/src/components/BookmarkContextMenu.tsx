@@ -369,7 +369,9 @@ const BookmarkContextMenu: React.FC<BookmarkContextMenuProps> = ({
           onMouseEnter={ctxHighlight}
           onMouseLeave={ctxUnhighlight}
           onClick={() => {
-            if (bm.id) onDelete(bm.id);
+            if (bm.id && window.confirm(t('bm.delete_one_confirm', { name: bm.name }))) {
+              onDelete(bm.id);
+            }
             onClose();
           }}
         >
