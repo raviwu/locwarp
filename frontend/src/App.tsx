@@ -55,7 +55,7 @@ function useCloudSyncDiscovery(api: ApiGateway) {
       if (s.enabled || s.prompt_dismissed || !s.detected_icloud_path) return
       const ok = window.confirm(t('cloud_sync.discovery_prompt'))
       if (ok) {
-        await run(() => api.cloudSyncEnable())
+        await run((signal) => api.cloudSyncEnable(undefined, signal))
       } else {
         await api.cloudSyncDismissPrompt()
       }

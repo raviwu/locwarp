@@ -20,6 +20,10 @@ describe('CloudSyncBusyContext run() timeout', () => {
     expect(CLOUD_SYNC_TIMEOUT_MS).toBe(35000)
   })
 
+  it('exposes a 10s slow-hint constant', () => {
+    expect(CLOUD_SYNC_SLOW_HINT_MS).toBe(10000)
+  })
+
   it('sets busy true while the toggle is in flight', () => {
     const { result } = renderHook(() => useCloudSyncBusy(), { wrapper })
     expect(result.current.busy).toBe(false)
