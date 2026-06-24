@@ -1,7 +1,7 @@
 # Clean Architecture Refactor — Design Spec
 
 - **Date:** 2026-06-19
-- **Status:** Phase 0 + Phase 1 + Phase 2 + Phase 3 merged to main (2026-06-22). **Phase 4a (backend repository inversion) IMPLEMENTED on branch `chore/clean-arch-p4a` (2026-06-22), pending real-data smoke + merge.** Phase 4b (frontend god-component decomposition) + Phase 5 deferred.
+- **Status:** **P0–P5 all merged to `main` (2026-06-23).** This is a historical design doc; current clean-arch status of record lives in `CLAUDE.md` / `AGENTS.md` and memory note `project_clean_arch_refactor_status.md`.
 - **Decision (flavor):** **Pragmatic Hexagonal-lite** — real clean architecture (inward-only rings, inner-owned ports, repository, composition-root DI, CI-enforced layering) **without** per-verb interactor classes, numbered `l1–l4` folders, or a presenter layer (`response_model` already serves that role).
 - **Decision (scope):** **MVP first — Phase 0 + Phase 1 + the Phase-1 cycle gate.** Phases 2–5 are documented here but **deferred** (adopt/partial/skip later). The 4 lock/port corrections ride along with the MVP.
 - **Reference studied:** `CJHwong/py-clean-architecture-examples` (`example_2_fastapi_todo_app`).
