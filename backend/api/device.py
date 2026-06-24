@@ -103,6 +103,7 @@ import asyncio
 import logging
 
 from core.wifi_tunnel import TunnelRunner
+from services.location_service import DeviceLostError
 from services.tunnel_helper_client import TunnelBusyError
 
 _tunnel_logger = logging.getLogger("wifi_tunnel")
@@ -782,12 +783,22 @@ async def _per_tunnel_watchdog(udid: str, runner: TunnelRunner) -> None:
         task = runner.task
         if task is None:
             return
+        exit_exc: BaseException | None = None
         try:
             await task
         except asyncio.CancelledError:
             return
-        except BaseException:
-            pass
+        except BaseException as _e:
+            exit_exc = _e
+
+        # Classify the exit cause for the WS payload. A clean tunnel-poll
+        # return keeps the legacy reason='task_exited' (no last_error). A
+        # DeviceLostError carries the richer classification + last_error.
+        _reason_payload: dict = {"reason": "task_exited"}
+        if isinstance(exit_exc, DeviceLostError):
+            _reason_payload = {"reason": exit_exc.reason}
+            if exit_exc.last_error is not None:
+                _reason_payload["last_error"] = exit_exc.last_error
 
         # If the registry was already updated (explicit stop, re-key on
         # reconnect, etc.) this watchdog is stale.
@@ -802,7 +813,7 @@ async def _per_tunnel_watchdog(udid: str, runner: TunnelRunner) -> None:
             udid, ip, port, len(_TUNNEL_RESTART_BACKOFF),
         )
         try:
-            await dm._events.publish(("tunnel_degraded", {"udid": udid, "reason": "task_exited"}))
+            await dm._events.publish(("tunnel_degraded", {"udid": udid, **_reason_payload}))
         except Exception:
             _tunnel_logger.exception("Failed to emit tunnel_degraded event")
 
@@ -896,7 +907,7 @@ async def _per_tunnel_watchdog(udid: str, runner: TunnelRunner) -> None:
                 wd.cancel()
             await _cleanup_wifi_connection_for(udid, caller="watchdog_tunnel_died")
             try:
-                await dm._events.publish(("tunnel_lost", {"udid": udid, "reason": "task_exited"}))
+                await dm._events.publish(("tunnel_lost", {"udid": udid, **_reason_payload}))
             except Exception:
                 _tunnel_logger.exception("Failed to emit tunnel_lost event")
     except asyncio.CancelledError:

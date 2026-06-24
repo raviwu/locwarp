@@ -44,9 +44,10 @@ class DeviceLostError(RuntimeError):
     REASON_USB_GONE = "usb_gone"
     REASON_UNKNOWN = "unknown"
 
-    def __init__(self, *args, reason: str = "unknown") -> None:
+    def __init__(self, *args, reason: str = "unknown", last_error: str | None = None) -> None:
         super().__init__(*args)
         self.reason = reason
+        self.last_error = last_error
 
 
 class LocationService(ABC):
