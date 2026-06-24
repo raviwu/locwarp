@@ -3,7 +3,7 @@ import { useT } from '../i18n'
 import type { DeviceInfo } from '../hooks/useDevice'
 import type { RuntimesMap } from '../hooks/useSimulation'
 
-const MAX_DEVICES = 3
+export const MAX_DEVICES = 3
 const LETTERS: DeviceLetter[] = ['A', 'B', 'C']
 
 interface Props {
@@ -20,7 +20,7 @@ interface Props {
 
 export function DeviceChipRow({ devices, trustRequired = [], runtimes, onAdd, onDisconnect, onForget, onRestoreOne, onReTrust, onEnableDev }: Props) {
   const t = useT()
-  const atMax = devices.length >= MAX_DEVICES
+  const atMax = (devices.length + trustRequired.length) >= MAX_DEVICES
 
   return (
     <div style={{

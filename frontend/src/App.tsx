@@ -33,7 +33,7 @@ import BulkPasteDialog from './components/BulkPasteDialog'
 import WaypointFlyDialog from './components/WaypointFlyDialog'
 import RouteLoadDialog from './components/RouteLoadDialog'
 import RoutePasteDialog from './components/RoutePasteDialog'
-import { DeviceChipRow } from './components/DeviceChipRow'
+import { DeviceChipRow, MAX_DEVICES } from './components/DeviceChipRow'
 import {
   CloudSyncBusyProvider, useCloudSyncBusy, useCloudSyncAfter,
 } from './contexts/CloudSyncBusyContext'
@@ -869,7 +869,7 @@ const App: React.FC = () => {
           }}
           runtimes={sim.runtimes}
           onAdd={() => {
-            if (device.connectedDevices.length >= 2) {
+            if (device.connectedDevices.length >= MAX_DEVICES) {
               setToastMsg(t('device.max_reached'))
               return
             }

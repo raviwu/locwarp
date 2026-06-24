@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, cleanup } from '@testing-library/react'
-import { DeviceChipRow } from './DeviceChipRow'
+import { DeviceChipRow, MAX_DEVICES } from './DeviceChipRow'
 import type { DeviceInfo } from '../hooks/useDevice'
 import type { RuntimesMap } from '../hooks/useSimulation'
 
@@ -215,4 +215,41 @@ describe('DeviceChipRow callbacks wire the device udid', () => {
     fireEvent.click(screen.getByText('device.chip_enable_dev'))
     expect(onEnableDev).toHaveBeenCalledWith('u1')
   })
+})
+
+describe('DeviceChipRow device cap is unified at MAX_DEVICES (U18)', () => {
+  it('exposes MAX_DEVICES === 3', () => {
+    expect(MAX_DEVICES).toBe(3);
+  });
+
+  it('still shows the + add button at 2 connected devices (room for a 3rd)', () => {
+    const props = baseProps();
+    render(
+      <DeviceChipRow
+        devices={[makeDevice('u1', 'One'), makeDevice('u2', 'Two')]}
+        runtimes={emptyRuntimes}
+        {...props}
+      />,
+    );
+    expect(screen.getByText('+')).toBeInTheDocument();
+    expect(screen.getByTitle('device.add_device')).toBeInTheDocument();
+  });
+
+  it('hides the + add button when connected + trust_required together reach MAX_DEVICES', () => {
+    function trustDevice(udid: string, name: string): DeviceInfo {
+      return { udid, name, ios_version: '17.0', connection_type: 'usb', is_connected: false, pair_status: 'trust_required' }
+    }
+    const props = baseProps();
+    render(
+      <DeviceChipRow
+        devices={[makeDevice('u1', 'One'), makeDevice('u2', 'Two')]}
+        trustRequired={[trustDevice('t1', 'Needs Trust')]}
+        runtimes={emptyRuntimes}
+        {...props}
+      />,
+    );
+    // 2 connected + 1 trust_required = 3 = MAX_DEVICES → + button must be hidden
+    expect(screen.queryByText('+')).not.toBeInTheDocument();
+    expect(screen.queryByTitle('device.add_device')).not.toBeInTheDocument();
+  });
 })
