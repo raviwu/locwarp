@@ -195,4 +195,20 @@ describe('UserAvatarPicker', () => {
     render(<UserAvatarPicker {...baseProps()} />)
     expect(document.activeElement).toBe(screen.getByTitle('avatar.close_no_save'))
   })
+
+  it('removes the document drag listeners when unmounted mid-drag', () => {
+    const removeSpy = vi.spyOn(document, 'removeEventListener')
+    const props = baseProps()
+    const { unmount } = render(<UserAvatarPicker {...props} />)
+    // Title bar is the drag handle (cursor: move); start a drag on it.
+    const title = screen.getByText('avatar.title')
+    const handle = title.parentElement as HTMLElement
+    fireEvent.mouseDown(handle, { clientX: 10, clientY: 10 })
+    // Unmount while the drag is still in flight (no mouseup yet).
+    unmount()
+    // Both capture-phase listeners must have been torn down on unmount.
+    expect(removeSpy).toHaveBeenCalledWith('mousemove', expect.any(Function), true)
+    expect(removeSpy).toHaveBeenCalledWith('mouseup', expect.any(Function), true)
+    removeSpy.mockRestore()
+  })
 })

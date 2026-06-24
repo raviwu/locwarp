@@ -113,6 +113,10 @@ const UserAvatarPicker: React.FC<Props> = ({ avatar, customPng, onSave, onClose,
   // document capture-phase listeners so Leaflet / other overlays can't
   // swallow mousemove / mouseup during the drag.
   const [dragOffset, setDragOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  // Track the in-flight drag listeners so an unmount mid-drag (panel closed
+  // before mouseup) tears them down — otherwise the document listeners leak
+  // and setDragOffset fires after unmount. detach() is idempotent.
+  const dragHandlersRef = useRef<(() => void) | null>(null);
   const beginDrag = (e: React.MouseEvent) => {
     const t = e.target as HTMLElement;
     if (t.closest('button')) return;
@@ -129,13 +133,18 @@ const UserAvatarPicker: React.FC<Props> = ({ avatar, customPng, onSave, onClose,
         y: baseY + (ev.clientY - startY),
       });
     };
-    const onUp = () => {
+    const detach = () => {
       document.removeEventListener('mousemove', onMove, true);
       document.removeEventListener('mouseup', onUp, true);
+      dragHandlersRef.current = null;
     };
+    const onUp = () => detach();
     document.addEventListener('mousemove', onMove, true);
     document.addEventListener('mouseup', onUp, true);
+    dragHandlersRef.current = detach;
   };
+  // On unmount, tear down any drag that is still in flight.
+  useEffect(() => () => { dragHandlersRef.current?.(); }, []);
 
   return (
     <div
