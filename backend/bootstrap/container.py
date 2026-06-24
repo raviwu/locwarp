@@ -68,14 +68,28 @@ class Container:
 
     @property
     def bookmark_manager(self):
-        """Live read from engine_registry so post-load_state() manager is returned."""
-        if self.engine_registry is not None and hasattr(self.engine_registry, "bookmark_manager"):
-            return self.engine_registry.bookmark_manager
+        """Live read from engine_registry so the manager built inside
+        load_state() (AFTER this Container is constructed at import time) is
+        returned without rebuilding the Container. The _bookmark_manager
+        fallback is ONLY for unit tests that inject a bare fake registry with
+        no bookmark_manager attribute; in production engine_registry is the
+        AppState and always carries it (None until load_state, real after).
+        The 503 guard in api.deps.get_bookmark_manager covers the None window."""
+        reg = self.engine_registry
+        if reg is not None and hasattr(reg, "bookmark_manager"):
+            return reg.bookmark_manager
         return self._bookmark_manager
 
     @property
     def route_manager(self):
-        """Live read from engine_registry so post-load_state() manager is returned."""
-        if self.engine_registry is not None and hasattr(self.engine_registry, "route_manager"):
-            return self.engine_registry.route_manager
+        """Live read from engine_registry so the manager built inside
+        load_state() (AFTER this Container is constructed at import time) is
+        returned without rebuilding the Container. The _route_manager
+        fallback is ONLY for unit tests that inject a bare fake registry with
+        no route_manager attribute; in production engine_registry is the
+        AppState and always carries it (None until load_state, real after).
+        The 503 guard in api.deps.get_route_manager covers the None window."""
+        reg = self.engine_registry
+        if reg is not None and hasattr(reg, "route_manager"):
+            return reg.route_manager
         return self._route_manager
