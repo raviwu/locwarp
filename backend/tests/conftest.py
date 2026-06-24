@@ -36,12 +36,14 @@ def _isolate_real_data_paths(tmp_path, monkeypatch):
     bm = tmp_path / "bookmarks.json"
     rt = tmp_path / "routes.json"
     st = tmp_path / "settings.json"
+    rp = tmp_path / "recent_places.json"
 
     import config
     monkeypatch.setattr(config, "DATA_DIR", tmp_path, raising=False)
     monkeypatch.setattr(config, "SETTINGS_FILE", st, raising=False)
     monkeypatch.setattr(config, "_DEFAULT_BOOKMARKS_FILE", bm, raising=False)
     monkeypatch.setattr(config, "ROUTES_FILE", rt, raising=False)
+    monkeypatch.setattr(config, "RECENT_PLACES_FILE", rp, raising=False)
     # BACKUP_DIR is derived from DATA_DIR at import time, so patching DATA_DIR
     # alone leaves it pointing at the real ~/.locwarp/backups. Redirect it too,
     # or a backup test would write real user data (the exact hazard above).
@@ -58,6 +60,14 @@ def _isolate_real_data_paths(tmp_path, monkeypatch):
         sr = sys.modules["services.route_store"]
         monkeypatch.setattr(sr, "ROUTES_FILE", rt, raising=False)
         monkeypatch.setattr(sr, "_CONFIG_DEFAULT_ROUTES_FILE", rt, raising=False)
+    if "services.recent" in sys.modules:
+        rc = sys.modules["services.recent"]
+        # RECENT_PLACES_FILE is captured at import time (from config import ...).
+        monkeypatch.setattr(rc, "RECENT_PLACES_FILE", rp, raising=False)
+        # The module caches a process-wide RecentPlacesManager singleton bound
+        # to the import-time path; reset it so get_manager() rebuilds against
+        # the patched tmp path and one test's list cannot leak into the next.
+        monkeypatch.setattr(rc, "_singleton", None, raising=False)
 
 
 @pytest.fixture(autouse=True)
