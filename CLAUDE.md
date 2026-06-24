@@ -68,7 +68,7 @@ This rule applies symmetrically to backend services / managers: list existing `m
 
 ## Bookmark / Route store: CRDT merge semantics
 
-The bookmark store and route store are CRDT-style LWW-element-sets with tombstones (the pure rule lives in `backend/domain/store_merge.py` since P4a; `backend/services/store_merge.py` is a re-export shim). Since P4a the file-I/O is behind `BookmarkRepository`/`RouteRepository` ports (`backend/infra/persistence/json_store.py`, injected at the composition root); the managers keep CRUD + the watcher + `_store_lock` + mtime and call the repo for disk ops. The empty-`updated_at` pitfall is encoded in the shared `force_seed_items(items, now)` primitive (`domain/store_merge.py`). When working on import / sync / deletion flows, remember:
+The bookmark store and route store are CRDT-style LWW-element-sets with tombstones (the pure rule lives in `backend/domain/store_merge.py` since P4a; `backend/services/store_merge.py` is a re-export shim). Since P4a the file-I/O is behind `BookmarkRepository`/`RouteRepository` ports (`backend/infra/persistence/json_store.py`, injected at the composition root); the managers — `BookmarkManager` (`backend/services/bookmarks.py`) and `RouteManager` (`backend/services/route_store.py`), both **`services/`-ring** stateful adapters (there are no `*_manager.py` files) — keep CRUD + the watcher + `_store_lock` + mtime and call the repo for disk ops. The empty-`updated_at` pitfall is encoded in the shared `force_seed_items(items, now)` primitive (`domain/store_merge.py`). When working on import / sync / deletion flows, remember:
 
 - `merge_stores(a, b)` is the single merge primitive — commutative, idempotent
 - An item is alive iff there is NO tombstone for its id with `deleted_at >= item.updated_at`
