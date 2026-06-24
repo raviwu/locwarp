@@ -3,7 +3,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import httpx
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
 from models.schemas import (
     Coordinate,
@@ -13,8 +13,8 @@ from models.schemas import (
     TimezoneInfo,
 )
 from services import geo_offline
+from api.deps import get_geocoding_service
 from domain.errors import GeocodeError
-from services.geocoding import GeocodingService
 from services.geo_extras import (
     _HAVERSINE_PROFILE_SPEED_MPS,
     haversine_duration_matrix,
@@ -27,8 +27,6 @@ from services.geo_extras import (
 router = APIRouter(prefix="/api/geocode", tags=["geocode"])
 logger = logging.getLogger("locwarp")
 
-geocoding_service = GeocodingService()
-
 
 @router.get("/search", response_model=list[GeocodingResult])
 async def search_address(
@@ -36,6 +34,7 @@ async def search_address(
     limit: int = 5,
     provider: str = "nominatim",
     google_key: str | None = None,
+    geocoding_service=Depends(get_geocoding_service),
 ):
     """Forward geocode.
 
@@ -50,7 +49,7 @@ async def search_address(
 
 
 @router.get("/reverse", response_model=GeocodingResult | None)
-async def reverse_geocode(lat: float, lng: float):
+async def reverse_geocode(lat: float, lng: float, geocoding_service=Depends(get_geocoding_service)):
     """Reverse-geocode a coordinate. Tries Nominatim first; falls back
     to the offline city/region/country DB when Nominatim is unreachable,
     rate-limited, or returns an error. Returns ``None`` only when both

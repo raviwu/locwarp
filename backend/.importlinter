@@ -83,6 +83,7 @@ ignore_imports =
     api.bookmarks -> api.deps
     api.device -> api.deps
     api.cloud_sync -> api.deps
+    api.geocode -> api.deps
     api.location -> api.deps
     api.phone_control -> api.deps
     api.route -> api.deps

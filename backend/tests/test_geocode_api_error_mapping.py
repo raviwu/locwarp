@@ -21,8 +21,8 @@ def _raise(exc):
 
 
 def test_search_missing_google_key_maps_to_400(monkeypatch, client):
-    import api.geocode as geo_api
-    monkeypatch.setattr(geo_api.geocoding_service, "search",
+    import main
+    monkeypatch.setattr(main.app.state.container.geocoding_service, "search",
                         _raise(GeocodeError(400, "google_missing_key",
                                             "provider=google requires google_key")))
     res = client.get("/api/geocode/search", params={"q": "x", "provider": "google"})
@@ -31,8 +31,8 @@ def test_search_missing_google_key_maps_to_400(monkeypatch, client):
 
 
 def test_search_google_http_maps_to_502(monkeypatch, client):
-    import api.geocode as geo_api
-    monkeypatch.setattr(geo_api.geocoding_service, "search",
+    import main
+    monkeypatch.setattr(main.app.state.container.geocoding_service, "search",
                         _raise(GeocodeError(502, "google_http",
                                             "Google geocode HTTP 403: Forbidden body text")))
     res = client.get("/api/geocode/search", params={"q": "x"})
@@ -41,8 +41,8 @@ def test_search_google_http_maps_to_502(monkeypatch, client):
 
 
 def test_search_google_status_maps_to_502(monkeypatch, client):
-    import api.geocode as geo_api
-    monkeypatch.setattr(geo_api.geocoding_service, "search",
+    import main
+    monkeypatch.setattr(main.app.state.container.geocoding_service, "search",
                         _raise(GeocodeError(502, "google_status",
                                             "Google geocode REQUEST_DENIED: The provided API key is invalid.")))
     res = client.get("/api/geocode/search", params={"q": "x"})
@@ -54,18 +54,17 @@ def test_search_httpx_error_still_propagates_as_500(monkeypatch):
     # httpx errors are NOT GeocodeError -> not remapped; FastAPI -> 500.
     # Pins that the mapping is SCOPED to GeocodeError only.
     import main
-    import api.geocode as geo_api
     c = TestClient(main.app, raise_server_exceptions=False)
-    monkeypatch.setattr(geo_api.geocoding_service, "search",
+    monkeypatch.setattr(main.app.state.container.geocoding_service, "search",
                         _raise(httpx.HTTPStatusError("boom", request=None, response=None)))
     res = c.get("/api/geocode/search", params={"q": "x"})
     assert res.status_code == 500
 
 
 def test_reverse_swallows_geocode_error_into_offline_200(monkeypatch, client):
-    import api.geocode as geo_api
+    import main
     import services.geo_offline as geo_offline
-    monkeypatch.setattr(geo_api.geocoding_service, "reverse",
+    monkeypatch.setattr(main.app.state.container.geocoding_service, "reverse",
                         _raise(GeocodeError(502, "x", "upstream boom")))
     monkeypatch.setattr(geo_offline, "resolve",
                         lambda _lat, _lng: ("jp", "Asia/Tokyo", "Tokyo", "Tokyo"))
