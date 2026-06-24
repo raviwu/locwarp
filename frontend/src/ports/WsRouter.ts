@@ -1,5 +1,5 @@
-import type { WsEvent } from '../contract/wsEvents'
+import type { WsEvent, WsEventType } from '../contract/wsEvents'
 
 export interface WsRouter {
-  subscribe(type: string, handler: (e: WsEvent) => void): () => void
+  subscribe(type: WsEventType, handler: (e: WsEvent) => void): () => void
 }

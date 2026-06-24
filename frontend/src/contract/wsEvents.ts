@@ -4,6 +4,29 @@
 // types still flow through the router untouched.
 export type WsEvent = { type: string } & Record<string, unknown>
 
+// The REAL backend event vocabulary the renderer may subscribe to. Source of
+// truth: every broadcast("…") / DeviceManager._events.publish(("…", …)) /
+// SimulationEngine._emit("…") literal across backend/api, backend/core,
+// backend/domain. Kept in lockstep with the canonical list in
+// adapters/ws/eventWiring.test.tsx and contract/wsEvents.test.ts.
+// NOTE: this is a typing/lint seam, not codegen — update by hand when the
+// backend gains or drops an emitted type.
+export const WS_EVENT_TYPES = [
+  'device_connected', 'device_disconnected', 'tunnel_recovered',
+  'tunnel_degraded', 'tunnel_lost', 'device_error',
+  'bookmarks_changed', 'routes_changed',
+  'ddi_mounted', 'ddi_not_mounted', 'ddi_mounting', 'ddi_mount_failed',
+  'position_update', 'route_path', 'state_change', 'navigation_complete',
+  'waypoint_progress', 'pause_countdown', 'pause_countdown_end',
+  'lap_complete', 'loop_complete', 'multi_stop_complete', 'stop_reached',
+  'user_waypoint_advance', 'connection_lost', 'random_walk_arrived',
+  'random_walk_complete', 'teleport', 'restored', 'goldditto_cycle',
+] as const
+
+// String-literal union of the backend vocabulary. subscribe() is typed with
+// this so a typo'd key (e.g. 'state_changed') is now a COMPILE error.
+export type WsEventType = (typeof WS_EVENT_TYPES)[number]
+
 // device_disconnected is the ONE message two hooks read with divergent shapes.
 // `udid` / `udids` feed useDevice; `remaining_count` feeds the useSimulation
 // banner (absent → treated as 0 → banner shows). All payload keys optional

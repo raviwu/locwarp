@@ -1,4 +1,4 @@
-import type { WsEvent } from '../../contract/wsEvents'
+import type { WsEvent, WsEventType } from '../../contract/wsEvents'
 import type { WsRouter } from '../../ports/WsRouter'
 
 type Handler = (e: WsEvent) => void
@@ -13,9 +13,9 @@ export interface WsRouterImpl extends WsRouter {
 }
 
 export function createWsRouter(): WsRouterImpl {
-  const buckets = new Map<string, Set<Handler>>()
+  const buckets = new Map<WsEventType, Set<Handler>>()
 
-  function subscribe(type: string, handler: Handler): () => void {
+  function subscribe(type: WsEventType, handler: Handler): () => void {
     let set = buckets.get(type)
     if (!set) {
       set = new Set<Handler>()
@@ -31,7 +31,9 @@ export function createWsRouter(): WsRouterImpl {
   }
 
   function dispatch(e: WsEvent): void {
-    const set = buckets.get(e.type)
+    // e.type is string (any wire frame); cast to WsEventType for the lookup.
+    // Unknown types simply find no bucket and silently no-op.
+    const set = buckets.get(e.type as WsEventType)
     if (!set) return
     // Snapshot so a handler that (un)subscribes during dispatch can't mutate the
     // set we're iterating.
