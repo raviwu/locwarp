@@ -30,6 +30,11 @@ logger = logging.getLogger(__name__)
 DEFAULT_SOCK_PATH = Path("/tmp/locwarp-helper.sock")
 DEFAULT_STATUS_PATH = Path("/tmp/locwarp-helper.status")
 
+# Upper bound on how long call() waits for a single RPC response line. On
+# timeout we drop the connection and the next caller reconnects, so a
+# half-open socket can never hang the backend's helper _lock indefinitely.
+RPC_READ_TIMEOUT_S = 30.0
+
 
 class HelperError(Exception):
     """JSON-RPC error returned by the helper."""
@@ -125,7 +130,9 @@ class TunnelHelperClient:
             self._writer = None
             self._reader = None
 
-    async def call(self, method: str, **params: Any) -> Any:
+    async def call(
+        self, method: str, read_timeout: float = RPC_READ_TIMEOUT_S, **params: Any
+    ) -> Any:
         if self._writer is None or self._reader is None:
             raise RuntimeError("helper client is not connected")
         async with self._lock:
@@ -139,7 +146,24 @@ class TunnelHelperClient:
             self._writer.write((json.dumps(req) + "\n").encode("utf-8"))
             await self._writer.drain()
 
-            line = await self._reader.readline()
+            try:
+                line = await asyncio.wait_for(
+                    self._reader.readline(), timeout=read_timeout
+                )
+            except (asyncio.TimeoutError, TimeoutError):
+                # Half-open helper socket: the request was written but no
+                # response came back. Drop the connection so the next caller
+                # reconnects instead of serialising behind a dead in-flight
+                # RPC on this _lock.
+                logger.warning(
+                    "helper RPC %r timed out after %.1fs; dropping connection",
+                    method, read_timeout,
+                )
+                self._reader = None
+                self._writer = None
+                raise TimeoutError(
+                    f"helper RPC {method!r} timed out after {read_timeout}s"
+                )
             if not line:
                 raise RuntimeError("helper closed the connection")
             resp = json.loads(line.decode("utf-8"))
