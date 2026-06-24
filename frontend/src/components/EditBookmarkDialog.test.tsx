@@ -119,4 +119,22 @@ describe('EditBookmarkDialog', () => {
     expect(onSubmit).not.toHaveBeenCalled();
     expect(onClose).toHaveBeenCalledTimes(1);
   });
+
+  it('shows an inline out-of-range error for a finite-but-invalid lat', () => {
+    render(
+      <EditBookmarkDialog
+        {...makeProps({ name: 'New Name', lat: '200', lng: '122.5' })}
+      />,
+    );
+    expect(screen.getByText('bm.latlng_out_of_range')).toBeTruthy();
+  });
+
+  it('does NOT show the out-of-range error for an in-range pair', () => {
+    render(
+      <EditBookmarkDialog
+        {...makeProps({ name: 'New Name', lat: '26.5', lng: '122.5' })}
+      />,
+    );
+    expect(screen.queryByText('bm.latlng_out_of_range')).toBeNull();
+  });
 });

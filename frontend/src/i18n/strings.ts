@@ -580,6 +580,7 @@ export const STRINGS = {
   'bm.lng_placeholder': { zh: '經度 lng', en: 'Longitude' },
   'bm.latlng_placeholder': { zh: '緯度 或 貼 緯度,經度', en: 'Latitude (or paste "lat, lng")' },
   'bm.latlng_single_placeholder': { zh: '輸入或貼上座標:緯度, 經度 (例如 25.033, 121.564)', en: 'Enter coordinates: lat, lng (e.g. 25.033, 121.564)' },
+  'bm.latlng_out_of_range': { zh: '座標超出範圍 (緯度 -90~90,經度 -180~180)', en: 'Coordinates out of range (lat -90..90, lng -180..180)' },
   'bm.manage_categories': { zh: '管理分類', en: 'Manage Categories' },
   'bm.export': { zh: '匯出', en: 'Export' },
   'bm.export_tooltip': { zh: '匯出所有收藏與分類為 JSON', en: 'Export all bookmarks and categories as JSON' },

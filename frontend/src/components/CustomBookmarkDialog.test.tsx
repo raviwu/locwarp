@@ -83,4 +83,29 @@ describe('CustomBookmarkDialog', () => {
     fireEvent.click(screen.getByText('generic.add'));
     expect(onSubmit).not.toHaveBeenCalled();
   });
+
+  it('shows an inline out-of-range error for a finite-but-invalid lat', () => {
+    render(
+      <CustomBookmarkDialog
+        {...makeProps({ name: 'Pin', lat: '200', lng: '120.65' })}
+      />,
+    );
+    // The error key renders verbatim (identity translator).
+    expect(screen.getByText('bm.latlng_out_of_range')).toBeTruthy();
+  });
+
+  it('does NOT show the out-of-range error for an in-range pair', () => {
+    render(
+      <CustomBookmarkDialog
+        {...makeProps({ name: 'Pin', lat: '24.14', lng: '120.65' })}
+      />,
+    );
+    expect(screen.queryByText('bm.latlng_out_of_range')).toBeNull();
+  });
+
+  it('does NOT show the out-of-range error while lat is still partial/empty', () => {
+    render(<CustomBookmarkDialog {...makeProps({ name: 'Pin', lat: '24.', lng: '' })} />);
+    // parseFloat('24.') === 24 is in range, lng empty (NaN, not finite) => no out-of-range error.
+    expect(screen.queryByText('bm.latlng_out_of_range')).toBeNull();
+  });
 });

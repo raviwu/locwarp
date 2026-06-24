@@ -56,6 +56,12 @@ const EditBookmarkDialog: React.FC<EditBookmarkDialogProps> = ({
   const t = useT();
   if (!bookmark) return null;
 
+  const latNum = parseFloat(lat);
+  const lngNum = parseFloat(lng);
+  const latOutOfRange = Number.isFinite(latNum) && (latNum < -90 || latNum > 90);
+  const lngOutOfRange = Number.isFinite(lngNum) && (lngNum < -180 || lngNum > 180);
+  const outOfRange = latOutOfRange || lngOutOfRange;
+
   const handleSubmit = () => {
     const latNum = parseFloat(lat);
     const lngNum = parseFloat(lng);
@@ -137,6 +143,11 @@ const EditBookmarkDialog: React.FC<EditBookmarkDialogProps> = ({
           }}
           style={{ width: '100%', marginBottom: 12 }}
         />
+        {outOfRange && (
+          <div style={{ fontSize: 11, color: '#f44336', marginBottom: 8 }}>
+            {t('bm.latlng_out_of_range')}
+          </div>
+        )}
         <div style={{ display: 'flex', gap: 6 }}>
           <button
             className="action-btn primary"
