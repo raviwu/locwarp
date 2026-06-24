@@ -16,7 +16,7 @@ LocWarp is a macOS/Windows desktop app that spoofs iOS device GPS: a **FastAPI b
 
 `bootstrap/` (composition root — the ONLY ring allowed to import every other ring) → `api/` + `infra/` (outermost adapters) → `services/` (use-cases) → `core/` (engine + movers) → `domain/` (pure: `models/`, `events.py`, `movement.py`, `errors.py`, `store_merge.py`, `backup.py`, `ports/`).
 
-Import bans (to be enforced by import-linter as a pytest — the "353rd test"; report-only in Phase 0, enforced at each phase's exit):
+Import bans (enforced as import-linter contracts — `7 kept, 0 broken`):
 - `domain/` imports stdlib + pydantic ONLY — never fastapi, httpx, asyncio I/O, pymobiledevice3, or any outer ring.
 - `core/` imports `domain/` only (may depend on ports; never on infra impls / services / api).
 - `services/` raises **domain errors** (`GeocodeError`, `DeviceConnectError`), never `fastapi.HTTPException`.
@@ -40,8 +40,8 @@ DI is plain constructor injection + one container on `app.state` (AppState refra
 
 ### Hard rules for any work under this refactor
 
-- **Behavior / API freeze.** No external HTTP / WS / IPC change. The full backend pytest suite stays green after EVERY commit (current baseline ≈371 collected — pin via `cd backend && .venv/bin/python -m pytest --collect-only -q`; the design-scan's "352" counted test *functions*). WS payloads compared **deep-equal JSON** (not literal bytes), serialized `exclude_unset`/`exclude_none` so absent keys stay absent. The ONE documented exception is the `device_manager.py:1155` NameError fix (a dead retry path becomes live).
-- **Danger-zone-test-first.** `simulation_engine.py` + all movers + `api/location.py` + `device_manager` recovery + `phone_control.py` have **no direct tests**. Write characterization tests (injected `ClockPort` + stepped `asyncio.sleep`, asserting ordered exact tuples) **before** touching them. The frontend has zero test infra — bootstrap Vitest **first and alone** before any god-component split.
+- **Behavior / API freeze.** No external HTTP / WS / IPC change. The full backend pytest suite stays green after EVERY commit (current baseline ≈914 collected — pin via `cd backend && .venv/bin/python -m pytest --collect-only -q`). WS payloads compared **deep-equal JSON** (not literal bytes), serialized `exclude_unset`/`exclude_none` so absent keys stay absent. The ONE documented exception is the `device_manager.py:1155` NameError fix (a dead retry path becomes live).
+- **Danger-zone-test-first.** `simulation_engine.py` + all movers + `api/location.py` + `device_manager` recovery + `phone_control.py` have **no direct tests**. Write characterization tests (injected `ClockPort` + stepped `asyncio.sleep`, asserting ordered exact tuples) **before** touching them. The frontend now has Vitest infra (≈651 tests across 84 files); keep it green and add tests with each change.
 - **Thick carve-outs stay leaky.** Do NOT abstract `pymobiledevice3` / `usbmuxd` / SIP / tunnel-helper / `osascript` guts into pure cores — wrap them behind narrow ports only as a test/inversion seam.
 
 ---

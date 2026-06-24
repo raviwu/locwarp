@@ -15,7 +15,7 @@ Project-specific instructions for Claude / agentic workers. Layered on top of `~
 **Backend rings — dependencies point inward only:**
 `bootstrap/` (composition root, the ONLY ring that imports every other ring) → `api/` + `infra/` (outermost adapters) → `services/` (use-cases) → `core/` (engine + movers) → `domain/` (pure: models, `events.py`, `movement.py`, `errors.py`, `store_merge.py`, `backup.py`, `ports/`).
 
-**Import bans (will become import-linter contracts — the "353rd test"):**
+**Import bans (enforced as import-linter contracts — `7 kept, 0 broken`):**
 - `domain/` imports stdlib + pydantic ONLY — never fastapi, httpx, asyncio I/O, pymobiledevice3, or any outer ring.
 - `core/` imports `domain/` only (may depend on ports, never on infra impls / services / api).
 - `services/` raises **domain errors**, never `fastapi.HTTPException`.
@@ -27,10 +27,10 @@ Project-specific instructions for Claude / agentic workers. Layered on top of `~
 **The three load-bearing inversions:** engine → `DevicePort` (infra `device_manager` injected); `device_manager` → `EventPublisher` (api WS publisher injected; **awaited, in-line, order-preserving** — never hold the connection-manager lock under `device_manager._lock`); `device_manager` → `TunnelRegistry` (infra `wifi_tunnel` injected, owning `_tunnels` + `_tunnels_lock`; read path snapshots under the lock). DI = one container on `app.state`, synchronous providers, no DI framework.
 
 **Hard rules for any work under this refactor:**
-- **Behavior / API freeze.** No external HTTP / WS / IPC change. The full backend pytest suite stays green after EVERY commit (current baseline ≈371 collected — pin the exact number via `cd backend && .venv/bin/python -m pytest --collect-only -q` before starting; the design-scan's "352" counted test *functions*). WS payloads compared **deep-equal JSON** (not literal bytes), serialized `exclude_unset`/`exclude_none` so absent keys stay absent. The ONE documented exception is the `device_manager.py:1155` NameError fix (a dead retry path becomes live).
-- **Danger-zone-test-first.** `simulation_engine.py` + all movers + `api/location.py` + `device_manager` recovery + `phone_control.py` have **no direct tests**. Write characterization tests (driven by an injected `ClockPort` + stepped `asyncio.sleep`, asserting ordered exact tuples) **before** touching them. The frontend has zero test infra — bootstrap Vitest **first and alone** before any god-component split.
+- **Behavior / API freeze.** No external HTTP / WS / IPC change. The full backend pytest suite stays green after EVERY commit (current baseline ≈914 collected — pin the exact number via `cd backend && .venv/bin/python -m pytest --collect-only -q` before starting). WS payloads compared **deep-equal JSON** (not literal bytes), serialized `exclude_unset`/`exclude_none` so absent keys stay absent. The ONE documented exception is the `device_manager.py:1155` NameError fix (a dead retry path becomes live).
+- **Danger-zone-test-first.** `simulation_engine.py` + all movers + `api/location.py` + `device_manager` recovery + `phone_control.py` have **no direct tests**. Write characterization tests (driven by an injected `ClockPort` + stepped `asyncio.sleep`, asserting ordered exact tuples) **before** touching them. The frontend now has Vitest infra (≈651 tests across 84 files); keep it green and add tests with each change.
 - **Thick carve-outs stay leaky.** Do NOT abstract `pymobiledevice3` / `usbmuxd` / SIP / tunnel-helper / `osascript` guts into pure cores — wrap them behind narrow ports only as a test/inversion seam.
-- **CI gate before structural moves.** import-linter ships report-only in Phase 0; each contract flips to enforced at its establishing phase's exit.
+- **CI gate before structural moves.** All 7 import-linter contracts are enforced (`7 kept, 0 broken`) plus the frontend dependency-cruiser gate; keep both green before any structural move.
 
 ---
 
