@@ -75,9 +75,10 @@ async def _engine(udid: str | None = None, registry=None):
     _log.info("simulation_engine missing; attempt 1 (rebuild) for %s", target_udid)
     try:
         await app_state.create_engine_for_device(target_udid)
-        if app_state.simulation_engine is not None:
+        rebuilt = app_state.get_engine(target_udid) if udid is not None else app_state.simulation_engine
+        if rebuilt is not None:
             _log.info("Engine rebuild succeeded on attempt 1")
-            return app_state.simulation_engine
+            return rebuilt
     except Exception:
         _log.exception("Engine rebuild (attempt 1) failed for %s", target_udid)
 
@@ -90,9 +91,10 @@ async def _engine(udid: str | None = None, registry=None):
             _log.warning("disconnect during hard reset failed; proceeding", exc_info=True)
         await dm.connect(target_udid)
         await app_state.create_engine_for_device(target_udid)
-        if app_state.simulation_engine is not None:
+        rebuilt = app_state.get_engine(target_udid) if udid is not None else app_state.simulation_engine
+        if rebuilt is not None:
             _log.info("Engine rebuild succeeded on attempt 2")
-            return app_state.simulation_engine
+            return rebuilt
     except Exception:
         _log.exception("Engine rebuild (attempt 2, hard reset) failed for %s", target_udid)
 
