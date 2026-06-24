@@ -28,6 +28,16 @@ from api.deps import (
 router = APIRouter(prefix="/api/location", tags=["location"])
 
 
+# NOTE (SH3 / A4): EngineResolver (services/engine_resolver.py) owns the
+# resolve+recovery+device-lost-cleanup orchestration. The main.py usbmux
+# watchdog (main.py: lost_now handling, ~lines 587-672) deliberately does
+# NOT reuse EngineResolver.cleanup_device_lost: it broadcasts
+# device_disconnected with reason="usb_unplugged" (not "device_lost") via
+# broadcast(...) (not dm._events.publish), captures a leader resume
+# snapshot, and promotes a follower via GroupSyncService. Those are a
+# DIFFERENT observable WS contract; unifying them is out of scope for a
+# behavior-preserving carve. This controller is the ONLY place a resolve/
+# recovery domain error is mapped to an HTTPException.
 async def _engine(udid: str | None = None, registry=None):
     """Resolve the active SimulationEngine via EngineResolver, mapping the
     domain EngineUnavailableError to the frozen 400 HTTPException."""
