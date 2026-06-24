@@ -256,8 +256,13 @@ const BookmarkList: React.FC<BookmarkListProps> = ({
     const now = Date.now();
     if (now - lastClickTs.current < 150) return;
     lastClickTs.current = now;
-    if (flyGps) {
+    if (flyGps && deviceConnected) {
       onTeleport(bm.lat, bm.lng);
+      if (onShowToast) onShowToast(t('bm.click_moves_gps'));
+    } else if (flyGps && !deviceConnected) {
+      // No device: don't fake a teleport. Pan the map for a preview and say so.
+      onBookmarkClick(bm);
+      if (onShowToast) onShowToast(t('bm.click_no_device'));
     } else {
       onBookmarkClick(bm);
     }

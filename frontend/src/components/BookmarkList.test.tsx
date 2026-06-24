@@ -414,3 +414,36 @@ describe('BookmarkList characterization', () => {
     expect(searchNameText).toBe('Alpha Cafe');
   });
 });
+
+describe('BookmarkList left-click teleport gating + feedback (U16/U17)', () => {
+  afterEach(() => { try { localStorage.clear(); } catch { /* ignore */ } });
+
+  it('with a device connected + flyGps on, left-click teleports AND toasts that GPS moved', async () => {
+    const onTeleport = vi.fn();
+    const onShowToast = vi.fn();
+    renderWithServices(
+      <BookmarkList {...makeProps({ deviceConnected: true, onTeleport, onShowToast })} />,
+    );
+    await waitFor(() => expect(getBookmarkUiState).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getByText('Place 0'));
+    expect(onTeleport).toHaveBeenCalledWith(25, 121);
+    expect(onShowToast).toHaveBeenCalledWith('bm.click_moves_gps');
+  });
+
+  it('with NO device connected, left-click does NOT teleport and shows a no-device toast', async () => {
+    const onTeleport = vi.fn();
+    const onBookmarkClick = vi.fn();
+    const onShowToast = vi.fn();
+    renderWithServices(
+      <BookmarkList
+        {...makeProps({ deviceConnected: false, onTeleport, onBookmarkClick, onShowToast })}
+      />,
+    );
+    await waitFor(() => expect(getBookmarkUiState).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getByText('Place 0'));
+    expect(onTeleport).not.toHaveBeenCalled();
+    // Falls back to map-pan (preview) instead of a fake teleport.
+    expect(onBookmarkClick).toHaveBeenCalled();
+    expect(onShowToast).toHaveBeenCalledWith('bm.click_no_device');
+  });
+});
