@@ -28,30 +28,46 @@ type AfterFn = () => Promise<void> | void
  */
 export const CLOUD_SYNC_TIMEOUT_MS = 35000
 
+/** After this long, surface a "taking longer…" line + a Cancel button. */
+export const CLOUD_SYNC_SLOW_HINT_MS = 10000
+
 type CloudSyncBusyContextValue = {
   busy: boolean
+  tookTooLong: boolean
   run<T>(fn: (signal: AbortSignal) => Promise<T>): Promise<T>
+  cancel(): void
   /** Internal: replace the post-toggle hook. Prefer ``useCloudSyncAfter``. */
   _setAfter(fn: AfterFn | null): void
 }
 
 const Ctx = createContext<CloudSyncBusyContextValue>({
   busy: false,
+  tookTooLong: false,
   run: async (fn) => fn(new AbortController().signal),
+  cancel: () => undefined,
   _setAfter: () => undefined,
 })
 
 export function CloudSyncBusyProvider({ children }: { children: React.ReactNode }) {
   const [busy, setBusy] = useState(false)
+  const [tookTooLong, setTookTooLong] = useState(false)
   const afterRef = useRef<AfterFn | null>(null)
+  const controllerRef = useRef<AbortController | null>(null)
 
   const _setAfter = useCallback((fn: AfterFn | null) => {
     afterRef.current = fn
   }, [])
 
+  const cancel = useCallback(() => {
+    controllerRef.current?.abort()
+  }, [])
+
   const run = useCallback(async <T,>(fn: (signal: AbortSignal) => Promise<T>) => {
     setBusy(true)
+    setTookTooLong(false)
     const controller = new AbortController()
+    controllerRef.current = controller
+    const slowTimer = setTimeout(() => setTookTooLong(true), CLOUD_SYNC_SLOW_HINT_MS)
     const timer = setTimeout(() => controller.abort(), CLOUD_SYNC_TIMEOUT_MS)
     try {
       const result = await fn(controller.signal)
@@ -62,12 +78,18 @@ export function CloudSyncBusyProvider({ children }: { children: React.ReactNode 
       }
       return result
     } finally {
+      clearTimeout(slowTimer)
       clearTimeout(timer)
+      controllerRef.current = null
+      setTookTooLong(false)
       setBusy(false)
     }
   }, [])
 
-  const value = useMemo(() => ({ busy, run, _setAfter }), [busy, run, _setAfter])
+  const value = useMemo(
+    () => ({ busy, tookTooLong, run, cancel, _setAfter }),
+    [busy, tookTooLong, run, cancel, _setAfter],
+  )
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }
 

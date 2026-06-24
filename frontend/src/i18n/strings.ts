@@ -752,6 +752,8 @@ export const STRINGS = {
   'cloud_sync.toast_routes_synced': { zh: '路線已從雲端同步', en: 'Routes synced from cloud' },
   'cloud_sync.busy_title': { zh: '正在與 iCloud 同步…', en: 'Syncing with iCloud…' },
   'cloud_sync.busy_hint': { zh: '正在合併本機與 iCloud 的書籤與路線，過程中請勿關閉應用程式。', en: 'Merging your local and iCloud bookmarks and routes. Please do not close the app.' },
+  'cloud_sync.busy_taking_longer': { zh: '同步比預期久，可能是 iCloud 仍在下載。可繼續等待，或取消後再試。', en: 'This is taking longer than expected — iCloud may still be downloading. Keep waiting, or cancel and retry.' },
+  'cloud_sync.busy_cancel': { zh: '取消', en: 'Cancel' },
 
   // ── DDI mount overlay ───────────────────────
   'ddi.mounting_title': { zh: '首次設定裝置中', en: 'Preparing device' },

@@ -1,6 +1,6 @@
 import React from 'react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, fireEvent } from '@testing-library/react'
 import { CloudSyncBusyOverlay } from './CloudSyncBusyOverlay'
 
 vi.mock('../i18n', () => ({
@@ -8,13 +8,21 @@ vi.mock('../i18n', () => ({
 }))
 
 let busyValue = false
+let tookTooLongValue = false
+const cancelMock = vi.fn()
 vi.mock('../contexts/CloudSyncBusyContext', () => ({
-  useCloudSyncBusy: () => ({ busy: busyValue }),
+  useCloudSyncBusy: () => ({
+    busy: busyValue,
+    tookTooLong: tookTooLongValue,
+    cancel: cancelMock,
+  }),
 }))
 
 describe('CloudSyncBusyOverlay', () => {
   beforeEach(() => {
     busyValue = false
+    tookTooLongValue = false
+    cancelMock.mockClear()
   })
 
   it('renders nothing when not busy', () => {
@@ -33,5 +41,28 @@ describe('CloudSyncBusyOverlay', () => {
     expect(overlay).toHaveAttribute('aria-live', 'assertive')
     expect(screen.getByText('cloud_sync.busy_title')).toBeInTheDocument()
     expect(screen.getByText('cloud_sync.busy_hint')).toBeInTheDocument()
+  })
+
+  it('does not show the taking-longer hint or Cancel button before the slow threshold', () => {
+    busyValue = true
+    tookTooLongValue = false
+    render(<CloudSyncBusyOverlay />)
+    expect(screen.queryByText('cloud_sync.busy_taking_longer')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'cloud_sync.busy_cancel' })).not.toBeInTheDocument()
+  })
+
+  it('shows the taking-longer hint + a Cancel button once tookTooLong, and Cancel calls cancel()', () => {
+    busyValue = true
+    tookTooLongValue = true
+    render(<CloudSyncBusyOverlay />)
+
+    // The blocking alert + aria-live semantics are preserved.
+    const overlay = screen.getByRole('alert')
+    expect(overlay).toHaveAttribute('aria-live', 'assertive')
+
+    expect(screen.getByText('cloud_sync.busy_taking_longer')).toBeInTheDocument()
+    const cancelBtn = screen.getByRole('button', { name: 'cloud_sync.busy_cancel' })
+    fireEvent.click(cancelBtn)
+    expect(cancelMock).toHaveBeenCalledTimes(1)
   })
 })

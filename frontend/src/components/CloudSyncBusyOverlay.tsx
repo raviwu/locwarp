@@ -10,7 +10,7 @@ import { useCloudSyncBusy } from '../contexts/CloudSyncBusyContext'
  */
 export function CloudSyncBusyOverlay() {
   const t = useT()
-  const { busy } = useCloudSyncBusy()
+  const { busy, tookTooLong, cancel } = useCloudSyncBusy()
   if (!busy) return null
 
   const backdrop: React.CSSProperties = {
@@ -58,6 +58,17 @@ export function CloudSyncBusyOverlay() {
     borderTopColor: '#6c8cff',
     animation: 'locwarp-cloud-sync-spin 0.9s linear infinite',
   }
+  const cancelBtn: React.CSSProperties = {
+    marginTop: 4,
+    padding: '6px 16px',
+    fontSize: 12,
+    fontWeight: 600,
+    color: '#e8eaf0',
+    background: 'rgba(255,255,255,0.08)',
+    border: '1px solid rgba(255,255,255,0.16)',
+    borderRadius: 8,
+    cursor: 'pointer',
+  }
 
   return (
     <div role="alert" aria-live="assertive" style={backdrop}>
@@ -70,6 +81,14 @@ export function CloudSyncBusyOverlay() {
         <div style={spinner} aria-hidden />
         <div style={title}>{t('cloud_sync.busy_title')}</div>
         <p style={hint}>{t('cloud_sync.busy_hint')}</p>
+        {tookTooLong && (
+          <>
+            <p style={hint}>{t('cloud_sync.busy_taking_longer')}</p>
+            <button type="button" style={cancelBtn} onClick={cancel}>
+              {t('cloud_sync.busy_cancel')}
+            </button>
+          </>
+        )}
       </div>
     </div>
   )
