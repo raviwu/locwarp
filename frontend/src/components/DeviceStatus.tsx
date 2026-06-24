@@ -37,7 +37,6 @@ interface DeviceStatusProps {
   onStopTunnel?: (udid?: string) => Promise<void>;
   tunnelStatus?: TunnelStatus;
   tunnels?: TunnelInfo[];
-  onWifiConnect?: (ip: string) => Promise<any>;
   onRevealDeveloperMode?: (udid: string) => Promise<void>;
 }
 
@@ -51,7 +50,6 @@ const DeviceStatus: React.FC<DeviceStatusProps> = ({
   onStopTunnel,
   tunnelStatus = { running: false },
   tunnels = [],
-  onWifiConnect,
   onRevealDeveloperMode,
 }) => {
   const t = useT();
@@ -484,7 +482,7 @@ const DeviceStatus: React.FC<DeviceStatusProps> = ({
       )}
 
       {/* WiFi Connection Section — collapsible with iOS version tabs */}
-      {(onStartWifiTunnel || onWifiConnect) && (
+      {onStartWifiTunnel && (
         <div style={{ borderTop: '1px solid #333', paddingTop: 8, marginTop: 4 }}>
           {/* Collapsible header */}
           <button

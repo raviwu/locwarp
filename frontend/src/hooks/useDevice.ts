@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect } from 'react'
 import {
   listDevices, connectDevice, disconnectDevice,
-  wifiConnect, wifiScan,
+  wifiScan,
   wifiTunnelStartAndConnect, wifiTunnelStatus, wifiTunnelStop,
   type TunnelInfo,
 } from '../services/api'
@@ -156,31 +156,6 @@ export function useDevice(ws?: WsRouter) {
     [],
   )
 
-  const connectWifi = useCallback(
-    async (ip: string) => {
-      try {
-        const res = await wifiConnect(ip)
-        const info: DeviceInfo = {
-          udid: res.udid,
-          name: res.name,
-          ios_version: res.ios_version,
-          connection_type: 'Network',
-          is_connected: true,
-        }
-        setConnectedDevice(info)
-        setDevices((prev) => {
-          const filtered = prev.filter((d) => d.udid !== info.udid)
-          return [...filtered, info]
-        })
-        return info
-      } catch (err) {
-        console.error('WiFi connect failed:', err)
-        throw err
-      }
-    },
-    [],
-  )
-
   const scanWifi = useCallback(async () => {
     setWifiScanning(true)
     try {
@@ -317,7 +292,7 @@ export function useDevice(ws?: WsRouter) {
 
   return {
     devices, connectedDevice, scanning, scan, connect, disconnect,
-    connectWifi, scanWifi, wifiScanning, wifiDevices,
+    scanWifi, wifiScanning, wifiDevices,
     startWifiTunnel, checkTunnelStatus, stopTunnel, tunnelStatus, tunnels,
     connectedDevices, primaryDevice,
   }
