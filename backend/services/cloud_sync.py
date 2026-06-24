@@ -167,9 +167,13 @@ def _move_or_merge_file(src: Path, dst: Path, kind: Literal["bookmarks", "routes
 def migrate_pair(src_dir: Path, dst_dir: Path) -> None:
     """Move bookmarks.json + routes.json from *src_dir* to *dst_dir*.
 
-    All-or-nothing: on any failure, restore *src_dir* to its original
-    state, remove any files newly created in *dst_dir* by this call, then
-    re-raise.
+    Rollback contract (NOT all-or-nothing across *dst*): on any failure we
+    restore *src_dir* from a snapshot and unlink only *dst* files that did
+    NOT exist before this call. A file that already existed in *dst* and was
+    union-merged in place is left as-is — the merge is a CRDT union
+    (commutative + idempotent), so a half-merged *dst* is convergent and the
+    whole migration is safe to retry. Src is restored on failure; dst merges
+    are convergent and safe to re-run.
 
     Union-merges when a file exists on both sides with different content.
     """
