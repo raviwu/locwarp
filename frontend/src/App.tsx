@@ -804,13 +804,19 @@ const App: React.FC = () => {
   }, [routes.remove, showToast, t])
 
   // Build props for components
-  const currentPos = sim.currentPosition
-    ? { lat: sim.currentPosition.lat, lng: sim.currentPosition.lng }
-    : null
+  const currentPos = useMemo(
+    () => sim.currentPosition
+      ? { lat: sim.currentPosition.lat, lng: sim.currentPosition.lng }
+      : null,
+    [sim.currentPosition],
+  )
 
-  const destPos = sim.destination
-    ? { lat: sim.destination.lat, lng: sim.destination.lng }
-    : null
+  const destPos = useMemo(
+    () => sim.destination
+      ? { lat: sim.destination.lat, lng: sim.destination.lng }
+      : null,
+    [sim.destination],
+  )
 
   // Mode default km/h, used only for ControlPanel's in-panel preset
   // preview and as a very last fallback in the status bar before any
@@ -849,6 +855,188 @@ const App: React.FC = () => {
     })),
     [bm.bookmarks]
   )
+
+  // Stable prop sources for React.memo'd ControlPanel — re-derive only when
+  // the underlying data changes, not on every App re-render (e.g. position tick).
+  const bookmarksForPanel = useMemo(
+    () => bm.bookmarks.map((b: any) => ({
+      id: b.id,
+      name: b.name,
+      lat: b.lat,
+      lng: b.lng,
+      category: bm.categories.find((c: any) => c.id === b.category_id)?.name || t('bm.default'),
+      country_code: b.country_code || '',
+      timezone: b.timezone || '',
+      city: b.city || '',
+      region: b.region || '',
+      created_at: b.created_at || '',
+      last_used_at: b.last_used_at || '',
+    })),
+    [bm.bookmarks, bm.categories, t],
+  )
+
+  const bookmarkCategoriesForPanel = useMemo(
+    () => bm.categories.map((c: any) => c.name),
+    [bm.categories],
+  )
+
+  const bookmarksRawForPanel = useMemo(
+    () => bm.bookmarks.map((b: any) => ({
+      id: b.id,
+      name: b.name,
+      lat: b.lat,
+      lng: b.lng,
+      category_id: b.category_id,
+    })),
+    [bm.bookmarks],
+  )
+
+  const bookmarkCategoriesFullForPanel = useMemo(
+    () => bm.categories.map((c: any) => ({ id: c.id, name: c.name })),
+    [bm.categories],
+  )
+
+  const bookmarkCategoryColorsForPanel = useMemo(
+    () => Object.fromEntries(bm.categories.map((c: any) => [c.name, c.color || ''])),
+    [bm.categories],
+  )
+
+  const savedRoutesForPanel = useMemo(
+    () => savedRoutes.map((r: any) => ({
+      id: r.id,
+      name: r.name,
+      waypoints: r.waypoints ?? [],
+      profile: r.profile,
+      category_id: r.category_id || 'default',
+      created_at: r.created_at,
+      updated_at: r.updated_at,
+    })),
+    [savedRoutes],
+  )
+
+  const goldDittoConnectedUdids = useMemo(
+    () => device.connectedDevices.map((d: any) => d.udid),
+    [device.connectedDevices],
+  )
+
+  const bookmarkExportUrl = useMemo(() => api.bookmarksExportUrl(), [api])
+  const routesExportAllUrl = useMemo(() => api.exportAllRoutesUrl(), [api])
+
+  // Stable waypoints for MapView — re-derives only when waypoints array changes.
+  const waypointsForMap = useMemo(
+    () => sim.waypoints.map((w, i) => ({ ...w, index: i })),
+    [sim.waypoints],
+  )
+
+  // Stable handlers passed to ControlPanel — wrapped in useCallback so
+  // React.memo's shallow-compare sees the same ref across position_update ticks.
+  const onSpeedChange = useCallback((s: number) => {
+    if (s <= 10.8) sim.setMoveMode(MoveMode.Walking)
+    else if (s <= 19.8) sim.setMoveMode(MoveMode.Running)
+    else sim.setMoveMode(MoveMode.Driving)
+  }, [sim.setMoveMode])
+
+  const onAddressSelect = useCallback(async (lat: number, lng: number, name?: string) => {
+    const latN = clampLat(lat)
+    const lngN = normalizeLng(lng)
+    const udids = device.connectedDevices.map((d: any) => d.udid)
+    if (udids.length >= 2) {
+      sim.setCurrentPosition({ lat: latN, lng: lngN })
+      const outcome = await sim.teleportAll(udids, latN, lngN)
+      showToast(toastForFanout(t, t('mode.teleport'), outcome, device.connectedDevices))
+    } else {
+      sim.teleport(latN, lngN)
+    }
+    void pushRecent(latN, lngN, 'search', name)
+  }, [device.connectedDevices, sim.setCurrentPosition, sim.teleportAll, sim.teleport, showToast, t, pushRecent])
+
+  const onBookmarkClick = useCallback((b: any) => handleMapPanOnly(b.lat, b.lng), [handleMapPanOnly])
+
+  const onBookmarkAdd = useCallback((b: any) => {
+    const cat = bm.categories.find((c: any) => c.name === b.category)
+    bm.createBookmark({
+      name: b.name,
+      lat: b.lat,
+      lng: b.lng,
+      category_id: cat?.id || 'default',
+    } as any)
+  }, [bm.categories, bm.createBookmark])
+
+  const onBookmarkDelete = useCallback((id: string) => bm.deleteBookmark(id), [bm.deleteBookmark])
+
+  const onBookmarkEdit = useCallback((id: string, data: any) => {
+    const orig = bm.bookmarks.find((b: any) => b.id === id)
+    const patch: any = orig ? { ...orig } : { ...data, id }
+    if (data.name != null) patch.name = data.name
+    if (data.lat != null) patch.lat = data.lat
+    if (data.lng != null) patch.lng = data.lng
+    if (data.category != null) {
+      const cat = bm.categories.find((c: any) => c.name === data.category)
+      if (cat) patch.category_id = cat.id
+    }
+    bm.updateBookmark(id, patch)
+  }, [bm.bookmarks, bm.categories, bm.updateBookmark])
+
+  const onCategoryAdd = useCallback(async (name: string) => {
+    const palette = ['#ef4444', '#f97316', '#eab308', '#22c55e', '#14b8a6', '#3b82f6', '#6366f1', '#a855f7', '#ec4899', '#64748b']
+    const color = palette[Math.floor(Math.random() * palette.length)]
+    try {
+      await bm.createCategory({ name, color })
+    } catch (err: any) {
+      showToast(t('bm.cat.add_failed', { error: err?.message || '' }))
+    }
+  }, [bm.createCategory, showToast, t])
+
+  const onCategoryDelete = useCallback(async (name: string) => {
+    const cat = bm.categories.find((c: any) => c.name === name)
+    if (!cat) return
+    try {
+      await bm.deleteCategory(cat.id)
+    } catch (err: any) {
+      showToast(t('bm.cat.delete_failed', { error: err?.message || '' }))
+    }
+  }, [bm.categories, bm.deleteCategory, showToast, t])
+
+  const onCategoryEdit = useCallback((oldName: string, patch: any) => {
+    const cat = bm.categories.find((c: any) => c.name === oldName)
+    if (!cat) return
+    if (cat.id === 'default') return
+    bm.updateCategory(cat.id, {
+      name: patch.name,
+      color: patch.color,
+      start_date: patch.start_date,
+      end_date: patch.end_date,
+    })
+  }, [bm.categories, bm.updateCategory])
+
+  const onCategoryDeleteCascade = useCallback(async (categoryId: string) => {
+    try {
+      await bm.deleteCategory(categoryId, true)
+    } catch (err: any) {
+      showToast(t('bm.cat.delete_failed', { error: err?.message || '' }))
+    }
+  }, [bm.deleteCategory, showToast, t])
+
+  const onBookmarkBulkPaste = useCallback(() => {
+    setBulkPasteText('')
+    setBulkPasteCategory(bm.categories[0]?.name || '預設')
+    setBulkPasteOpen(true)
+  }, [bm.categories])
+
+  // MapView stable handlers
+  const onRecentReFly = useCallback((entry: any) => {
+    const isNavigate = entry.kind === 'navigate' || entry.kind === 'coord_navigate'
+    if (isNavigate) handleNavigate(entry.lat, entry.lng)
+    else handleTeleport(entry.lat, entry.lng)
+  }, [handleNavigate, handleTeleport])
+
+  const onOpenLibrary = useCallback(() => setOpenLibraryToken((tok) => tok + 1), [])
+
+  const onMapCenterChange = useCallback((lat: number, lng: number) => setMapCenter({ lat, lng }), [])
+
+  const onMapReady = useCallback((mapApi: any) => { mapApiRef.current = mapApi }, [])
+
+  const onBulkPasteOpen = useCallback(() => { setRoutePasteText(''); setRoutePasteOpen(true) }, [])
 
   return (
     <div className="app-layout">
@@ -950,11 +1138,7 @@ const App: React.FC = () => {
           isPaused={isPaused}
           currentPosition={currentPos}
           onModeChange={sim.setMode}
-          onSpeedChange={(s: number) => {
-            if (s <= 10.8) sim.setMoveMode(MoveMode.Walking)
-            else if (s <= 19.8) sim.setMoveMode(MoveMode.Running)
-            else sim.setMoveMode(MoveMode.Driving)
-          }}
+          onSpeedChange={onSpeedChange}
           onMoveModeChange={sim.setMoveMode}
           customSpeedKmh={sim.customSpeedKmh}
           onCustomSpeedChange={sim.setCustomSpeedKmh}
@@ -971,118 +1155,24 @@ const App: React.FC = () => {
           waypointProgress={sim.waypointProgress}
           onTeleport={handleTeleport}
           onNavigate={handleNavigate}
-          onAddressSelect={async (lat, lng, name) => {
-            const latN = clampLat(lat)
-            const lngN = normalizeLng(lng)
-            const udids = device.connectedDevices.map((d) => d.udid)
-            if (udids.length >= 2) {
-              sim.setCurrentPosition({ lat: latN, lng: lngN })
-              const outcome = await sim.teleportAll(udids, latN, lngN)
-              showToast(toastForFanout(t, t('mode.teleport'), outcome, device.connectedDevices))
-            } else {
-              sim.teleport(latN, lngN)
-            }
-            void pushRecent(latN, lngN, 'search', name)
-          }}
-          bookmarks={bm.bookmarks.map((b: any) => ({
-            id: b.id,
-            name: b.name,
-            lat: b.lat,
-            lng: b.lng,
-            category: bm.categories.find(c => c.id === b.category_id)?.name || t('bm.default'),
-            country_code: b.country_code || '',
-            timezone: b.timezone || '',
-            city: b.city || '',
-            region: b.region || '',
-            created_at: b.created_at || '',
-            last_used_at: b.last_used_at || '',
-          }))}
-          bookmarkCategories={bm.categories.map(c => c.name)}
-          bookmarksRaw={bm.bookmarks.map((b: any) => ({
-            id: b.id,
-            name: b.name,
-            lat: b.lat,
-            lng: b.lng,
-            category_id: b.category_id,
-          }))}
-          bookmarkCategoriesFull={bm.categories.map(c => ({ id: c.id, name: c.name }))}
-          bookmarkCategoryColors={Object.fromEntries(bm.categories.map(c => [c.name, c.color || '']))}
-          onBookmarkClick={(b: any) => handleMapPanOnly(b.lat, b.lng)}
+          onAddressSelect={onAddressSelect}
+          bookmarks={bookmarksForPanel}
+          bookmarkCategories={bookmarkCategoriesForPanel}
+          bookmarksRaw={bookmarksRawForPanel}
+          bookmarkCategoriesFull={bookmarkCategoriesFullForPanel}
+          bookmarkCategoryColors={bookmarkCategoryColorsForPanel}
+          onBookmarkClick={onBookmarkClick}
           onSetAsGoldDittoA={handleSetGoldDittoA}
           onAddWaypoint={handleAddWaypoint}
           deviceConnected={device.connectedDevice !== null}
           showWaypointOption={sim.mode === SimMode.Loop || sim.mode === SimMode.MultiStop || sim.mode === SimMode.Navigate}
           onShowToast={showToast}
-          onBookmarkAdd={(b: any) => {
-            const cat = bm.categories.find(c => c.name === b.category)
-            // Country / timezone / city / region are resolved offline by
-            // the backend on create — no online reverse-geocode needed.
-            bm.createBookmark({
-              name: b.name,
-              lat: b.lat,
-              lng: b.lng,
-              category_id: cat?.id || 'default',
-            } as any)
-          }}
-          onBookmarkDelete={(id: string) => bm.deleteBookmark(id)}
-          onBookmarkEdit={(id: string, data: any) => {
-            // BookmarkList emits UI-shape patches ({name}, or {name,lat,lng,category}).
-            // Backend PUT /api/bookmarks requires the full Bookmark schema with
-            // category_id (not category name), so merge the patch onto the
-            // original and translate category name -> id before sending.
-            //
-            // If orig is missing (bm.bookmarks briefly out of sync with a
-            // background refresh), fall back to the patch data — the edit
-            // dialog supplies a full bookmark via spread so we still have the
-            // fields we need.
-            //
-            // The backend re-resolves country / timezone / city / region
-            // offline whenever the coordinates change, so the frontend no
-            // longer reverse-geocodes here.
-            const orig = bm.bookmarks.find(b => b.id === id)
-            const patch: any = orig ? { ...orig } : { ...data, id }
-            if (data.name != null) patch.name = data.name
-            if (data.lat != null) patch.lat = data.lat
-            if (data.lng != null) patch.lng = data.lng
-            if (data.category != null) {
-              const cat = bm.categories.find(c => c.name === data.category)
-              if (cat) patch.category_id = cat.id
-            }
-            bm.updateBookmark(id, patch)
-          }}
-          onCategoryAdd={async (name: string) => {
-            // Pick a random preset color at creation so different categories
-            // start visually distinct; the color is persisted and stays put
-            // across rename (was previously hashed from name → jumped on rename).
-            const palette = ['#ef4444', '#f97316', '#eab308', '#22c55e', '#14b8a6', '#3b82f6', '#6366f1', '#a855f7', '#ec4899', '#64748b']
-            const color = palette[Math.floor(Math.random() * palette.length)]
-            try {
-              await bm.createCategory({ name, color })
-            } catch (err: any) {
-              showToast(t('bm.cat.add_failed', { error: err?.message || '' }))
-            }
-          }}
-          onCategoryDelete={async (name: string) => {
-            const cat = bm.categories.find(c => c.name === name)
-            if (!cat) return
-            try {
-              await bm.deleteCategory(cat.id)
-            } catch (err: any) {
-              showToast(t('bm.cat.delete_failed', { error: err?.message || '' }))
-            }
-          }}
-          onCategoryEdit={(oldName: string, patch) => {
-            const cat = bm.categories.find(c => c.name === oldName);
-            if (!cat) return;
-            // Default category is immutable.
-            if (cat.id === 'default') return;
-            bm.updateCategory(cat.id, {
-              name: patch.name,
-              color: patch.color,
-              start_date: patch.start_date,
-              end_date: patch.end_date,
-            });
-          }}
+          onBookmarkAdd={onBookmarkAdd}
+          onBookmarkDelete={onBookmarkDelete}
+          onBookmarkEdit={onBookmarkEdit}
+          onCategoryAdd={onCategoryAdd}
+          onCategoryDelete={onCategoryDelete}
+          onCategoryEdit={onCategoryEdit}
           categoryDates={categoryDatesByName}
           bookmarkShowOnMap={showBookmarkPins}
           onBookmarkShowOnMapChange={setShowBookmarkPins}
@@ -1092,26 +1182,14 @@ const App: React.FC = () => {
           catalogError={catalogError}
           catalogRefreshing={catalogRefreshing}
           onCatalogRefresh={handleCatalogRefresh}
-          onBookmarkBulkPaste={() => {
-            setBulkPasteText('')
-            setBulkPasteCategory(bm.categories[0]?.name || '預設')
-            setBulkPasteOpen(true)
-          }}
-          bookmarkExportUrl={api.bookmarksExportUrl()}
-          savedRoutes={savedRoutes.map(r => ({
-            id: r.id,
-            name: r.name,
-            waypoints: r.waypoints ?? [],
-            profile: r.profile,
-            category_id: r.category_id || 'default',
-            created_at: r.created_at,
-            updated_at: r.updated_at,
-          }))}
+          onBookmarkBulkPaste={onBookmarkBulkPaste}
+          bookmarkExportUrl={bookmarkExportUrl}
+          savedRoutes={savedRoutesForPanel}
           routeCategories={routeCategories}
           onRouteGpxImport={handleGpxImport}
           onRouteGpxExport={handleGpxExport}
           onRoutesImportAll={handleRoutesImportAll}
-          routesExportAllUrl={api.exportAllRoutesUrl()}
+          routesExportAllUrl={routesExportAllUrl}
           onRouteRename={handleRouteRename}
           onRouteDelete={handleRouteDelete}
           onRoutesBulkDelete={handleRoutesBulkDelete}
@@ -1138,7 +1216,7 @@ const App: React.FC = () => {
           jumpInterval={sim.jumpInterval}
           onJumpIntervalChange={sim.setJumpInterval}
           openLibraryToken={openLibraryToken}
-          goldDittoConnectedUdids={device.connectedDevices.map((d) => d.udid)}
+          goldDittoConnectedUdids={goldDittoConnectedUdids}
           goldDittoCycling={sim.goldDittoCycling}
           goldDittoMapCenter={mapCenter}
           goldDittoExternalA={goldDittoExternalA}
@@ -1146,13 +1224,7 @@ const App: React.FC = () => {
           onGoldDittoCycle={handleGoldDittoCycle}
           goldDittoBookmarks={bm.bookmarks}
           goldDittoCategories={bm.categories}
-          onCategoryDeleteCascade={async (categoryId: string) => {
-            try {
-              await bm.deleteCategory(categoryId, true)
-            } catch (err: any) {
-              showToast(t('bm.cat.delete_failed', { error: err?.message || '' }))
-            }
-          }}
+          onCategoryDeleteCascade={onCategoryDeleteCascade}
           modeExtraSection={(sim.mode === SimMode.Loop || sim.mode === SimMode.MultiStop) ? (
             <WaypointEditor
               mode={sim.mode}
@@ -1352,7 +1424,7 @@ const App: React.FC = () => {
           devices={device.connectedDevices}
           currentPosition={currentPos}
           destination={destPos}
-          waypoints={sim.waypoints.map((w, i) => ({ ...w, index: i }))}
+          waypoints={waypointsForMap}
           routePath={sim.routePath}
           randomWalkRadius={
             sim.mode === SimMode.RandomWalk ? randomWalkRadius :
@@ -1372,18 +1444,14 @@ const App: React.FC = () => {
           userAvatarHtml={avatarToHtml(userAvatar, customPng)}
           bookmarkPins={bookmarkPins}
           showBookmarkPins={showBookmarkPins}
-          onMapReady={(api) => { mapApiRef.current = api }}
+          onMapReady={onMapReady}
           previewPin={previewPin}
           onPreviewPinClear={clearPreviewPin}
           onCoordPreview={handleMapPanOnly}
           recentPlaces={recentPlaces}
-          onRecentReFly={(entry) => {
-            const isNavigate = entry.kind === 'navigate' || entry.kind === 'coord_navigate'
-            if (isNavigate) handleNavigate(entry.lat, entry.lng)
-            else handleTeleport(entry.lat, entry.lng)
-          }}
+          onRecentReFly={onRecentReFly}
           onRecentClear={clearRecentList}
-          onOpenLibrary={() => setOpenLibraryToken((t) => t + 1)}
+          onOpenLibrary={onOpenLibrary}
           isRunning={isRunning}
           isPaused={isPaused}
           onStart={handleStart}
@@ -1391,8 +1459,8 @@ const App: React.FC = () => {
           onPause={handlePause}
           onResume={handleResume}
           showBulkPasteOnMap={sim.mode === SimMode.Loop || sim.mode === SimMode.MultiStop}
-          onBulkPasteOpen={() => { setRoutePasteText(''); setRoutePasteOpen(true); }}
-          onMapCenterChange={(lat, lng) => setMapCenter({ lat, lng })}
+          onBulkPasteOpen={onBulkPasteOpen}
+          onMapCenterChange={onMapCenterChange}
         />
         {avatarPickerOpen && (
           <UserAvatarPicker

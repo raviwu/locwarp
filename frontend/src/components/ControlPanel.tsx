@@ -273,7 +273,7 @@ const modeLabelKeys: Record<SimMode, StringKey> = {
   [SimMode.GoldDitto]: 'mode.goldditto',
 };
 
-const ControlPanel: React.FC<ControlPanelProps> = ({
+const ControlPanelInner: React.FC<ControlPanelProps> = ({
   simMode,
   moveMode,
   speed,
@@ -1060,5 +1060,8 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
     </div>
   );
 };
+
+const ControlPanel = React.memo(ControlPanelInner);
+ControlPanel.displayName = 'ControlPanel';
 
 export default ControlPanel;

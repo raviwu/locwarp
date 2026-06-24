@@ -262,7 +262,7 @@ const S2_ICON_HTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none
         <line x1="3" y1="15" x2="21" y2="15" />
       </svg>`;
 
-const MapView: React.FC<MapViewProps> = ({
+const MapViewInner: React.FC<MapViewProps> = ({
   currentPosition,
   destination,
   waypoints,
@@ -907,5 +907,8 @@ const MapView: React.FC<MapViewProps> = ({
     </div>
   );
 };
+
+const MapView = React.memo(MapViewInner);
+MapView.displayName = 'MapView';
 
 export default MapView;
