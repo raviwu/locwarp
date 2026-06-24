@@ -885,7 +885,13 @@ const RouteList: React.FC<RouteListProps> = ({
           <div
             style={ctxItemStyle}
             onMouseEnter={ctxHighlight} onMouseLeave={ctxUnhighlight}
-            onClick={() => { onRouteDelete(contextMenu.route.id); setContextMenu(null); }}
+            onClick={() => {
+              const r = contextMenu.route;
+              setContextMenu(null);
+              if (window.confirm(t('panel.route_delete_confirm', { name: r.name }))) {
+                onRouteDelete(r.id);
+              }
+            }}
           >
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#f44336" strokeWidth="2" style={{ marginRight: 6 }}>
               <polyline points="3,6 5,6 21,6" />

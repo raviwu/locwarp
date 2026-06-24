@@ -1,5 +1,5 @@
 import React from 'react'
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, afterEach } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 
 vi.mock('../i18n', () => ({
@@ -70,4 +70,29 @@ describe('RouteList', () => {
     expect(screen.getByText('Route One')).toBeInTheDocument()
     expect(screen.getByText('Route Two')).toBeInTheDocument()
   })
+})
+
+describe('RouteList single-delete confirmation (U13)', () => {
+  afterEach(() => { vi.restoreAllMocks(); });
+
+  it('does NOT call onRouteDelete when the confirm is dismissed', () => {
+    const onRouteDelete = vi.fn();
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    render(<RouteList {...(makeProps({ onRouteDelete }) as any)} />);
+    // Open the row's right-click context menu, then click Delete.
+    fireEvent.contextMenu(screen.getByText('Morning Loop'));
+    fireEvent.click(screen.getByText('generic.delete'));
+    expect(confirmSpy).toHaveBeenCalledTimes(1);
+    expect(onRouteDelete).not.toHaveBeenCalled();
+  });
+
+  it('calls onRouteDelete(id) when the confirm is accepted', () => {
+    const onRouteDelete = vi.fn();
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    render(<RouteList {...(makeProps({ onRouteDelete }) as any)} />);
+    fireEvent.contextMenu(screen.getByText('Morning Loop'));
+    fireEvent.click(screen.getByText('generic.delete'));
+    expect(confirmSpy).toHaveBeenCalledTimes(1);
+    expect(onRouteDelete).toHaveBeenCalledWith('r1');
+  });
 })
