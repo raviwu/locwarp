@@ -137,4 +137,32 @@ describe('EditBookmarkDialog', () => {
     );
     expect(screen.queryByText('bm.latlng_out_of_range')).toBeNull();
   });
+
+  it('exposes the panel as a role=dialog (a11y)', () => {
+    render(<EditBookmarkDialog {...makeProps()} />);
+    expect(screen.getByRole('dialog')).toHaveAttribute('aria-modal', 'true');
+  });
+
+  it('closes on Escape pressed anywhere in the dialog', () => {
+    const onClose = vi.fn();
+    render(<EditBookmarkDialog {...makeProps({ onClose })} />);
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('still submits the merged shape unchanged after migration', () => {
+    const onSubmit = vi.fn();
+    render(
+      <EditBookmarkDialog
+        {...makeProps({ name: 'New Name', lat: '26.5', lng: '122.5', onSubmit })}
+      />,
+    );
+    fireEvent.click(screen.getByText('generic.save'));
+    expect(onSubmit).toHaveBeenCalledWith('bm-1', {
+      ...ORIG,
+      name: 'New Name',
+      lat: 26.5,
+      lng: 122.5,
+    });
+  });
 });

@@ -108,4 +108,27 @@ describe('CustomBookmarkDialog', () => {
     // parseFloat('24.') === 24 is in range, lng empty (NaN, not finite) => no out-of-range error.
     expect(screen.queryByText('bm.latlng_out_of_range')).toBeNull();
   });
+
+  it('exposes the panel as a role=dialog (a11y)', () => {
+    render(<CustomBookmarkDialog {...makeProps()} />);
+    expect(screen.getByRole('dialog')).toHaveAttribute('aria-modal', 'true');
+  });
+
+  it('closes on Escape pressed anywhere in the dialog', () => {
+    const onClose = vi.fn();
+    render(<CustomBookmarkDialog {...makeProps({ onClose })} />);
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('still submits the validated bookmark unchanged after migration', () => {
+    const onSubmit = vi.fn();
+    render(
+      <CustomBookmarkDialog
+        {...makeProps({ name: 'Pin', lat: '24.14', lng: '120.65', category: 'Work', onSubmit })}
+      />,
+    );
+    fireEvent.click(screen.getByText('generic.add'));
+    expect(onSubmit).toHaveBeenCalledWith({ name: 'Pin', lat: 24.14, lng: 120.65, category: 'Work' });
+  });
 });
