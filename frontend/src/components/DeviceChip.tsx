@@ -16,9 +16,11 @@ interface Props {
   letter: DeviceLetter
   device: DeviceInfo
   runtime?: DeviceRuntime
+  variant?: 'connected' | 'trust_required'
   onDisconnect: () => void
   onForget: () => void
   onRestoreOne: () => void
+  onReTrust?: () => void
   onEnableDev?: () => void
 }
 
@@ -30,7 +32,7 @@ function stateKind(state?: string): 'idle' | 'running' | 'paused' | 'error' | 'd
   return 'running'
 }
 
-export function DeviceChip({ letter, device, runtime, onDisconnect, onForget, onRestoreOne, onEnableDev }: Props) {
+export function DeviceChip({ letter, device, runtime, variant = 'connected', onDisconnect, onForget, onRestoreOne, onReTrust, onEnableDev }: Props) {
   const t = useT()
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null)
   const [confirmForget, setConfirmForget] = useState(false)
@@ -64,6 +66,8 @@ export function DeviceChip({ letter, device, runtime, onDisconnect, onForget, on
     disconnected: t('device.chip_state_disconnected'),
   }[kind]
 
+  const isTrust = variant === 'trust_required'
+  const trustDot = '#ffb627'
   const accent = DEVICE_COLORS[letter]
   const shortName = (device.name || 'iPhone').slice(0, 14)
 
@@ -96,7 +100,7 @@ export function DeviceChip({ letter, device, runtime, onDisconnect, onForget, on
         <span
           style={{
             width: 8, height: 8, borderRadius: '50%',
-            background: dotColor,
+            background: isTrust ? trustDot : dotColor,
             boxShadow: kind === 'running' ? `0 0 6px ${dotColor}` : 'none',
             animation: kind === 'running' ? 'chip-pulse 1.6s ease-in-out infinite' : undefined,
             flexShrink: 0,
@@ -104,7 +108,17 @@ export function DeviceChip({ letter, device, runtime, onDisconnect, onForget, on
         />
         <span style={{ fontWeight: 600, color: accent }}>{letter}</span>
         <span style={{ opacity: 0.85, overflow: 'hidden', textOverflow: 'ellipsis' }}>· {shortName}</span>
-        <span style={{ opacity: 0.6, marginLeft: 2 }}>· {label}</span>
+        {isTrust ? (
+          <span style={{
+            marginLeft: 2, padding: '0 4px',
+            borderRadius: 4,
+            background: '#fff3cd',
+            color: '#856404',
+            fontSize: 10,
+          }}>{t('device.pair_chip_trust')}</span>
+        ) : (
+          <span style={{ opacity: 0.6, marginLeft: 2 }}>· {label}</span>
+        )}
       </div>
       {menu && createPortal(
         <div
@@ -119,9 +133,15 @@ export function DeviceChip({ letter, device, runtime, onDisconnect, onForget, on
             zIndex: 9999, fontSize: 12, color: '#eaeaea',
           }}
         >
-          <MenuItem onClick={() => { setMenu(null); onRestoreOne() }}>{t('device.chip_restore')}</MenuItem>
-          {onEnableDev && <MenuItem onClick={() => { setMenu(null); onEnableDev() }}>{t('device.chip_enable_dev')}</MenuItem>}
-          <MenuItem onClick={() => { setMenu(null); onDisconnect() }}>{t('device.chip_disconnect')}</MenuItem>
+          {isTrust ? (
+            <MenuItem onClick={() => { setMenu(null); onReTrust?.() }}>{t('device.chip_retrust')}</MenuItem>
+          ) : (
+            <>
+              <MenuItem onClick={() => { setMenu(null); onRestoreOne() }}>{t('device.chip_restore')}</MenuItem>
+              {onEnableDev && <MenuItem onClick={() => { setMenu(null); onEnableDev() }}>{t('device.chip_enable_dev')}</MenuItem>}
+              <MenuItem onClick={() => { setMenu(null); onDisconnect() }}>{t('device.chip_disconnect')}</MenuItem>
+            </>
+          )}
           <MenuItem onClick={() => { setMenu(null); setConfirmForget(true) }}>{t('device.chip_forget')}</MenuItem>
         </div>,
         document.body,

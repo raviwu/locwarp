@@ -137,6 +137,7 @@ export const STRINGS = {
   'device.forget_cancel': { zh: '取消', en: 'Cancel' },
   'device.chip_restore': { zh: '還原此裝置', en: 'Restore this device' },
   'device.chip_enable_dev': { zh: '啟用開發者模式', en: 'Enable Developer Mode' },
+  'device.chip_retrust': { zh: '重新信任此裝置', en: 'Re-trust this device' },
   'device.chip_state_idle': { zh: '已連線', en: 'Connected' },
   'device.chip_state_running': { zh: '模擬中', en: 'Running' },
   'device.chip_state_paused': { zh: '暫停', en: 'Paused' },

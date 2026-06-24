@@ -8,15 +8,17 @@ const LETTERS: DeviceLetter[] = ['A', 'B', 'C']
 
 interface Props {
   devices: DeviceInfo[]           // connected devices in order (max 3)
+  trustRequired?: DeviceInfo[]
   runtimes: RuntimesMap
   onAdd: () => void               // opens add-device picker
   onDisconnect: (udid: string) => void
   onForget: (udid: string) => void
   onRestoreOne: (udid: string) => void
+  onReTrust?: (udid: string) => void
   onEnableDev?: (udid: string) => void
 }
 
-export function DeviceChipRow({ devices, runtimes, onAdd, onDisconnect, onForget, onRestoreOne, onEnableDev }: Props) {
+export function DeviceChipRow({ devices, trustRequired = [], runtimes, onAdd, onDisconnect, onForget, onRestoreOne, onReTrust, onEnableDev }: Props) {
   const t = useT()
   const atMax = devices.length >= MAX_DEVICES
 
@@ -38,6 +40,21 @@ export function DeviceChipRow({ devices, runtimes, onAdd, onDisconnect, onForget
             onForget={() => onForget(d.udid)}
             onRestoreOne={() => onRestoreOne(d.udid)}
             onEnableDev={onEnableDev ? () => onEnableDev(d.udid) : undefined}
+          />
+        )
+      })}
+      {trustRequired.slice(0, MAX_DEVICES).map((d, i) => {
+        const letter = LETTERS[Math.min(devices.length + i, MAX_DEVICES - 1)]
+        return (
+          <DeviceChip
+            key={d.udid}
+            letter={letter}
+            device={d}
+            variant="trust_required"
+            onReTrust={() => onReTrust?.(d.udid)}
+            onDisconnect={() => onDisconnect(d.udid)}
+            onForget={() => onForget(d.udid)}
+            onRestoreOne={() => onRestoreOne(d.udid)}
           />
         )
       })}

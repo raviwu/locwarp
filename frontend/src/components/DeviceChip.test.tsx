@@ -242,6 +242,27 @@ describe('DeviceChip context menu + callbacks', () => {
   })
 })
 
+describe('DeviceChip trust_required variant', () => {
+  it('renders the trust badge and a re-trust menu item', () => {
+    const onReTrust = vi.fn()
+    render(
+      <DeviceChip
+        letter="A"
+        device={makeDevice({ name: 'Needs Trust', is_connected: false, pair_status: 'trust_required' })}
+        variant="trust_required"
+        onReTrust={onReTrust}
+        onDisconnect={noop}
+        onForget={noop}
+        onRestoreOne={noop}
+      />,
+    )
+    expect(screen.getByText('device.pair_chip_trust')).toBeInTheDocument()
+    fireEvent.contextMenu(screen.getByTitle('A · Needs Trust'))
+    fireEvent.click(screen.getByText('device.chip_retrust'))
+    expect(onReTrust).toHaveBeenCalledTimes(1)
+  })
+})
+
 describe('DeviceChip forget confirmation flow', () => {
   function openMenu() {
     fireEvent.contextMenu(screen.getByTitle('A · My iPhone'))

@@ -113,6 +113,46 @@ describe('DeviceChipRow rendering', () => {
   })
 })
 
+describe('DeviceChipRow trust_required chips', () => {
+  function trustDevice(udid: string, name: string): DeviceInfo {
+    return { udid, name, ios_version: '17.0', connection_type: 'usb', is_connected: false, pair_status: 'trust_required' }
+  }
+
+  it('renders a trust_required chip alongside connected chips', () => {
+    const props = baseProps()
+    render(
+      <DeviceChipRow
+        devices={[makeDevice('u1', 'Connected One')]}
+        trustRequired={[trustDevice('t1', 'Needs Trust')]}
+        runtimes={emptyRuntimes}
+        {...props}
+      />,
+    )
+    expect(screen.getByTitle('A · Connected One')).toBeInTheDocument()
+    // trust chip rendered with its name + the existing trust badge label key
+    expect(screen.getByText('· Needs Trust')).toBeInTheDocument()
+    expect(screen.getByText('device.pair_chip_trust')).toBeInTheDocument()
+  })
+
+  it('fires onReTrust with the udid from the trust chip menu', () => {
+    const props = baseProps()
+    const onReTrust = vi.fn()
+    render(
+      <DeviceChipRow
+        devices={[]}
+        trustRequired={[trustDevice('t1', 'Needs Trust')]}
+        runtimes={emptyRuntimes}
+        onReTrust={onReTrust}
+        {...props}
+      />,
+    )
+    // With no connected devices, the trust chip takes letter A.
+    fireEvent.contextMenu(screen.getByTitle('A · Needs Trust'))
+    fireEvent.click(screen.getByText('device.chip_retrust'))
+    expect(onReTrust).toHaveBeenCalledWith('t1')
+  })
+})
+
 describe('DeviceChipRow callbacks wire the device udid', () => {
   function renderRow(props: ReturnType<typeof baseProps>) {
     render(

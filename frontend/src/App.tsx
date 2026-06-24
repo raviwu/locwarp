@@ -857,6 +857,16 @@ const App: React.FC = () => {
         <div className="sidebar-content">
         <DeviceChipRow
           devices={device.connectedDevices}
+          trustRequired={device.devices.filter((d) => d.pair_status === 'trust_required' && !d.is_connected)}
+          onReTrust={async (udid) => {
+            try {
+              await api.wifiRepair(udid)
+              setToastMsg(t('wifi.repair_success'))
+              await device.scan()
+            } catch (e: any) {
+              setToastMsg(e?.message ?? t('wifi.repair_failed'))
+            }
+          }}
           runtimes={sim.runtimes}
           onAdd={() => {
             if (device.connectedDevices.length >= 2) {
