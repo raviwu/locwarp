@@ -915,34 +915,21 @@ async def _per_tunnel_watchdog(udid: str, runner: TunnelRunner) -> None:
 
 
 def _build_tunnel_udid_candidates(req: WifiTunnelStartRequest) -> list[str]:
-    """Return udids to try for an incoming /wifi/tunnel/start request,
-    in priority order:
+    """Return udids to try for an incoming /wifi/tunnel/start request, in
+    priority order (see services.wifi_tunnel_service.build_tunnel_udid_candidates).
+    This wrapper resolves the live collaborators (dm connections + cached
+    pair records) and delegates the pure policy. Bug history: v0.2.92 only
+    used the first candidate, which broke multi-iPhone users."""
+    from services.wifi_tunnel_service import build_tunnel_udid_candidates
 
-    1. The udid the caller explicitly passed (always trusted)
-    2. Currently USB-tracked udids (most likely correct in single-device
-       use, and for the dual-device USB+WiFi flow)
-    3. Cached pair records under ~/.pymobiledevice3/, sorted by mtime
-       (most recently used first) — needed when the user opens LocWarp
-       without USB and just types an IP
-
-    The list is de-duped while preserving order. Caller iterates them;
-    pair-verify fails fast (~200-400ms) on a wrong identifier so trying
-    several is cheap. Bug history: v0.2.92 only used the first candidate,
-    which broke multi-iPhone users whose target's pair record happened
-    to not be the most-recently-used one."""
-    candidates: list[str] = []
-
-    def _add(c: str | None) -> None:
-        if c and c not in candidates:
-            candidates.append(c)
-
-    _add(req.udid)
+    connected_udids: list[str] = []
     try:
         dm = _dm()
-        for u in dm._connections.keys():
-            _add(u)
+        connected_udids = list(dm._connections.keys())
     except (RuntimeError, AttributeError):
         pass
+
+    pair_record_idents: list[str] = []
     try:
         from pymobiledevice3.pair_records import iter_remote_pair_records
         records = sorted(
@@ -955,13 +942,15 @@ def _build_tunnel_udid_candidates(req: WifiTunnelStartRequest) -> list[str]:
             if stem.startswith("remote_"):
                 stem = stem.split("remote_", 1)[1]
             ident = stem.split(".", 1)[0]
-            _add(ident)
+            pair_record_idents.append(ident)
     except Exception:
         _tunnel_logger.debug("Could not enumerate cached pair records", exc_info=True)
 
-    if not candidates:
-        candidates.append(f"pending:{req.ip}:{req.port}")
-    return candidates
+    return build_tunnel_udid_candidates(
+        req.udid, req.ip, req.port,
+        connected_udids=connected_udids,
+        pair_record_idents=pair_record_idents,
+    )
 
 
 @router.post("/wifi/tunnel/start")
