@@ -137,8 +137,10 @@ describe('App render smoke (characterization)', () => {
       router.dispatch({ type: 'device_disconnected', remaining_count: 0 })
     })
 
+    // Softened copy: acknowledges the watchdog auto-reconnect window instead
+    // of reading as a dead-end terminal failure (U3).
     expect(
-      screen.getByText('Device disconnected (USB unplugged or tunnel died), please reconnect USB'),
+      screen.getByText('Device disconnected — trying to reconnect; replug USB if it does not come back'),
     ).toBeInTheDocument()
   })
 })

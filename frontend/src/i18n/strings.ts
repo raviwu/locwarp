@@ -720,6 +720,7 @@ export const STRINGS = {
   'device.connect_failed': { zh: '連線失敗', en: 'Connection failed' },
   'wifi.tunnel_lost_banner': { zh: 'WiFi Tunnel 連線中斷,請重新建立', en: 'Wi-Fi tunnel dropped, please reconnect' },
   'wifi.tunnel_lost_banner_named': { zh: '{name} 的 WiFi Tunnel 中斷,請重新建立', en: "{name}'s Wi-Fi tunnel dropped, please reconnect" },
+  'device.disconnected_recovering': { zh: '裝置連線中斷 — 嘗試自動重連中,若未恢復請重新插上 USB', en: 'Device disconnected — trying to reconnect; replug USB if it does not come back' },
   'wifi.legacy_unavailable': { zh: 'iOS 17 以下連線方式目前不可用。', en: 'iOS 17 and below connection mode is not available.' },
 
   // ── Map extras ──────────────────────────────

@@ -479,9 +479,13 @@ export function useSimulation(
       const remaining = typeof e.remaining_count === 'number' ? e.remaining_count as number : 0
       if (remaining === 0) {
         const isEn = typeof localStorage !== 'undefined' && localStorage.getItem('locwarp.lang') === 'en'
+        // Softened from a dead-end terminal message: the watchdog may
+        // auto-reconnect within ~27s (it broadcasts device_connected, which
+        // clears this banner). Copy now reads as "reconnecting" with replug as
+        // the fallback, mirroring the WiFi degraded->reconnecting tone.
         setError(isEn
-          ? 'Device disconnected (USB unplugged or tunnel died), please reconnect USB'
-          : '裝置連線中斷(USB 拔除或 Tunnel 死亡),請重新插上 USB')
+          ? 'Device disconnected — trying to reconnect; replug USB if it does not come back'
+          : '裝置連線中斷 — 嘗試自動重連中,若未恢復請重新插上 USB')
         setStatus((prev) => ({ ...prev, running: false, paused: false }))
       } else {
         // Clear any stale banner in case a previous lost-all event left it
