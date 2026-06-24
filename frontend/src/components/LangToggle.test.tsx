@@ -24,21 +24,24 @@ describe('LangToggle', () => {
     expect(screen.getByRole('button', { name: 'EN' })).toBeInTheDocument();
   });
 
-  it('marks the active language (zh) with the accent color and weight', () => {
+  it('marks the active language (zh) with the accent color token and weight', () => {
     currentLang = 'zh';
     render(<LangToggle />);
     const zh = screen.getByRole('button', { name: '中文' });
     const en = screen.getByRole('button', { name: 'EN' });
-    expect(zh).toHaveStyle({ color: 'rgb(108, 140, 255)', fontWeight: '600' });
+    // jsdom preserves the literal var() string — assert on the CSS var token.
+    expect(zh.style.color).toBe('var(--accent-blue)');
+    expect(zh.style.fontWeight).toBe('600');
     // inactive button uses the muted color, not the accent
-    expect(en).not.toHaveStyle({ color: 'rgb(108, 140, 255)' });
+    expect(en.style.color).not.toBe('var(--accent-blue)');
   });
 
   it('marks the active language (en) when lang is en', () => {
     currentLang = 'en';
     render(<LangToggle />);
     const en = screen.getByRole('button', { name: 'EN' });
-    expect(en).toHaveStyle({ color: 'rgb(108, 140, 255)', fontWeight: '600' });
+    expect(en.style.color).toBe('var(--accent-blue)');
+    expect(en.style.fontWeight).toBe('600');
   });
 
   it('calls setLang("zh") when the 中文 button is clicked', () => {

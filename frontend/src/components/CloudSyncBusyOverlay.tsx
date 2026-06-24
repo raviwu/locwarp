@@ -17,7 +17,7 @@ export function CloudSyncBusyOverlay() {
     position: 'fixed',
     inset: 0,
     background: 'rgba(8, 10, 16, 0.62)',
-    zIndex: 9999,
+    zIndex: 'var(--z-modal)',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
@@ -55,7 +55,7 @@ export function CloudSyncBusyOverlay() {
     height: 28,
     borderRadius: '50%',
     border: '3px solid rgba(255,255,255,0.14)',
-    borderTopColor: '#6c8cff',
+    borderTopColor: 'var(--accent-blue)',
     animation: 'locwarp-cloud-sync-spin 0.9s linear infinite',
   }
   const cancelBtn: React.CSSProperties = {

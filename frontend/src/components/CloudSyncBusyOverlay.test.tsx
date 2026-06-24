@@ -65,4 +65,20 @@ describe('CloudSyncBusyOverlay', () => {
     fireEvent.click(cancelBtn)
     expect(cancelMock).toHaveBeenCalledTimes(1)
   })
+
+  it('renders as an assertive alert region', () => {
+    busyValue = true
+    render(<CloudSyncBusyOverlay />)
+    const region = screen.getByRole('alert')
+    expect(region).toHaveAttribute('aria-live', 'assertive')
+  })
+
+  it('reads its z-index from the --z-modal token, not an off-scale literal', () => {
+    busyValue = true
+    render(<CloudSyncBusyOverlay />)
+    const region = screen.getByRole('alert')
+    // jsdom preserves the literal var() string in the inline style.
+    expect(region.style.zIndex).toBe('var(--z-modal)')
+    expect(region.style.zIndex).not.toBe('9999')
+  })
 })
