@@ -70,8 +70,8 @@ describe('App device-connect feedback (U1)', () => {
     await act(async () => { renderApp(router) })
 
     // Open the device dropdown (summary button shows the count) and pick a row.
-    await waitFor(() => expect(screen.getByText('2 devices found')).toBeInTheDocument())
-    fireEvent.click(screen.getByText('2 devices found'))
+    await waitFor(() => expect(screen.getByText('2 device(s) found')).toBeInTheDocument())
+    fireEvent.click(screen.getByText('2 device(s) found'))
     fireEvent.click(screen.getByText('A'))
 
     // The connect rejects -> onSelect must surface a toast. Mirroring the

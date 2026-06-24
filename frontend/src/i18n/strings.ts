@@ -241,6 +241,7 @@ export const STRINGS = {
   'device.scan': { zh: 'USB', en: 'USB' },
   'device.scan_scanning': { zh: '掃描中', en: 'Scanning' },
   'device.scan_found': { zh: '找到 {n} 台裝置', en: 'Found {n} device(s)' },
+  'device.devices_found': { zh: '找到 {n} 台裝置', en: '{n} device(s) found' },
   'device.scan_none': { zh: '未偵測到', en: 'Not found' },
   'device.scan_tooltip': { zh: '掃描 USB 裝置', en: 'Scan USB devices' },
   'wifi.section_title': { zh: 'WiFi 無線連線', en: 'Wi-Fi Connection' },

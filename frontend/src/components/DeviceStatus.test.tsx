@@ -59,7 +59,7 @@ describe('DeviceStatus', () => {
 
   it('shows "No device" placeholder when device is null', () => {
     render(<DeviceStatus {...baseProps} />)
-    expect(screen.getByText('No device')).toBeInTheDocument()
+    expect(screen.getByText('device.no_device')).toBeInTheDocument()
   })
 
   it('opens the device dropdown and lists every device on toggle', () => {
@@ -68,7 +68,7 @@ describe('DeviceStatus', () => {
     render(<DeviceStatus {...baseProps} devices={[a, b]} />)
 
     // The dropdown summary button shows the count.
-    const toggle = screen.getByText('2 devices found')
+    const toggle = screen.getByText('device.devices_found')
     // Device rows aren't in the DOM until the dropdown is opened.
     expect(screen.queryByText('iPhone A')).not.toBeInTheDocument()
     fireEvent.click(toggle)
@@ -81,7 +81,7 @@ describe('DeviceStatus', () => {
     const a = makeDevice({ id: 'a', udid: 'ua', name: 'iPhone A' })
     render(<DeviceStatus {...baseProps} devices={[a]} onSelect={onSelect} />)
 
-    fireEvent.click(screen.getByText('1 devices found'))
+    fireEvent.click(screen.getByText('device.devices_found'))
     fireEvent.click(screen.getByText('iPhone A'))
     expect(onSelect).toHaveBeenCalledWith('a')
   })
@@ -111,6 +111,15 @@ describe('DeviceStatus', () => {
     render(<DeviceStatus {...baseProps} devices={[ok]} />)
     // Collapsed by default: the row is not rendered until the summary is clicked.
     expect(screen.queryByText('Healthy')).not.toBeInTheDocument()
-    expect(screen.getByText('1 devices found')).toBeInTheDocument()
+    expect(screen.getByText('device.devices_found')).toBeInTheDocument()
+  })
+
+  it('renders the devices_found count via t() (key, since the i18n mock ignores vars)', () => {
+    const a = makeDevice({ id: 'a', udid: 'ua', name: 'iPhone A' })
+    const b = makeDevice({ id: 'b', udid: 'ub', name: 'iPhone B' })
+    render(<DeviceStatus {...baseProps} devices={[a, b]} />)
+    expect(screen.getByText('device.devices_found')).toBeInTheDocument()
+    // The hardcoded English summary must be gone.
+    expect(screen.queryByText('2 devices found')).not.toBeInTheDocument()
   })
 })
