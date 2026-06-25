@@ -202,4 +202,44 @@ describe('useWifiAutoConnect', () => {
 
     expect(onError).not.toHaveBeenCalled()
   })
+
+  // FIX 5: pre-flight wifiTunnelStatus throws — outer catch must NOT fire onError
+  // (spurious toast during backend warmup when USB is healthy but not yet surfaced).
+  it('does NOT call onError when the pre-flight wifiTunnelStatus throws (transient backend error)', async () => {
+    localStorage.setItem(
+      'locwarp.tunnel.savedips',
+      JSON.stringify([{ ip: '10.0.0.1', port: 49152, udid: 'a' }]),
+    )
+    const { api, stub } = makeApi()
+    // Make the pre-flight status call reject.
+    stub.wifiTunnelStatus.mockRejectedValue(new Error('backend not ready'))
+    const onError = vi.fn()
+    const { device } = makeDevice()
+
+    renderHook(() => useWifiAutoConnect(true, api, device, onError))
+    await act(async () => { await vi.advanceTimersByTimeAsync(1600) })
+
+    // Pre-flight threw — outer catch path; onError must remain silent (no spurious toast).
+    expect(onError).not.toHaveBeenCalled()
+  })
+
+  // FIX 5 (confirmation): inner all-failed path still fires onError — the legitimate goal.
+  // This is already covered by the "calls onError when every auto-connect attempt fails" test
+  // above (which uses the default resolving wifiTunnelStatus + rejecting startWifiTunnel),
+  // but we add an explicit companion assertion here for clarity.
+  it('calls onError when wifiTunnelStatus succeeds but every startWifiTunnel attempt fails', async () => {
+    localStorage.setItem(
+      'locwarp.tunnel.savedips',
+      JSON.stringify([{ ip: '10.0.0.2', port: 49152, udid: 'b' }]),
+    )
+    const { api } = makeApi()
+    const { device, startWifiTunnel } = makeDevice()
+    startWifiTunnel.mockRejectedValue(new Error('unreachable'))
+    const onError = vi.fn()
+
+    renderHook(() => useWifiAutoConnect(true, api, device, onError))
+    await act(async () => { await vi.advanceTimersByTimeAsync(1600) })
+
+    expect(onError).toHaveBeenCalledWith('wifi.autoconnect_failed')
+  })
 })

@@ -161,8 +161,12 @@ export function useWifiAutoConnect(
           const anyOk = results.some((r) => r.status === 'fulfilled')
           if (!anyOk) onErrorRef.current?.('wifi.autoconnect_failed')
         } catch {
-          // Pre-flight (wifiTunnelStatus/discover) threw — same surfacing.
-          onErrorRef.current?.('wifi.autoconnect_failed')
+          // Pre-flight (wifiTunnelStatus/discover) threw — silent: a transient
+          // 500/timeout during backend warmup must NOT pop a spurious toast for
+          // a user whose USB device is healthy but not yet surfaced in
+          // connectedDevices. Only the inner Promise.allSettled all-failed path
+          // (above) fires the onError toast, because that path proves every
+          // explicit connect attempt was genuinely rejected.
         }
       })()
     }, 1500)
