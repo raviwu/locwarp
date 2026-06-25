@@ -7,4 +7,4 @@ export type ApiGateway = typeof api
 // Re-export domain types so view components can import from the contract
 // layer instead of directly from services/api (hexagon-lite: views must not
 // cross the adapter boundary).
-export type { BookmarkExportFormat, TunnelInfo, CloudSyncStatus } from '../services/api'
+export type { BookmarkExportFormat, TunnelInfo, CloudSyncStatus, NearbyPoi } from '../services/api'

@@ -308,6 +308,24 @@ export const searchAddress = (q: string) => {
 }
 export const reverseGeocode = (lat: number, lng: number) =>
   request<any>('GET', `/api/geocode/reverse?lat=${lat}&lng=${lng}`)
+export interface NearbyPoi {
+  id: string
+  name: string
+  category: string
+  subcategory: string
+  lat: number
+  lng: number
+  distance_m: number
+}
+export const nearbyPois = (lat: number, lng: number, radiusM = 200, limit = 40) => {
+  const params = new URLSearchParams({
+    lat: String(lat),
+    lng: String(lng),
+    radius_m: String(radiusM),
+    limit: String(limit),
+  })
+  return request<NearbyPoi[]>('GET', `/api/geocode/nearby?${params.toString()}`)
+}
 export const lookupTimezone = (lat: number, lng: number) =>
   request<{ zone: string; gmt_offset_seconds: number; abbreviation: string; timestamp: number } | null>(
     'GET', `/api/geocode/timezone?lat=${lat}&lng=${lng}`,
