@@ -113,6 +113,27 @@ class EngineResolver:
             if not udid:
                 raise
             _log.warning("DeviceLostError on %s; attempting full_reconnect safety-net retry", udid)
+
+            # Capture a resumable snapshot BEFORE the reconnect tears down and
+            # replaces the engine.  Mirrors the watchdog path exactly:
+            # wifi_tunnel_service.py::run_watchdog calls capture_resumable_snapshot
+            # then passes the snapshot to attempt_restart.  Here we do the same so
+            # a running navigate / loop / multi-stop / random_walk route survives
+            # the WiFi-tunnel restart that full_reconnect triggers.
+            snapshot: dict | None = None
+            old_eng = self._reg.simulation_engines.get(udid)
+            if old_eng is not None:
+                try:
+                    snapshot = old_eng.capture_resumable_snapshot()
+                    if snapshot:
+                        _log.info(
+                            "Captured resumable snapshot for %s before full_reconnect "
+                            "(kind=%s)",
+                            udid, snapshot.get("kind"),
+                        )
+                except Exception:
+                    _log.exception("capture_resumable_snapshot failed for %s", udid)
+
             try:
                 recovered = await self._dm.full_reconnect(udid)
             except Exception:
@@ -121,6 +142,18 @@ class EngineResolver:
             if not recovered:
                 _log.warning("full_reconnect failed for %s; surfacing original error", udid)
                 raise
+
+            # Resume any in-flight simulation on the NEW engine, exactly as
+            # tunnel_restart.py::attempt_tunnel_restart does (lines 110-117).
+            if snapshot is not None:
+                new_eng = self._reg.simulation_engines.get(udid)
+                if new_eng is not None:
+                    _log.info(
+                        "Resuming sim from snapshot after full_reconnect for %s (kind=%s)",
+                        udid, snapshot.get("kind"),
+                    )
+                    asyncio.create_task(new_eng.resume_from_snapshot(snapshot))
+
             _log.info("full_reconnect succeeded for %s; retrying op once", udid)
             return await op()
 
