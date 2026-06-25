@@ -14,7 +14,7 @@ import asyncio
 import pytest
 
 from models.schemas import Coordinate, MovementMode
-from tests._engine_harness import FakeClock, SteppedSleep, make_engine
+from tests._engine_harness import make_engine
 
 
 pytestmark = pytest.mark.asyncio
@@ -78,6 +78,10 @@ async def test_timed_route_uses_dedicated_branch_with_offsets(monkeypatch):
     assert len(call["offsets"]) == len(call["coords"])  # Task 9 guard holds
     # Pending offsets cleared after the timed branch consumed them.
     assert eng._pending_route_offsets is None
+    # _resume_snapshot also consumed (Finding 1 fix): ensures _ensure_stopped()
+    # won't skip resetting _speed_was_applied/_active_speed_profile on the
+    # next sim start after a resumed timed loop.
+    assert eng._resume_snapshot is None
 
 
 async def test_untimed_route_falls_through_to_leg_by_leg_with_none(monkeypatch):

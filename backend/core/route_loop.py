@@ -78,7 +78,12 @@ class RouteLooper:
             and len(waypoints) >= 2
         ):
             # Consume the offsets so a later apply_speed re-plan won't re-apply.
+            # Also consume _resume_snapshot so _ensure_stopped() won't see a
+            # stale snapshot and skip resetting _speed_was_applied /
+            # _active_speed_profile after this run (mirrors non-timed path
+            # at line ~137 and multi_stop / random_walk equivalents).
             engine._pending_route_offsets = None
+            engine._resume_snapshot = None
             engine.state = SimulationState.LOOPING
             engine.total_segments = max(len(waypoints) - 1, 0)
             engine.lap_count = 0
