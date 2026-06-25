@@ -149,4 +149,95 @@ describe('AddressSearch', () => {
     expect(localStorage.getItem('locwarp.geocode_provider')).toBe('google');
     expect(screen.getByText('Google')).toBeInTheDocument();
   });
+
+  it('highlights the first result by default; bare Enter commits the top result', async () => {
+    mockedSearch.mockResolvedValue([
+      { display_name: 'Kyoto Station', lat: 34.9858, lng: 135.7588 },
+      { display_name: 'Kyoto Tower', lat: 34.9875, lng: 135.7591 },
+    ]);
+    const onSelect = vi.fn();
+    render(<AddressSearch onSelect={onSelect} />);
+    const input = screen.getByPlaceholderText('search.placeholder');
+    fireEvent.change(input, { target: { value: 'kyoto' } });
+    await flushDebounce();
+
+    fireEvent.keyDown(input, { key: 'Enter' });
+    // Default highlight is row 0 → top result committed.
+    expect(onSelect).toHaveBeenCalledWith(34.9858, 135.7588, 'Kyoto Station');
+  });
+
+  it('ArrowDown then Enter commits the SECOND result, not the first', async () => {
+    mockedSearch.mockResolvedValue([
+      { display_name: 'Kyoto Station', lat: 34.9858, lng: 135.7588 },
+      { display_name: 'Kyoto Tower', lat: 34.9875, lng: 135.7591 },
+    ]);
+    const onSelect = vi.fn();
+    render(<AddressSearch onSelect={onSelect} />);
+    const input = screen.getByPlaceholderText('search.placeholder');
+    fireEvent.change(input, { target: { value: 'kyoto' } });
+    await flushDebounce();
+
+    fireEvent.keyDown(input, { key: 'ArrowDown' });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(onSelect).toHaveBeenCalledWith(34.9875, 135.7591, 'Kyoto Tower');
+  });
+
+  it('ArrowDown clamps at the last result (does not wrap past the end)', async () => {
+    mockedSearch.mockResolvedValue([
+      { display_name: 'A', lat: 1, lng: 1 },
+      { display_name: 'B', lat: 2, lng: 2 },
+    ]);
+    const onSelect = vi.fn();
+    render(<AddressSearch onSelect={onSelect} />);
+    const input = screen.getByPlaceholderText('search.placeholder');
+    fireEvent.change(input, { target: { value: 'ab' } });
+    await flushDebounce();
+
+    fireEvent.keyDown(input, { key: 'ArrowDown' });
+    fireEvent.keyDown(input, { key: 'ArrowDown' });
+    fireEvent.keyDown(input, { key: 'ArrowDown' }); // clamped at index 1
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(onSelect).toHaveBeenCalledWith(2, 2, 'B');
+  });
+
+  it('ArrowUp clamps at the first result', async () => {
+    mockedSearch.mockResolvedValue([
+      { display_name: 'A', lat: 1, lng: 1 },
+      { display_name: 'B', lat: 2, lng: 2 },
+    ]);
+    const onSelect = vi.fn();
+    render(<AddressSearch onSelect={onSelect} />);
+    const input = screen.getByPlaceholderText('search.placeholder');
+    fireEvent.change(input, { target: { value: 'ab' } });
+    await flushDebounce();
+
+    fireEvent.keyDown(input, { key: 'ArrowDown' });
+    fireEvent.keyDown(input, { key: 'ArrowUp' });
+    fireEvent.keyDown(input, { key: 'ArrowUp' }); // clamped at index 0
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(onSelect).toHaveBeenCalledWith(1, 1, 'A');
+  });
+
+  it('Enter mid-IME-composition does NOT commit (isImeComposing guard)', async () => {
+    mockedSearch.mockResolvedValue([
+      { display_name: 'Kyoto Station', lat: 34.9858, lng: 135.7588 },
+    ]);
+    const onSelect = vi.fn();
+    render(<AddressSearch onSelect={onSelect} />);
+    const input = screen.getByPlaceholderText('search.placeholder');
+    fireEvent.change(input, { target: { value: 'kyoto' } });
+    await flushDebounce();
+
+    // isComposing true → not a submit Enter.
+    fireEvent.keyDown(input, { key: 'Enter', isComposing: true });
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it('Enter with no results does nothing', () => {
+    const onSelect = vi.fn();
+    render(<AddressSearch onSelect={onSelect} />);
+    const input = screen.getByPlaceholderText('search.placeholder');
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(onSelect).not.toHaveBeenCalled();
+  });
 });

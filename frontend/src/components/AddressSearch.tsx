@@ -24,6 +24,7 @@ const AddressSearch: React.FC<AddressSearchProps> = ({ onSelect }) => {
   const [results, setResults] = useState<SearchResult[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [showResults, setShowResults] = useState(false);
+  const [selectedIndex, setSelectedIndex] = useState(0);
   const [searchError, setSearchError] = useState<string | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -89,6 +90,7 @@ const AddressSearch: React.FC<AddressSearchProps> = ({ onSelect }) => {
         address: r.address || '',
       }));
       setResults(mapped);
+      setSelectedIndex(0);
       setShowResults(true);
     } catch (err: any) {
       console.error('Search failed:', err);
@@ -146,6 +148,23 @@ const AddressSearch: React.FC<AddressSearchProps> = ({ onSelect }) => {
             value={query}
             onChange={handleInputChange}
             onFocus={() => { if (results.length > 0) setShowResults(true); }}
+            onKeyDown={(e) => {
+              if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                setSelectedIndex((i) => Math.min(i + 1, results.length - 1));
+              } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                setSelectedIndex((i) => Math.max(i - 1, 0));
+              } else if (isSubmitEnter(e)) {
+                if (showResults && results.length > 0) {
+                  const chosen = results[selectedIndex];
+                  if (chosen) {
+                    e.preventDefault();
+                    handleSelect(chosen);
+                  }
+                }
+              }
+            }}
             style={{ width: '100%', paddingRight: 30 }}
           />
           <svg
@@ -452,10 +471,11 @@ const AddressSearch: React.FC<AddressSearchProps> = ({ onSelect }) => {
                 padding: '8px 12px', cursor: 'pointer',
                 borderBottom: idx < results.length - 1 ? '1px solid #333' : 'none',
                 fontSize: 13, transition: 'background 0.15s',
+                background: idx === selectedIndex ? '#3a3a3e' : 'transparent',
               }}
               onClick={() => handleSelect(result)}
-              onMouseEnter={(e) => { (e.currentTarget as HTMLDivElement).style.background = '#3a3a3e'; }}
-              onMouseLeave={(e) => { (e.currentTarget as HTMLDivElement).style.background = 'transparent'; }}
+              onMouseEnter={() => setSelectedIndex(idx)}
+              onMouseLeave={() => { /* keyboard/selectedIndex owns the highlight */ }}
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <svg
