@@ -5,6 +5,10 @@ live collaborators (dm connections, cached pair records) and delegates.
 """
 from __future__ import annotations
 
+import asyncio
+
+from services.location_service import DeviceLostError
+
 
 def build_tunnel_udid_candidates(
     req_udid: str | None,
@@ -96,11 +100,6 @@ async def run_usb_fallback(
                     pass
     except Exception:
         logger.exception("USB fallback after tunnel stop failed")
-
-
-import asyncio
-
-from services.location_service import DeviceLostError
 
 
 class WifiTunnelService:
