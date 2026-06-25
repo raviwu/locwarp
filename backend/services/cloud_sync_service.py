@@ -152,6 +152,17 @@ class CloudSyncService:
             migrate_pair(current, _config.DATA_DIR)
         except Exception as exc:
             logger.exception("cloud-sync disable: migrate_pair failed")
+            # Re-arm the watchers we just stopped so a failed disable does not
+            # leave file-watching permanently dead (files stay in the sync
+            # folder; external iCloud edits must still reconcile).
+            try:
+                self._app.restart_bookmark_watcher()
+            except RuntimeError:
+                logger.debug("cloud-sync disable rollback: no running loop; skipping bookmark watcher rearm")
+            try:
+                self._app.restart_route_watcher()
+            except RuntimeError:
+                logger.debug("cloud-sync disable rollback: no running loop; skipping route watcher rearm")
             raise HTTPException(500, f"Migration failed: {exc}")
 
         self._app._sync_folder = None

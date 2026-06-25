@@ -247,3 +247,39 @@ def test_build_status_reflects_app_state(tmp_path):
     status = svc.build_status()
     assert status.enabled is True
     assert status.sync_folder == str(tmp_path / "LocWarp")
+
+
+async def test_disable_rearms_watchers_when_migrate_fails(monkeypatch, tmp_path):
+    """Fix 1: when migrate_pair raises inside disable(), the watchers that were
+    stopped before the attempt must be re-armed (restart_*_watcher called)
+    before the HTTPException propagates — a failed disable must not leave the
+    watchers permanently dead."""
+    from fastapi import HTTPException
+
+    log: list[str] = []
+    app = _SpyAppState(log, tmp_path)
+    app._sync_folder = str(tmp_path / "LocWarp")
+    bc = _CapBroadcast()
+
+    def _boom(*a, **k):
+        log.append("migrate_pair")
+        raise RuntimeError("disk full")
+
+    monkeypatch.setattr(css_mod, "detect_icloud_path", lambda: tmp_path)
+    monkeypatch.setattr(css_mod, "migrate_pair", _boom)
+    _patch_managers(monkeypatch, app, log)
+
+    svc = CloudSyncService(app_state=app, broadcast=bc)
+    with pytest.raises(HTTPException) as ei:
+        await svc.disable()
+
+    # Must re-raise the failure.
+    assert ei.value.status_code == 500
+    # The watchers were stopped before migrate_pair was called …
+    assert "stop:bm-old" in log
+    assert "stop:rm-old" in log
+    # … and then re-armed after the failure (restart called on the app state).
+    assert "restart:bm" in log, "bookmark watcher must be re-armed after migrate failure"
+    assert "restart:rm" in log, "route watcher must be re-armed after migrate failure"
+    # _sync_folder must remain unchanged (not cleared) because disable failed.
+    assert app._sync_folder is not None
