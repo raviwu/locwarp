@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { wifiTunnelDiscover, wifiTunnelFindPort, wifiRepair, type TunnelInfo } from '../services/api';
+import { useServices } from '../contexts/ServicesContext';
+import type { TunnelInfo } from '../contract/apiGateway';
 import { useT } from '../i18n';
 import DialogShell from './DialogShell';
 
@@ -52,6 +53,7 @@ const DeviceStatus: React.FC<DeviceStatusProps> = ({
   tunnels = [],
   onRevealDeveloperMode,
 }) => {
+  const { api } = useServices();
   const t = useT();
   const [showDropdown, setShowDropdown] = useState(false);
   const [tunnelIp, setTunnelIp] = useState(() => localStorage.getItem('locwarp.tunnel.ip') || '');
@@ -83,7 +85,7 @@ const DeviceStatus: React.FC<DeviceStatusProps> = ({
     setRepairState('running');
     setRepairMessage('');
     try {
-      const res = await wifiRepair(repairTargetUdid);
+      const res = await api.wifiRepair(repairTargetUdid);
       setRepairState('success');
       setRepairMessage(`${res.name || 'iPhone'} (iOS ${res.ios_version})`);
     } catch (err: any) {
@@ -151,7 +153,7 @@ const DeviceStatus: React.FC<DeviceStatusProps> = ({
     setDiscoverResults([]);
     setPendingBonjourId('');
     try {
-      const res = await wifiTunnelDiscover();
+      const res = await api.wifiTunnelDiscover();
       const list = res?.devices || [];
       if (list.length === 0) {
         setTunnelError(t('wifi.device_not_detected'));
@@ -787,7 +789,7 @@ const DeviceStatus: React.FC<DeviceStatusProps> = ({
                             setTunnelError(null);
                             setPortScanning(true);
                             try {
-                              const res = await wifiTunnelFindPort(ip);
+                              const res = await api.wifiTunnelFindPort(ip);
                               if (!res.ports || res.ports.length === 0) {
                                 setTunnelError(t('wifi.port_scan_no_hit'));
                               } else {
@@ -819,7 +821,7 @@ const DeviceStatus: React.FC<DeviceStatusProps> = ({
                             // 49152–65535 at boot, so 49152 is rarely correct.
                             setPortScanning(true);
                             try {
-                              const res = await wifiTunnelFindPort(ip);
+                              const res = await api.wifiTunnelFindPort(ip);
                               if (!res.ports || res.ports.length === 0) {
                                 setTunnelError(t('wifi.port_scan_no_hit'));
                                 setPortScanning(false);

@@ -7,12 +7,15 @@ vi.mock('../i18n', () => ({
   useT: () => (key: string) => key,
 }))
 
-// services/api is hit by Discover / repair / port-scan handlers. Mock so no
-// real network happens; default resolved values keep handlers inert.
-vi.mock('../services/api', () => ({
-  wifiTunnelDiscover: vi.fn().mockResolvedValue({ devices: [] }),
-  wifiTunnelFindPort: vi.fn().mockResolvedValue({ ports: [] }),
-  wifiRepair: vi.fn().mockResolvedValue({ name: 'iPhone', ios_version: '17.0' }),
+// Mock useServices so Discover / repair / port-scan handlers use the context api.
+vi.mock('../contexts/ServicesContext', () => ({
+  useServices: () => ({
+    api: {
+      wifiTunnelDiscover: vi.fn().mockResolvedValue({ devices: [] }),
+      wifiTunnelFindPort: vi.fn().mockResolvedValue({ ports: [] }),
+      wifiRepair: vi.fn().mockResolvedValue({ name: 'iPhone', ios_version: '17.0' }),
+    },
+  }),
 }))
 
 import DeviceStatus from './DeviceStatus'
