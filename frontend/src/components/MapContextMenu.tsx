@@ -5,6 +5,8 @@ import {
   highlightItem,
   unhighlightItem,
 } from '../utils/contextMenuStyle';
+import NearbyPlacesMenu from './NearbyPlacesMenu';
+import type { NearbyPoi } from '../contract/apiGateway';
 
 // Subset of a bookmark pin the context menu needs for the "already bookmarked"
 // disabled item. Mirrors MapView's bookmarkByCoord match value.
@@ -46,6 +48,10 @@ interface MapContextMenuProps {
 
   // Close the menu (clears the parent's contextMenu open-state).
   onClose: () => void;
+
+  // Optional nearby-POI gateway. When supplied, a "Nearby places" item renders
+  // and toggles an inline NearbyPlacesMenu. MapView passes (la,ln)=>api.nearbyPois(la,ln).
+  nearbyPois?: (lat: number, lng: number) => Promise<NearbyPoi[]>;
 }
 
 /**
@@ -79,6 +85,7 @@ const MapContextMenu: React.FC<MapContextMenuProps> = ({
   onAddBookmark,
   onAddWaypoint,
   onClose,
+  nearbyPois,
 }) => {
   const t = useT();
 
@@ -112,6 +119,8 @@ const MapContextMenu: React.FC<MapContextMenuProps> = ({
     loading: boolean; address: string | null; error: string | null;
     key: string; // lat|lng the result belongs to
   }>({ loading: false, address: null, error: null, key: '' });
+
+  const [showNearby, setShowNearby] = useState(false);
 
   // Reverse-geocode stale-guard. The menu is mounted-per-open (the parent keys
   // it on the open coords), so "is this still the same open?" reduces to "is
@@ -385,6 +394,39 @@ const MapContextMenu: React.FC<MapContextMenuProps> = ({
             </svg>
             {t('map.add_waypoint')}
           </button>
+        </>
+      )}
+
+      {/* 7. Nearby places — toggles an inline submenu of named POIs. */}
+      {nearbyPois && (
+        <>
+          <div style={{ height: 1, background: '#444', margin: '4px 0' }} />
+          <button
+            type="button"
+            role="menuitem"
+            className="context-menu-item"
+            style={{ ...contextMenuItemStyle, width: '100%', textAlign: 'left', background: 'transparent', border: 'none', font: 'inherit' }}
+            onMouseEnter={highlightItem}
+            onMouseLeave={unhighlightItem}
+            onClick={() => setShowNearby((v) => !v)}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: 8 }}>
+              <circle cx="11" cy="11" r="8" />
+              <line x1="21" y1="21" x2="16.65" y2="16.65" />
+            </svg>
+            {t('map.nearby_places')}
+          </button>
+          {showNearby && (
+            <NearbyPlacesMenu
+              lat={lat}
+              lng={lng}
+              nearbyPois={nearbyPois}
+              onTeleport={onTeleport}
+              onAddBookmark={onAddBookmark}
+              deviceConnected={deviceConnected}
+              onClose={onClose}
+            />
+          )}
         </>
       )}
     </div>

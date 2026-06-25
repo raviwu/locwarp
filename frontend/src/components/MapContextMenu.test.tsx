@@ -207,6 +207,26 @@ describe('MapContextMenu', () => {
     }
   });
 
+  // --- Nearby places submenu (C3) -------------------------------------------
+  it('shows the Nearby places trigger only when nearbyPois is provided, and toggles the submenu', async () => {
+    const nearbyPois = vi.fn().mockResolvedValue([
+      { id: '1', name: 'Cafe A', category: 'amenity', subcategory: 'cafe', lat: 25.1, lng: 121.1, distance_m: 30 },
+    ])
+    render(<MapContextMenu {...makeProps({ nearbyPois })} />)
+    const trigger = screen.getByText('map.nearby_places')
+    expect(trigger).toBeTruthy()
+    await act(async () => {
+      fireEvent.click(trigger)
+    })
+    expect(nearbyPois).toHaveBeenCalledWith(COORD.lat, COORD.lng)
+    expect(await screen.findByText('Cafe A')).toBeTruthy()
+  })
+
+  it('hides the Nearby places trigger when nearbyPois is not provided', () => {
+    render(<MapContextMenu {...makeProps()} />)
+    expect(screen.queryByText('map.nearby_places')).toBeNull()
+  })
+
   // --- container stops click propagation (so MapView's outside-click dismiss
   //     does not fire when clicking inside the menu) ---------------------------
   it('stops click propagation from the menu container', () => {

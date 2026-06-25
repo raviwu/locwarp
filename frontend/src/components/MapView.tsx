@@ -872,6 +872,7 @@ const MapViewInner: React.FC<MapViewProps> = ({
           y={contextMenu.y}
           name={contextMenu.name}
           reverseGeocode={api.reverseGeocode}
+          nearbyPois={(la, ln) => api.nearbyPois(la, ln)}
           bookmarkMatch={bookmarkByCoord.get(
             `${contextMenu.lat.toFixed(5)}|${contextMenu.lng.toFixed(5)}`
           )}

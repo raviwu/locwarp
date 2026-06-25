@@ -437,6 +437,7 @@ export const STRINGS = {
   'map.nearby_title': { zh: '附近 POI · 點擊瞬移', en: 'Nearby POIs · click to teleport' },
   'map.nearby_empty': { zh: '附近沒有已標註的 POI', en: 'No mapped POIs nearby' },
   'map.nearby_label': { zh: '附近地點', en: 'Nearby places' },
+  'map.nearby_places': { zh: '附近地點', en: 'Nearby places' },
   'map.nearby_loading': { zh: '載入附近地點…', en: 'Loading nearby places…' },
   'map.nearby_error': { zh: '無法載入附近地點', en: "Couldn't load nearby places" },
   'map.navigate_here': { zh: '導航到這裡', en: 'Navigate here' },
