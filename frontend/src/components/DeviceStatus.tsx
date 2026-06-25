@@ -5,6 +5,18 @@ import { useT } from '../i18n';
 import type { StringKey } from '../i18n/strings';
 import DialogShell from './DialogShell';
 
+// Hoisted to module scope — reallocating this Record on every render
+// (DeviceStatus re-renders on every WS tick) is unnecessary.
+// Note: 'connected' is kept for enum symmetry with ConnectProgressEvent.phase
+// but is never rendered — the hook clears connectPhase to null on 'connected'.
+const PHASE_KEYS: Record<string, StringKey> = {
+  opening_tunnel: 'wifi.connect_phase.opening_tunnel',
+  rsd_attempt:    'wifi.connect_phase.rsd_attempt',
+  checking_ddi:   'wifi.connect_phase.checking_ddi',
+  opening_dvt:    'wifi.connect_phase.opening_dvt',
+  connected:      'wifi.connect_phase.connected',
+}
+
 const MAX_TUNNEL_DEVICES = 3;
 
 interface Device {
@@ -58,13 +70,6 @@ const DeviceStatus: React.FC<DeviceStatusProps> = ({
 }) => {
   const { api } = useServices();
   const t = useT();
-  const PHASE_KEYS: Record<string, StringKey> = {
-    opening_tunnel: 'wifi.connect_phase.opening_tunnel',
-    rsd_attempt:    'wifi.connect_phase.rsd_attempt',
-    checking_ddi:   'wifi.connect_phase.checking_ddi',
-    opening_dvt:    'wifi.connect_phase.opening_dvt',
-    connected:      'wifi.connect_phase.connected',
-  }
   const [showDropdown, setShowDropdown] = useState(false);
   const [tunnelIp, setTunnelIp] = useState(() => localStorage.getItem('locwarp.tunnel.ip') || '');
   const [tunnelPort, setTunnelPort] = useState(() => localStorage.getItem('locwarp.tunnel.port') || '');
