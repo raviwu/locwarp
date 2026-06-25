@@ -159,6 +159,15 @@ class TunnelHelperClient:
                     "helper RPC %r timed out after %.1fs; dropping connection",
                     method, read_timeout,
                 )
+                # Close the writer best-effort (same pattern as close()) before
+                # nulling the references — skipping this leaks the
+                # transport/fd and produces asyncio "unclosed transport" warnings.
+                if self._writer is not None:
+                    try:
+                        self._writer.close()
+                        await self._writer.wait_closed()
+                    except (OSError, BrokenPipeError, ConnectionError) as _exc:
+                        logger.debug("error closing writer on timeout: %s", _exc)
                 self._reader = None
                 self._writer = None
                 raise TimeoutError(

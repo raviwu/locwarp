@@ -1,5 +1,6 @@
 import asyncio
 import json
+from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from pathlib import Path
 
@@ -176,6 +177,84 @@ async def test_call_default_read_timeout_constant():
     """RPC_READ_TIMEOUT_S defaults above the helper-side open bound."""
     from services.tunnel_helper_client import RPC_READ_TIMEOUT_S
     assert RPC_READ_TIMEOUT_S >= 30.0
+
+
+@pytest.mark.asyncio
+async def test_timeout_closes_writer_before_nulling(tmp_path):
+    """Fix 2: on readline timeout the writer must be closed (best-effort) BEFORE
+    _writer/_reader are set to None — otherwise the transport is leaked and
+    asyncio emits 'unclosed transport' warnings on GC."""
+    close_called = []
+    wait_closed_called = []
+
+    fake_writer = MagicMock()
+    fake_writer.write = MagicMock()
+    fake_writer.drain = AsyncMock()
+    fake_writer.close = MagicMock(side_effect=lambda: close_called.append(True))
+    fake_writer.wait_closed = AsyncMock(side_effect=lambda: wait_closed_called.append(True))
+
+    fake_reader = MagicMock()
+    # readline never completes — simulate by returning a future that never resolves
+    hung_future = asyncio.get_event_loop().create_future()
+
+    async def _slow_readline():
+        # This will be cancelled by wait_for on timeout
+        await hung_future
+
+    fake_reader.readline = _slow_readline
+
+    client = TunnelHelperClient(
+        sock_path=tmp_path / "nope.sock",
+        status_path=tmp_path / "nope.status",
+    )
+    # Inject fake connection directly
+    client._reader = fake_reader
+    client._writer = fake_writer
+
+    with pytest.raises(TimeoutError):
+        await client.call("ping", read_timeout=0.05)
+
+    # Writer.close() must have been called to release the fd/transport.
+    assert close_called, "writer.close() must be called on timeout (no leaked transport)"
+    # Connection must be dropped.
+    assert client.is_connected is False
+
+    # Cleanup: cancel the hung future so asyncio doesn't warn about it
+    hung_future.cancel()
+
+
+@pytest.mark.asyncio
+async def test_timeout_close_writer_exception_is_swallowed(tmp_path):
+    """Fix 2: if writer.close() itself raises (e.g. BrokenPipeError), the
+    exception is swallowed — the timeout error must still propagate and the
+    connection must still be dropped."""
+    fake_writer = MagicMock()
+    fake_writer.write = MagicMock()
+    fake_writer.drain = AsyncMock()
+    fake_writer.close = MagicMock(side_effect=BrokenPipeError("already dead"))
+    fake_writer.wait_closed = AsyncMock()
+
+    fake_reader = MagicMock()
+    hung_future = asyncio.get_event_loop().create_future()
+
+    async def _slow_readline():
+        await hung_future
+
+    fake_reader.readline = _slow_readline
+
+    client = TunnelHelperClient(
+        sock_path=tmp_path / "nope.sock",
+        status_path=tmp_path / "nope.status",
+    )
+    client._reader = fake_reader
+    client._writer = fake_writer
+
+    # Must still raise TimeoutError, not BrokenPipeError.
+    with pytest.raises(TimeoutError):
+        await client.call("ping", read_timeout=0.05)
+
+    assert client.is_connected is False
+    hung_future.cancel()
 
 
 @pytest.mark.asyncio
