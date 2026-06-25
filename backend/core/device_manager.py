@@ -249,6 +249,10 @@ class _ActiveConnection:
     rsd: Optional[RemoteServiceDiscoveryService] = None
     location_service: Optional[LocationService] = None
     usbmux_lockdown: object = None  # Original lockdown client (for legacy fallback on iOS 17+)
+    ddi_mounted: bool = False  # Last personalized-DDI status check result;
+                               # set in _ensure_personalized_ddi_mounted where
+                               # the DdiMounted/DdiNotMounted event is published.
+                               # Read by GET /api/system/info (not re-probed).
 
 
 class DeviceManager:
@@ -767,6 +771,7 @@ class DeviceManager:
 
         if mounted:
             logger.info("Personalized DDI already mounted on %s; DVT should work", conn.udid)
+            conn.ddi_mounted = True
             try:
                 if self._events is not None:
                     await self._events.publish(DdiMountedEvent(udid=conn.udid))
@@ -779,6 +784,7 @@ class DeviceManager:
             "auto-mount; please mount DDI for this iPhone first, then "
             "reconnect.", conn.udid,
         )
+        conn.ddi_mounted = False
         try:
             if self._events is not None:
                 await self._events.publish(DdiNotMountedEvent(
