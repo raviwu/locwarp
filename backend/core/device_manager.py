@@ -22,7 +22,7 @@ import logging
 import socket
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict, Literal, Optional
 
 from pymobiledevice3.lockdown import create_using_usbmux, create_using_tcp
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
@@ -34,6 +34,7 @@ from pymobiledevice3.usbmux import list_devices
 
 from config import DEVICE_NAMES_FILE, STICKY_DENIED_FILE, WIFI_ALIASES_FILE
 from domain.events import (
+    ConnectProgressEvent,
     DdiMountedEvent,
     DdiNotMountedEvent,
     DdiMountingEvent,
@@ -62,6 +63,19 @@ class UnsupportedIosVersionError(RuntimeError):
         super().__init__(f"iOS {version} is not supported (requires {self.MIN_VERSION}+)")
 
 logger = logging.getLogger(__name__)
+
+# Closed set of coarse connect-progress phases. Using a Literal at every emit
+# site prevents a typo'd phase string from silently shipping (the domain
+# model's ConnectProgressEvent.phase is a plain str). Order of a successful
+# WiFi connect: opening_tunnel → rsd_attempt(s) → checking_ddi → opening_dvt
+# → connected.
+ConnectPhase = Literal[
+    "opening_tunnel",
+    "rsd_attempt",
+    "checking_ddi",
+    "opening_dvt",
+    "connected",
+]
 
 
 def _parse_ios_version(version_string: str) -> tuple[int, ...]:
@@ -688,6 +702,27 @@ class DeviceManager:
         conn.location_service = loc
         return loc
 
+    async def _emit_connect_progress(
+        self,
+        phase: ConnectPhase,
+        *,
+        udid: str | None = None,
+        attempt: int | None = None,
+        max: int | None = None,
+    ) -> None:
+        """Emit a coarse connect-progress phase through the injected
+        EventPublisher. Awaited in-line, order-preserving. Never under
+        self._lock. Failures are swallowed (logged) so a publish error can
+        NEVER abort the connect — mirrors the DDI-event try/except."""
+        if self._events is None:
+            return
+        try:
+            await self._events.publish(
+                ConnectProgressEvent(phase=phase, udid=udid, attempt=attempt, max=max)
+            )
+        except Exception:
+            logger.debug("connect_progress emit failed (phase=%s)", phase, exc_info=True)
+
     async def _ensure_personalized_ddi_mounted(self, conn: _ActiveConnection) -> None:
         """Check whether the Personalized DDI is mounted on the iPhone.
 
@@ -705,6 +740,7 @@ class DeviceManager:
         will then attempt DVT directly and produce a clean error if
         dtservicehub isn't advertised.
         """
+        await self._emit_connect_progress("checking_ddi", udid=conn.udid)
         try:
             from pymobiledevice3.services.mobile_image_mounter import MobileImageMounterService
         except ImportError as exc:
@@ -834,6 +870,7 @@ class DeviceManager:
         except Exception:
             logger.warning("DDI auto-mount failed; DVT may still fail", exc_info=True)
 
+        await self._emit_connect_progress("opening_dvt", udid=conn.udid)
         try:
             dvt = DvtProvider(conn.lockdown)
             await dvt.__aenter__()
@@ -850,6 +887,7 @@ class DeviceManager:
             async def _factory(_udid: str = udid) -> DvtProvider:
                 return await self.get_fresh_dvt_provider(_udid)
 
+            await self._emit_connect_progress("connected", udid=conn.udid)
             return DvtLocationService(
                 dvt,
                 lockdown=conn.lockdown,
@@ -925,9 +963,11 @@ class DeviceManager:
         import asyncio as _asyncio
         rsd = None
         last_exc: Exception | None = None
+        await self._emit_connect_progress("opening_tunnel")
         # TUN interface routes may take a few seconds to become reachable
         # after the tunnel process reports ready, so retry with backoff.
         for attempt in range(1, 11):
+            await self._emit_connect_progress("rsd_attempt", attempt=attempt, max=10)
             rsd = RemoteServiceDiscoveryService((rsd_address, rsd_port))
             try:
                 await rsd.connect()
