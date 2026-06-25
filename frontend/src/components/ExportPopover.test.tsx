@@ -8,7 +8,7 @@ vi.mock('../i18n', () => ({
 }))
 
 // Mock the URL builder so we can assert the options passed and control the href.
-vi.mock('../services/api', () => ({
+const { bookmarksExportUrl } = vi.hoisted(() => ({
   bookmarksExportUrl: vi.fn(
     (opts: { category_id?: string | null; format?: string } = {}) => {
       const p = new URLSearchParams()
@@ -19,8 +19,9 @@ vi.mock('../services/api', () => ({
     },
   ),
 }))
-
-import { bookmarksExportUrl } from '../services/api'
+vi.mock('../contexts/ServicesContext', () => ({
+  useServices: () => ({ api: { bookmarksExportUrl } }),
+}))
 
 const anchorRect = {
   top: 100, bottom: 120, left: 50, right: 80,
@@ -36,7 +37,7 @@ const categories = [
 describe('ExportPopover', () => {
   beforeEach(() => {
     document.body.innerHTML = ''
-    ;(bookmarksExportUrl as ReturnType<typeof vi.fn>).mockClear()
+    bookmarksExportUrl.mockClear()
   })
 
   it('renders nothing when closed', () => {

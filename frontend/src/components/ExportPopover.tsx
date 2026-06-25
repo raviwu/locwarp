@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { useT } from '../i18n'
-import { bookmarksExportUrl, BookmarkExportFormat } from '../services/api'
+import { useServices } from '../contexts/ServicesContext'
+import type { BookmarkExportFormat } from '../contract/apiGateway'
 
 interface Category { id: string; name: string }
 
@@ -13,6 +14,7 @@ interface Props {
 }
 
 export const ExportPopover: React.FC<Props> = ({ open, anchorRect, categories, onClose }) => {
+  const { api } = useServices()
   const t = useT()
   const [scope, setScope] = useState<'all' | 'one'>('all')
   const [categoryId, setCategoryId] = useState<string>(categories[0]?.id ?? 'default')
@@ -41,7 +43,7 @@ export const ExportPopover: React.FC<Props> = ({ open, anchorRect, categories, o
   const top = Math.min(anchorRect.bottom + 4, window.innerHeight - 280)
   const left = Math.min(anchorRect.left, window.innerWidth - 280)
 
-  const url = bookmarksExportUrl({
+  const url = api.bookmarksExportUrl({
     category_id: scope === 'one' ? categoryId : null,
     format,
   })
