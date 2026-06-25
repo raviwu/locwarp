@@ -476,12 +476,12 @@ const App: React.FC = () => {
   }, [])
 
   const handleClearWaypoints = useCallback(() => {
-    sim.setWaypoints([])
-  }, [sim])
+    simRef.current.setWaypoints([])
+  }, [])
 
   const handleRemoveWaypoint = useCallback((index: number) => {
-    sim.setWaypoints((prev: any[]) => prev.filter((_: any, i: number) => i !== index))
-  }, [sim])
+    simRef.current.setWaypoints((prev: any[]) => prev.filter((_: any, i: number) => i !== index))
+  }, [])
 
   // Move a waypoint up / down inside the Loop / MultiStop list. waypoints[0]
   // is the implicit start (current device position when the first add fired),
@@ -489,7 +489,7 @@ const App: React.FC = () => {
   // can't be moved into position 0. Same idempotent pattern as the remove
   // handler: swap two entries inside the immutable list.
   const handleMoveWaypoint = useCallback((index: number, direction: -1 | 1) => {
-    sim.setWaypoints((prev: any[]) => {
+    simRef.current.setWaypoints((prev: any[]) => {
       const target = index + direction
       if (index <= 0 || target <= 0) return prev
       if (index >= prev.length || target >= prev.length) return prev
@@ -499,7 +499,7 @@ const App: React.FC = () => {
       next[target] = tmp
       return next
     })
-  }, [sim])
+  }, [])
 
   // Trim the waypoint list so the chosen index becomes the new start.
   // Everything before `index` is dropped — the iPhone won't walk back
