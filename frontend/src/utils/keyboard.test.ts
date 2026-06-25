@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { isImeComposing, isSubmitEnter } from './keyboard'
+import { isImeComposing, isSubmitEnter, isTypingTarget } from './keyboard'
 import type { KeyboardEvent } from 'react'
 
 // Minimal duck-typed React KeyboardEvent. The util only reads
@@ -43,3 +43,37 @@ describe('isSubmitEnter', () => {
     expect(isSubmitEnter(ke({ key: 'a' }))).toBe(false)
   })
 })
+
+describe('isTypingTarget', () => {
+  it('returns true for an INPUT element', () => {
+    const el = document.createElement('input');
+    expect(isTypingTarget(el)).toBe(true);
+  });
+
+  it('returns true for a TEXTAREA element', () => {
+    const el = document.createElement('textarea');
+    expect(isTypingTarget(el)).toBe(true);
+  });
+
+  it('returns true for a contentEditable element', () => {
+    const el = document.createElement('div');
+    // jsdom does not derive isContentEditable from the attribute, so set it
+    // explicitly via the property to model the runtime DOM behaviour.
+    Object.defineProperty(el, 'isContentEditable', { value: true, configurable: true });
+    expect(isTypingTarget(el)).toBe(true);
+  });
+
+  it('returns false for a plain DIV (not editable)', () => {
+    const el = document.createElement('div');
+    expect(isTypingTarget(el)).toBe(false);
+  });
+
+  it('returns false for a BUTTON element', () => {
+    const el = document.createElement('button');
+    expect(isTypingTarget(el)).toBe(false);
+  });
+
+  it('returns false for null', () => {
+    expect(isTypingTarget(null)).toBe(false);
+  });
+});

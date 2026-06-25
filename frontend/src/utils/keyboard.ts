@@ -19,3 +19,19 @@ export function isImeComposing(e: KeyboardEvent): boolean {
 export function isSubmitEnter(e: KeyboardEvent): boolean {
   return e.key === 'Enter' && !isImeComposing(e);
 }
+
+/**
+ * True when the event target is a text-entry element — an INPUT, a TEXTAREA,
+ * or any contentEditable host. The app-level global keydown listener uses
+ * this to BAIL OUT so single-key shortcuts (Space / R / P / B) never fire
+ * while the user is typing into the address search, a coordinate field, or
+ * any dialog input. Takes the raw `EventTarget` (native `KeyboardEvent.target`
+ * is `EventTarget | null`) so it works outside React's synthetic events.
+ */
+export function isTypingTarget(target: EventTarget | null): boolean {
+  if (target === null) return false;
+  const el = target as HTMLElement;
+  const tag = el.tagName;
+  if (tag === 'INPUT' || tag === 'TEXTAREA') return true;
+  return el.isContentEditable === true;
+}
