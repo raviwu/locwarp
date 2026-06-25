@@ -39,6 +39,22 @@ python3 -m PyInstaller locwarp-backend.spec --noconfirm \
 
 echo
 echo "============================================================"
+echo " [1b/3] Frozen-binary self-check (import the fragile native chain)"
+echo "============================================================"
+# Run the freshly built binary with --self-check: it imports the whole
+# PyInstaller-fragile native chain (mobile_image_mounter/pyimg4/apple_compress,
+# service_connection/prompt_toolkit, timezonefinder/h3) and exits non-zero on
+# the first PackageNotFoundError/ImportError. set -e then fails the whole build,
+# turning every historical "dev-good / DMG-broken" metadata gap into a red here.
+SELF_CHECK_BIN="$ROOT/dist-py/locwarp-backend/locwarp-backend"
+if [[ ! -x "$SELF_CHECK_BIN" ]]; then
+    echo "ERROR: built backend binary not found at $SELF_CHECK_BIN" >&2
+    exit 1
+fi
+"$SELF_CHECK_BIN" --self-check
+
+echo
+echo "============================================================"
 echo " [2/3] Build frontend with Vite"
 echo "============================================================"
 cd "$ROOT/frontend"
