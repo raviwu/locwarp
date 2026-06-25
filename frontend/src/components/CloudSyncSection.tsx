@@ -36,6 +36,10 @@ export function CloudSyncSection() {
       setStatus(next)
     } catch (e) {
       setError(String(e))
+      // Re-fetch backend truth so the checkbox reflects actual state after
+      // an abort (35s timeout or Cancel) rather than showing the stale
+      // pre-toggle value until the modal is closed and remounted.
+      void refresh()
     }
   }
 

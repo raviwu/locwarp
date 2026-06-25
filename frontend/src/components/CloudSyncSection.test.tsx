@@ -183,4 +183,27 @@ describe('CloudSyncSection', () => {
     const checkbox = await screen.findByRole('checkbox')
     expect(checkbox).toBeDisabled()
   })
+
+  it('re-fetches status (refresh) after an AbortError so UI reconciles with backend truth', async () => {
+    // Initial state: disabled, iCloud detected.
+    vi.mocked(cloudSyncStatus).mockResolvedValueOnce(
+      STATUS({ detected_icloud_path: '/iCloud/LocWarp' }),
+    )
+    // After the failed toggle, refresh() fetches status again (enabled).
+    vi.mocked(cloudSyncStatus).mockResolvedValueOnce(
+      STATUS({ enabled: true, sync_folder: '/iCloud/LocWarp', detected_icloud_path: '/iCloud/LocWarp' }),
+    )
+    // Toggle throws an AbortError (35s timeout / Cancel path).
+    const abortErr = new DOMException('The operation was aborted.', 'AbortError')
+    vi.mocked(cloudSyncEnable).mockRejectedValue(abortErr)
+
+    render(<CloudSyncSection />)
+    const checkbox = await screen.findByRole('checkbox')
+    fireEvent.click(checkbox)
+
+    // After the abort the component must re-fetch: cloudSyncStatus called 2x total.
+    await waitFor(() => expect(cloudSyncStatus).toHaveBeenCalledTimes(2))
+    // The second fetch returned enabled=true, so the checkbox now reflects that.
+    await waitFor(() => expect(screen.getByRole('checkbox')).toBeChecked())
+  })
 })
