@@ -221,6 +221,7 @@ async def loop(req: LoopRequest, registry=Depends(get_engine_registry)):
         route_engine=req.route_engine,
         lap_count=req.lap_count,
         jump_mode=req.jump_mode, jump_interval=req.jump_interval,
+        timestamps=req.timestamps,
     ))
     return {"status": "started", "waypoints": len(req.waypoints), "mode": req.mode}
 

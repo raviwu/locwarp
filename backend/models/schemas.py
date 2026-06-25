@@ -94,6 +94,12 @@ class LoopRequest(BaseModel):
     # wants the device to dwell at each waypoint, not interpolate between.
     jump_mode: bool = False
     jump_interval: float = 12.0
+    # Per-waypoint seconds-from-start offsets, parallel to `waypoints`. When
+    # present the engine's timed-replay branch is activated and the route plays
+    # back at its original GPX cadence instead of at the profile speed.
+    # Additive / backward-compatible: existing callers omit this field and the
+    # engine falls through to the constant-speed path unchanged.
+    timestamps: list[float] | None = None
 
 
 class MultiStopRequest(BaseModel):
