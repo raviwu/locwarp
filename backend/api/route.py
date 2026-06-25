@@ -1,6 +1,6 @@
 import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from pydantic import BaseModel
@@ -143,13 +143,14 @@ async def delete_route_category(cat_id: str, rm=Depends(get_route_manager)):
 async def import_gpx(file: UploadFile = File(...), rm=Depends(get_route_manager), gpx_service=Depends(get_gpx_service)):
     content = await file.read()
     text = content.decode("utf-8")
-    coords = gpx_service.parse_gpx(text)
+    coords, offsets = gpx_service.parse_gpx_timed(text)
     raw_name = file.filename or "Imported GPX"
     base_name = raw_name.rsplit(".", 1)[0] if raw_name.lower().endswith(".gpx") else raw_name
     route = SavedRoute(
         name=base_name or "Imported GPX",
         waypoints=coords,
         profile="walking",
+        timestamps=offsets,
     )
     saved = rm.create_route(route)
     return {"status": "imported", "id": saved.id, "points": len(coords)}
@@ -160,7 +161,17 @@ async def export_gpx(route_id: str, rm=Depends(get_route_manager), gpx_service=D
     route = next((r for r in rm.list_routes() if r.id == route_id), None)
     if route is None:
         raise HTTPException(status_code=404, detail="Route not found")
-    points = [{"lat": c.lat, "lng": c.lng} for c in route.waypoints]
+    ts = list(route.timestamps or [])
+    use_timing = len(ts) == len(route.waypoints) and len(ts) >= 2
+    if use_timing:
+        base = datetime(2020, 1, 1, tzinfo=timezone.utc)
+        points = [
+            {"lat": c.lat, "lng": c.lng,
+             "timestamp": (base + timedelta(seconds=ts[i])).isoformat()}
+            for i, c in enumerate(route.waypoints)
+        ]
+    else:
+        points = [{"lat": c.lat, "lng": c.lng} for c in route.waypoints]
     gpx_xml = gpx_service.generate_gpx(points, name=route.name)
     from fastapi.responses import Response
     import urllib.parse

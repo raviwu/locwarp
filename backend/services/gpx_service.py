@@ -25,36 +25,55 @@ class GpxService:
         """Parse raw GPX XML into a flat list of :class:`Coordinate`.
 
         The method looks at tracks first, then routes, then waypoints --
-        whichever source has points wins.
-        """
+        whichever source has points wins. Timing is ignored here; use
+        parse_gpx_timed when you also need the <time> offsets."""
+        coords, _offsets = GpxService.parse_gpx_timed(gpx_content)
+        return coords
+
+    @staticmethod
+    def parse_gpx_timed(gpx_content: str) -> tuple[list[Coordinate], list[float]]:
+        """Parse GPX into (coords, offsets).
+
+        `offsets` is per-point seconds-from-start derived from <time> on TRACK
+        points. It is returned only when EVERY track point carries a <time>
+        and there is at least one track point; otherwise (no tracks, partial
+        times, or route/waypoint source) `offsets` is [] so callers fall back
+        to profile-speed replay. Coords follow the same track>route>waypoint
+        precedence as before."""
         gpx = gpxpy.parse(gpx_content)
         coords: list[Coordinate] = []
 
-        # 1. Track points
+        # 1. Track points — the only source that carries timing here.
+        times: list[datetime | None] = []
         for track in gpx.tracks:
             for segment in track.segments:
                 for pt in segment.points:
                     coords.append(Coordinate(lat=pt.latitude, lng=pt.longitude))
-
+                    times.append(pt.time)
         if coords:
             logger.info("Parsed %d track points from GPX", len(coords))
-            return coords
+            offsets: list[float] = []
+            if times and all(t is not None for t in times):
+                base = times[0]
+                offsets = [(t - base).total_seconds() for t in times]  # type: ignore[operator]
+                # Guard against non-monotonic clocks in the source file.
+                if any(offsets[i] > offsets[i + 1] for i in range(len(offsets) - 1)):
+                    offsets = []
+            return coords, offsets
 
-        # 2. Route points
+        # 2. Route points (no timing).
         for route in gpx.routes:
             for pt in route.points:
                 coords.append(Coordinate(lat=pt.latitude, lng=pt.longitude))
-
         if coords:
             logger.info("Parsed %d route points from GPX", len(coords))
-            return coords
+            return coords, []
 
-        # 3. Waypoints
+        # 3. Waypoints (no timing).
         for pt in gpx.waypoints:
             coords.append(Coordinate(lat=pt.latitude, lng=pt.longitude))
-
         logger.info("Parsed %d waypoints from GPX", len(coords))
-        return coords
+        return coords, []
 
     # ------------------------------------------------------------------
     # Export

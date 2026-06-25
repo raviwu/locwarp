@@ -203,6 +203,11 @@ class SavedRoute(BaseModel):
     # Set whenever the route is replaced (PUT /saved/{id}) so the UI can
     # show a "last modified" timestamp distinct from created_at.
     updated_at: str = ""
+    # Per-waypoint seconds-from-start, parallel to `waypoints`. Empty = a
+    # timing-less route (replay at profile speed). Populated from GPX <time>
+    # on import; honored by the engine's timing-aware interpolation. Additive
+    # / backward-compatible: pre-existing routes.json files load with [].
+    timestamps: list[float] = []
 
 
 class RouteMoveRequest(BaseModel):
