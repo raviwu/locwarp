@@ -129,7 +129,9 @@ describe('DeviceChipRow trust_required chips', () => {
       />,
     )
     expect(screen.getByTitle('A · Connected One')).toBeInTheDocument()
-    // trust chip rendered with its name + the existing trust badge label key
+    // trust chip rendered with its name + the existing trust badge label key;
+    // letter is the name-initial 'N' (first char of 'Needs Trust')
+    expect(screen.getByTitle('N · Needs Trust')).toBeInTheDocument()
     expect(screen.getByText('· Needs Trust')).toBeInTheDocument()
     expect(screen.getByText('device.pair_chip_trust')).toBeInTheDocument()
   })
@@ -146,8 +148,8 @@ describe('DeviceChipRow trust_required chips', () => {
         {...props}
       />,
     )
-    // With no connected devices, the trust chip takes letter A.
-    fireEvent.contextMenu(screen.getByTitle('A · Needs Trust'))
+    // The trust chip is labeled by the device's own name-initial ('N' for 'Needs Trust').
+    fireEvent.contextMenu(screen.getByTitle('N · Needs Trust'))
     fireEvent.click(screen.getByText('device.chip_retrust'))
     expect(onReTrust).toHaveBeenCalledWith('t1')
   })
@@ -217,30 +219,49 @@ describe('DeviceChipRow callbacks wire the device udid', () => {
   })
 })
 
-describe('DeviceChipRow trust chip letter collision (FIX 6)', () => {
+describe('DeviceChipRow trust chip name-initial label (FU#2)', () => {
   function trustDevice(udid: string, name: string): DeviceInfo {
     return { udid, name, ios_version: '17.0', connection_type: 'usb', is_connected: false, pair_status: 'trust_required' }
   }
 
-  it('two trust chips with 2 connected devices get DISTINCT visible labels (not both C)', () => {
+  it('two trust chips with distinct-initial names each show their own name-initial', () => {
     const props = baseProps()
     const onReTrust = vi.fn()
     render(
       <DeviceChipRow
         devices={[makeDevice('u1', 'Connected One'), makeDevice('u2', 'Connected Two')]}
-        trustRequired={[trustDevice('t1', 'Trust Alpha'), trustDevice('t2', 'Trust Beta')]}
+        trustRequired={[trustDevice('t1', 'Alpha iPhone'), trustDevice('t2', 'Beta iPhone')]}
         runtimes={emptyRuntimes}
         onReTrust={onReTrust}
         {...props}
       />,
     )
-    // Both trust chips must be present and have DIFFERENT letters.
-    const chipAlpha = screen.getByTitle(/Trust Alpha/)
-    const chipBeta = screen.getByTitle(/Trust Beta/)
-    const letterAlpha = chipAlpha.getAttribute('title')!.split(' ·')[0]
-    const letterBeta = chipBeta.getAttribute('title')!.split(' ·')[0]
-    // Before fix both would be 'C'; after fix they must differ.
-    expect(letterAlpha).not.toBe(letterBeta)
+    // Each trust chip is labeled by its device's own name-initial.
+    expect(screen.getByTitle('A · Alpha iPhone')).toBeInTheDocument()
+    expect(screen.getByTitle('B · Beta iPhone')).toBeInTheDocument()
+    // Labels are distinct (A vs B).
+    const chipA = screen.getByTitle('A · Alpha iPhone')
+    const chipB = screen.getByTitle('B · Beta iPhone')
+    const letterA = chipA.getAttribute('title')!.split(' ·')[0]
+    const letterB = chipB.getAttribute('title')!.split(' ·')[0]
+    expect(letterA).not.toBe(letterB)
+  })
+
+  it('trust chip letter is derived from the device name, not position (2 connected + 1 trust)', () => {
+    const props = baseProps()
+    render(
+      <DeviceChipRow
+        devices={[makeDevice('u1', 'Connected One'), makeDevice('u2', 'Connected Two')]}
+        trustRequired={[trustDevice('t1', 'Xiao Mi')]}
+        runtimes={emptyRuntimes}
+        {...props}
+      />,
+    )
+    // Connected chips keep A, B (positional).
+    expect(screen.getByTitle('A · Connected One')).toBeInTheDocument()
+    expect(screen.getByTitle('B · Connected Two')).toBeInTheDocument()
+    // Trust chip: first char of 'Xiao Mi' is 'X', not 'C' (what the old positional formula gave).
+    expect(screen.getByTitle('X · Xiao Mi')).toBeInTheDocument()
   })
 })
 

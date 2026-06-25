@@ -11,7 +11,21 @@ export const DEVICE_COLORS: Record<'A' | 'B' | 'C', string> = {
   C: '#9c6ade',
 }
 
-export type DeviceLetter = 'A' | 'B' | 'C'
+// Palette of fallback accent colors cycled by char-code for trust chips
+// whose initial isn't A/B/C. Chosen to be visually distinct from A/B/C colors.
+const FALLBACK_PALETTE = [
+  '#e91e63', '#00bcd4', '#8bc34a', '#ff5722', '#607d8b',
+  '#009688', '#ff4081', '#7c4dff', '#64dd17', '#00b0ff',
+]
+
+/** Returns the accent color for a chip letter (A/B/C -> fixed; other -> palette). */
+export function accentForLetter(letter: string): string {
+  if (letter === 'A' || letter === 'B' || letter === 'C') return DEVICE_COLORS[letter]
+  const code = letter.charCodeAt(0) || 0
+  return FALLBACK_PALETTE[code % FALLBACK_PALETTE.length]
+}
+
+export type DeviceLetter = string
 
 interface Props {
   letter: DeviceLetter
@@ -69,7 +83,7 @@ export function DeviceChip({ letter, device, runtime, variant = 'connected', onD
 
   const isTrust = variant === 'trust_required'
   const trustDot = '#ffb627'
-  const accent = DEVICE_COLORS[letter]
+  const accent = accentForLetter(letter)
   const shortName = (device.name || 'iPhone').slice(0, 14)
 
   return (
