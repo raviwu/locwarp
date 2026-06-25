@@ -184,6 +184,9 @@ export function useSimActions(args: UseSimActionsArgs) {
     } else {
       try {
         await sim.teleport(lat, lng)
+        if (lastPositionRef.current) {
+          showToast(t('toast.teleport_undo_hint'))
+        }
       } catch {
         showToast(t('toast.teleport_failed'))
         return

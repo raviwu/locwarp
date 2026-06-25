@@ -112,7 +112,7 @@ describe('useSimActions — teleport', () => {
     expect(sim.teleport).toHaveBeenCalledTimes(1)
     expect(sim.teleport).toHaveBeenCalledWith(10, 20)
     expect(sim.teleportAll).not.toHaveBeenCalled()
-    expect(showToast).not.toHaveBeenCalled() // single path: no fan-out toast
+    expect(showToast).toHaveBeenCalledWith('toast.teleport_undo_hint') // single path: undo-hint toast (Task 6)
   })
 
   it('dual device: sets currentPosition, fans out teleportAll(udids), toasts the summary', async () => {
@@ -153,6 +153,21 @@ describe('useSimActions — teleport', () => {
     const { result } = setup({ udids: ['A', 'B'], sim })
     await act(async () => { await result.current.handleTeleport(10, 20) })
     expect(sim.setCurrentPosition).toHaveBeenLastCalledWith({ lat: 10, lng: 20 })
+  })
+
+  it('single device: shows the undo-hint toast after a successful teleport (snapshot present)', async () => {
+    const sim = makeSim({ currentPosition: { lat: 1, lng: 2 } })
+    const { result, showToast } = setup({ udids: ['A'], sim })
+    await act(async () => { await result.current.handleTeleport(10, 20) })
+    // teleport succeeded and there was a prior position to snapshot → hint shown.
+    expect(showToast).toHaveBeenCalledWith('toast.teleport_undo_hint')
+  })
+
+  it('single device: NO undo-hint toast when there was no prior position', async () => {
+    const sim = makeSim({ currentPosition: null })
+    const { result, showToast } = setup({ udids: ['A'], sim })
+    await act(async () => { await result.current.handleTeleport(10, 20) })
+    expect(showToast).not.toHaveBeenCalledWith('toast.teleport_undo_hint')
   })
 })
 
