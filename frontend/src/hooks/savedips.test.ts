@@ -24,11 +24,11 @@ describe('readSavedipEntry', () => {
     expect(readSavedipEntry(null)).toEqual({ ip: '10.0.0.2', port: 49152, udid: 'u2' })
   })
 
-  it('falls back to the first entry when the udid does not match any', () => {
+  it('returns null when a non-null udid does not match any entry (no wrong-device fallback)', () => {
     localStorage.setItem('locwarp.tunnel.savedips', JSON.stringify([
       { ip: '10.0.0.2', port: 49152, udid: 'u2', lastUsed: 200 },
     ]))
-    expect(readSavedipEntry('nope')).toEqual({ ip: '10.0.0.2', port: 49152, udid: 'u2' })
+    expect(readSavedipEntry('nope')).toBeNull()
   })
 
   it('returns null on corrupt JSON', () => {

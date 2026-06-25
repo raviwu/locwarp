@@ -1,8 +1,10 @@
 // Read-only view of the per-device WiFi-tunnel savedips list. The WRITER lives
 // in useDevice.startWifiTunnel (it appends {ip,port,udid,lastUsed} after every
 // successful tunnel, newest-first). This helper picks the entry to re-fire on
-// a one-click Reconnect: prefer the entry matching the lost udid, else the
-// most-recent (first) entry.
+// a one-click Reconnect:
+//   - udid provided + matched  → that entry
+//   - udid provided + no match → null (caller hides the button; no wrong-device action)
+//   - udid null/undefined      → most-recent (first) entry (future-caller convenience)
 export interface SavedipEntry {
   ip: string
   port: number
@@ -26,9 +28,11 @@ export function readSavedipEntry(udid: string | null): SavedipEntry | null {
     port: Number(e.port) || 49152,
     udid: typeof e.udid === 'string' && e.udid ? e.udid : undefined,
   })
-  if (udid) {
+  if (udid != null) {
+    // Caller has a specific device in mind: exact match or nothing.
     const match = entries.find((e) => e.udid === udid)
-    if (match) return toEntry(match)
+    return match ? toEntry(match) : null
   }
+  // No udid specified: return the most-recent entry (entries[0]).
   return toEntry(entries[0])
 }
