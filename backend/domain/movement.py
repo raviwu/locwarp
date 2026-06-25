@@ -332,7 +332,8 @@ class RouteInterpolator:
         if not valid:
             return RouteInterpolator.interpolate(coords, speed_mps, interval_sec)
 
-        assert offsets is not None  # narrowed by `valid`
+        if offsets is None:  # narrowed by `valid`; defensive guard, never taken in practice
+            return RouteInterpolator.interpolate(coords, speed_mps, interval_sec)
         base = offsets[0]
         rel = [o - base for o in offsets]  # 0-based original timeline
         total_time = rel[-1]
@@ -399,9 +400,18 @@ class RouteInterpolator:
             t += interval_sec
 
         # Always include the final vertex at the total original span.
+        # Float-accumulation guard: if the last loop tick landed within epsilon
+        # of total_time (e.g. 0.1*120 = 11.999...998 instead of 12.0), its
+        # coords already equal the final vertex.  In that case, canonicalize
+        # its timestamp_offset to total_time rather than appending a near-duplicate.
+        _EPS = 1e-9
         last = coords[-1]
         prev = results[-1]
-        if prev["lat"] != last.lat or prev["lng"] != last.lng or prev["timestamp_offset"] != total_time:
+        _last_offset_close = abs(prev["timestamp_offset"] - total_time) <= _EPS
+        if _last_offset_close and prev["lat"] == last.lat and prev["lng"] == last.lng:
+            # Snap the float-drifted offset to the canonical end time.
+            results[-1]["timestamp_offset"] = total_time
+        else:
             last_seg = max(len(coords) - 2, 0)
             a = coords[last_seg]
             b = coords[last_seg + 1] if len(coords) > 1 else coords[last_seg]
