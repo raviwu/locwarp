@@ -86,7 +86,12 @@ const NearbyPlacesMenu: React.FC<NearbyPlacesMenuProps> = ({
               onClose()
             }}
           >
-            <span style={{ flex: 1 }}>{poi.name}</span>
+            <span style={{ flex: 1 }}>
+              {poi.name}
+              <span style={{ display: 'block', fontSize: 10, opacity: 0.5, marginTop: 1 }}>
+                {poi.subcategory || poi.category}
+              </span>
+            </span>
             <span style={{ fontSize: 10, opacity: 0.6, marginLeft: 8 }}>
               {Math.round(poi.distance_m)}m
             </span>

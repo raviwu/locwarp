@@ -439,7 +439,6 @@ export const STRINGS = {
   'map.nearby_label': { zh: '附近地點', en: 'Nearby places' },
   'map.nearby_loading': { zh: '載入附近地點…', en: 'Loading nearby places…' },
   'map.nearby_error': { zh: '無法載入附近地點', en: "Couldn't load nearby places" },
-  'map.nearby_places': { zh: '附近地點', en: 'Nearby places' },
   'map.navigate_here': { zh: '導航到這裡', en: 'Navigate here' },
   'map.add_waypoint': { zh: '添加路徑點', en: 'Add waypoint' },
   'map.add_bookmark': { zh: '加入座標收藏', en: 'Add to bookmarks' },

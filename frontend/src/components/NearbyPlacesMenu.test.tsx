@@ -58,6 +58,25 @@ describe('NearbyPlacesMenu', () => {
     expect(await screen.findByText('map.nearby_error')).toBeTruthy()
   })
 
+  it('renders category text (subcategory) for each POI row', async () => {
+    render(<NearbyPlacesMenu {...makeProps()} />)
+    expect(await screen.findByText('cafe')).toBeTruthy()
+    expect(screen.getByText('park')).toBeTruthy()
+  })
+
+  it('clicking teleport button calls onTeleport with POI coords and onClose once', async () => {
+    const onTeleport = vi.fn()
+    const onClose = vi.fn()
+    render(<NearbyPlacesMenu {...makeProps({ onTeleport, onClose, deviceConnected: true })} />)
+    await screen.findByText('Cafe A')
+    const teleportBtn = screen.getAllByRole('menuitem', {
+      name: /map\.teleport_here Cafe A/,
+    })[0]
+    fireEvent.click(teleportBtn)
+    expect(onTeleport).toHaveBeenCalledWith(25.001, 121.001)
+    expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
   it('drops a late resolve after unmount (no rows leak)', async () => {
     let resolve!: (v: any) => void
     const nearbyPois = vi.fn(() => new Promise((r) => { resolve = r }))
