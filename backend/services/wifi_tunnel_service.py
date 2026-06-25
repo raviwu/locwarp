@@ -157,8 +157,17 @@ class WifiTunnelService:
                 "Tunnel for %s exited unexpectedly (target=%s:%s); will attempt %d restart(s)",
                 udid, ip, port, len(self._restart_backoff),
             )
+            _degraded_payload: dict = {"udid": udid, **_reason_payload}
+            if self._restart_backoff:
+                # Announce the first upcoming retry so the UI can render
+                # "attempt 1/N, retrying in <next_delay_s>s" + a live countdown.
+                # This event fires ONCE, before the retry loop; attempt is the
+                # first attempt and next_delay_s is the seconds until it runs.
+                _degraded_payload["attempt"] = 1
+                _degraded_payload["max_attempts"] = len(self._restart_backoff)
+                _degraded_payload["next_delay_s"] = self._restart_backoff[0]
             try:
-                await self._publish(("tunnel_degraded", {"udid": udid, **_reason_payload}))
+                await self._publish(("tunnel_degraded", _degraded_payload))
             except Exception:
                 self._logger.exception("Failed to emit tunnel_degraded event")
 
