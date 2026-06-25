@@ -431,18 +431,48 @@ class RouteInterpolator:
     # ------------------------------------------------------------------
 
     @staticmethod
-    def add_jitter(lat: float, lng: float, jitter_meters: float) -> tuple[float, float]:
-        """Add random GPS drift within *jitter_meters* of the given point."""
+    def add_jitter(
+        lat: float, lng: float, jitter_meters: float,
+        rng: "random.Random | None" = None,
+    ) -> tuple[float, float]:
+        """Add random GPS drift within *jitter_meters* of the given point.
+
+        When *rng* is supplied (a seeded ``random.Random``) the drift is
+        deterministic — mirrors the ``random_point_in_radius`` seam so jitter
+        is unit-testable. Defaults to the module ``random`` (current behavior)."""
         if jitter_meters <= 0:
             return lat, lng
 
-        angle = random.uniform(0, 2 * math.pi)
-        dist = random.uniform(0, jitter_meters)
+        r = rng if rng is not None else random
+        angle = r.uniform(0, 2 * math.pi)
+        dist = r.uniform(0, jitter_meters)
 
         dlat = (dist * math.cos(angle)) / _R
         dlng = (dist * math.sin(angle)) / (_R * math.cos(math.radians(lat)))
 
         return lat + math.degrees(dlat), lng + math.degrees(dlng)
+
+    @staticmethod
+    def jitter_speed(
+        speed_mps: float, fraction: float,
+        rng: "random.Random | None" = None,
+    ) -> float:
+        """Apply a Gaussian ±*fraction* multiplicative jitter to *speed_mps*.
+
+        Draws ``g ~ N(0, fraction)`` clamped to ``[-fraction, fraction]`` so
+        the result stays within ±fraction of the base, and floors the output
+        at 0.01 m/s so jittered speed is NEVER <= 0. ``fraction <= 0`` →
+        returns *speed_mps* unchanged. Deterministic when *rng* is seeded."""
+        if fraction <= 0:
+            return speed_mps
+        r = rng if rng is not None else random
+        g = r.gauss(0.0, fraction)
+        if g > fraction:
+            g = fraction
+        elif g < -fraction:
+            g = -fraction
+        scaled = speed_mps * (1.0 + g)
+        return max(scaled, 0.01)
 
     @staticmethod
     def move_point(
