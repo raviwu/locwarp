@@ -87,6 +87,7 @@ ignore_imports =
     api.location -> api.deps
     api.phone_control -> api.deps
     api.route -> api.deps
+    api.system -> api.deps
 unmatched_ignore_imports_alerting = none
 
 # Phase 2 (Group 5b, Task 30): ENFORCED. The global cycle-gate — api/* must

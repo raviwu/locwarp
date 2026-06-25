@@ -6,7 +6,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
+from api.deps import get_device_manager, get_helper_client
 
 router = APIRouter(prefix="/api/system", tags=["system"])
 
@@ -87,3 +88,73 @@ async def shutdown():
     logger.info("Shutdown requested via /api/system/shutdown")
     os.kill(os.getpid(), signal.SIGTERM)
     return {"status": "shutting_down"}
+
+
+# Fixed inland probe coordinate for the offline-geo health check. Times Square,
+# NYC — far from any ocean band so a healthy resolver always returns a real
+# country/timezone. The value is irrelevant beyond "resolver returns non-empty".
+_GEO_PROBE_LAT = 40.7580
+_GEO_PROBE_LNG = -73.9855
+
+
+def _resolve_version() -> str:
+    """Backend version string for the info payload. Reads config.VERSION /
+    config.APP_VERSION if present; falls back to '0.0.0' so /info never 500s
+    on a missing constant."""
+    import config
+    for attr in ("VERSION", "APP_VERSION"):
+        val = getattr(config, attr, None)
+        if isinstance(val, str) and val:
+            return val
+    return "0.0.0"
+
+
+@router.get("/info")
+async def system_info(
+    device_manager=Depends(get_device_manager),
+    helper_client=Depends(get_helper_client),
+):
+    """Expose the otherwise restart-only health states so they are queryable
+    live: tunnel-helper aliveness, per-device {ios, ddi_mounted}, and whether
+    the offline geo resolver is functioning. Never 500s on a probe failure —
+    each probe degrades to a falsy field.
+    """
+    # helper aliveness: derived (no stored handshake flag). If not connected,
+    # skip ping entirely. If connected, a successful ping confirms aliveness.
+    helper_alive = False
+    try:
+        if helper_client is not None and helper_client.is_connected:
+            await helper_client.ping()
+            helper_alive = True
+    except Exception:
+        logger.debug("helper ping failed during /info probe", exc_info=True)
+        helper_alive = False
+
+    # offline geo: request-time probe; resolve() never raises by contract, but
+    # we still guard so a stubbed/broken resolver can never 500 the response.
+    offline_geo_ok = False
+    try:
+        import services.geo_offline as geo_offline
+        cc, tz, _city, _region = geo_offline.resolve(_GEO_PROBE_LAT, _GEO_PROBE_LNG)
+        offline_geo_ok = bool(cc or tz)
+    except Exception:
+        logger.debug("offline geo probe failed during /info", exc_info=True)
+        offline_geo_ok = False
+
+    # per-device: read the live _connections map (each conn carries the stored
+    # ddi_mounted flag set in _ensure_personalized_ddi_mounted).
+    devices = []
+    for udid, conn in dict(device_manager._connections).items():
+        devices.append({
+            "udid": udid,
+            "ios": getattr(conn, "ios_version", "0.0"),
+            "ddi_mounted": bool(getattr(conn, "ddi_mounted", False)),
+            "connection_type": getattr(conn, "connection_type", "USB"),
+        })
+
+    return {
+        "version": _resolve_version(),
+        "helper_alive": helper_alive,
+        "offline_geo_ok": offline_geo_ok,
+        "devices": devices,
+    }
