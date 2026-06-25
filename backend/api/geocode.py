@@ -8,16 +8,18 @@ from fastapi import APIRouter, Depends, HTTPException
 from models.schemas import (
     Coordinate,
     GeocodingResult,
+    NearbyPoi,
     RouteOptimizeRequest,
     RouteOptimizeResponse,
     TimezoneInfo,
 )
 from services import geo_offline
 from api.deps import get_geocoding_service
-from domain.errors import GeocodeError
+from domain.errors import GeocodeError, NearbyPoiError
 from services.geo_extras import (
     _HAVERSINE_PROFILE_SPEED_MPS,
     haversine_duration_matrix,
+    nearby_pois_checked,
     optimize_order_exact,
     optimize_order_nearest_neighbor,
     osrm_table,
@@ -76,6 +78,21 @@ async def reverse_geocode(lat: float, lng: float, geocoding_service=Depends(get_
         country_code=cc.lower(),
         short_name=city or region or (cc.upper() if cc else ""),
     )
+
+
+@router.get("/nearby", response_model=list[NearbyPoi])
+async def nearby(lat: float, lng: float, radius_m: int = 200, limit: int = 40):
+    """Named POIs near a coordinate via Overpass (4-mirror fallback).
+
+    Thin controller over services.geo_extras.nearby_pois_checked. Out-of-range
+    radius/limit → 400; an upstream Overpass outage degrades to an empty list
+    (HTTP 200), never a 500. Imported at the call site so monkeypatching the
+    geo_extras.nearby_pois_checked attribute in tests rebinds the lookup."""
+    import services.geo_extras as _geo_extras
+    try:
+        return await _geo_extras.nearby_pois_checked(lat, lng, radius_m, limit)
+    except NearbyPoiError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
 
 @router.get("/timezone", response_model=TimezoneInfo | None)
