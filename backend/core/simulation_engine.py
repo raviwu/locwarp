@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import random
 import time
 from typing import Awaitable, Callable
 
@@ -59,6 +60,7 @@ class SimulationEngine:
         clock: Callable[[], float] = time.monotonic,
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
         device_port=None,
+        rng: "random.Random | None" = None,
     ) -> None:
         self.location_service = location_service
         # Coordinate-push seam: the DevicePort abstracts the device push so
@@ -87,6 +89,9 @@ class SimulationEngine:
         self.event_callback = event_callback
         self._clock = clock
         self._sleep = sleep
+        # Injectable RNG for deterministic per-tick speed jitter under test
+        # (None -> jitter_speed falls back to the module `random`).
+        self._rng = rng
 
         # Task management
         self._active_task: asyncio.Task | None = None
@@ -751,6 +756,20 @@ class SimulationEngine:
                 lng = point["lng"]
                 bearing = point.get("bearing", 0.0)
 
+                # Per-tick speed jitter: turn a constant speed_mps into a
+                # "breathing" speed (±speed_jitter fraction) that's harder for
+                # anti-spoof checks to flag. jitter_speed is a no-op when the
+                # active profile's speed_jitter == 0 (the value existing
+                # characterization/golden profiles carry), so pacing — which
+                # derives from the base speed_mps via timestamp_offset — is
+                # unchanged; only the reported/used per-tick speed varies.
+                eff_speed = RouteInterpolator.jitter_speed(
+                    speed_mps,
+                    self._active_speed_profile.get("speed_jitter", 0.0),
+                    rng=self._rng,
+                )
+                self._current_speed_mps = eff_speed
+
                 # Anchor wall-clock for this tick BEFORE the position push so
                 # the inter-tick sleep below can subtract whatever push +
                 # emit cost. Without this, every tick took
@@ -777,12 +796,12 @@ class SimulationEngine:
                 self.segment_index = min(idx, self.total_segments)
 
                 combined_remaining = self.distance_remaining + self._route_offset_remaining
-                combined_eta = combined_remaining / max(speed_mps, 0.001)
+                combined_eta = combined_remaining / max(eff_speed, 0.001)
                 await self._emit("position_update", {
                     "lat": jittered_lat,
                     "lng": jittered_lng,
                     "bearing": bearing,
-                    "speed_mps": speed_mps,
+                    "speed_mps": eff_speed,
                     "progress": self.eta_tracker.progress,
                     "distance_remaining": combined_remaining,
                     "distance_traveled": self.distance_traveled,

@@ -130,6 +130,7 @@ class SpeedProfile(TypedDict):
     speed_mps: float        # metres per second
     jitter: float           # ± jitter added to each tick for realism (metres)
     update_interval: float  # tick period (seconds)
+    speed_jitter: float     # ± fraction of speed_mps applied per tick (0 = off)
 
 
 # Speed profiles (m/s). Defaults align with the frontend ControlPanel
@@ -138,9 +139,9 @@ class SpeedProfile(TypedDict):
 # meant actual running; the i18n label was later renamed to 腳踏車 and
 # the chip value bumped to bike speed without touching the backend.
 SPEED_PROFILES: dict[str, SpeedProfile] = {
-    "walking": {"speed_mps": 3.0, "jitter": 0.5, "update_interval": 1.0},
-    "running": {"speed_mps": 5.5, "jitter": 0.7, "update_interval": 0.5},
-    "driving": {"speed_mps": 16.7, "jitter": 1.2, "update_interval": 0.5},
+    "walking": {"speed_mps": 3.0, "jitter": 0.5, "update_interval": 1.0, "speed_jitter": 0.12},
+    "running": {"speed_mps": 5.5, "jitter": 0.7, "update_interval": 0.5, "speed_jitter": 0.12},
+    "driving": {"speed_mps": 16.7, "jitter": 1.2, "update_interval": 0.5, "speed_jitter": 0.12},
 }
 
 
@@ -149,7 +150,7 @@ def make_speed_profile(speed_kmh: float) -> SpeedProfile:
     speed_mps = speed_kmh / 3.6
     jitter = min(speed_mps * 0.2, 1.5)
     update_interval = 0.5 if speed_mps > 5 else 1.0
-    return {"speed_mps": speed_mps, "jitter": jitter, "update_interval": update_interval}
+    return {"speed_mps": speed_mps, "jitter": jitter, "update_interval": update_interval, "speed_jitter": 0.12}
 
 
 def resolve_speed_profile(
