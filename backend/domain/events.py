@@ -54,3 +54,11 @@ class DdiMountFailedEvent(WsEvent):
     type: str = "ddi_mount_failed"
     udid: str
     error: Optional[str] = None
+
+
+class ConnectProgressEvent(WsEvent):
+    type: str = "connect_progress"
+    phase: str
+    udid: Optional[str] = None
+    attempt: Optional[int] = None
+    max: Optional[int] = None
