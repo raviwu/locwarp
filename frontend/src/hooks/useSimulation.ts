@@ -136,6 +136,14 @@ export function useSimulation(
   const [progress, setProgress] = useState(0)
   const [eta, setEta] = useState<number | null>(null)
   const [waypoints, setWaypoints] = useState<LatLng[]>([])
+  // Per-waypoint GPX seconds-from-start offsets, parallel to `waypoints`.
+  // Set when loading a timed saved route; consumed (and cleared) by startLoop
+  // so they are sent once to the backend and don't linger across subsequent
+  // hand-drawn loops. Stored in a ref so updates don't trigger re-renders.
+  const waypointTimestampsRef = useRef<number[] | null>(null)
+  const setWaypointTimestamps = useCallback((ts: number[] | null) => {
+    waypointTimestampsRef.current = ts
+  }, [])
   const [routePath, setRoutePath] = useState<LatLng[]>([])
   const [customSpeedKmh, setCustomSpeedKmh] = useState<number | null>(null)
   const [speedMinKmh, setSpeedMinKmh] = useState<number | null>(null)
@@ -740,7 +748,11 @@ export function useSimulation(
         // and break the backend↔UI seg_idx mapping for highlighting.
         setProgress(0)
         setLapProgress(null)
-        const res = await api.startLoop(wps, moveMode, { speed_kmh: customSpeedKmh, speed_min_kmh: speedMinKmh, speed_max_kmh: speedMaxKmh }, { pause_enabled: pauseLoop.enabled, pause_min: pauseLoop.min, pause_max: pauseLoop.max }, undefined, straightLine, loopLapCount, routeEngine, { jump_mode: jumpMode, jump_interval: jumpInterval })
+        // Consume GPX timestamps once (cleared immediately so they don't
+        // accidentally persist across subsequent hand-drawn loop starts).
+        const timestamps = waypointTimestampsRef.current ?? undefined
+        waypointTimestampsRef.current = null
+        const res = await api.startLoop(wps, moveMode, { speed_kmh: customSpeedKmh, speed_min_kmh: speedMinKmh, speed_max_kmh: speedMaxKmh }, { pause_enabled: pauseLoop.enabled, pause_min: pauseLoop.min, pause_max: pauseLoop.max }, undefined, straightLine, loopLapCount, routeEngine, { jump_mode: jumpMode, jump_interval: jumpInterval }, timestamps)
         setStatus((prev) => ({ ...prev, running: true, paused: false }))
         setEffectiveSpeed({ kmh: customSpeedKmh ?? MODE_DEFAULT_KMH[moveMode], min: speedMinKmh, max: speedMaxKmh })
         return res
@@ -985,7 +997,11 @@ export function useSimulation(
   const startLoopAll = useCallback(async (udids: string[], wps: LatLng[]) => {
     await preSyncStart(udids)
     setLapProgress(null)
-    return fanout(udids, 'loop', (u) => api.startLoop(wps, moveMode, { speed_kmh: customSpeedKmh, speed_min_kmh: speedMinKmh, speed_max_kmh: speedMaxKmh }, { pause_enabled: pauseLoop.enabled, pause_min: pauseLoop.min, pause_max: pauseLoop.max }, u, straightLine, loopLapCount, routeEngine, { jump_mode: jumpMode, jump_interval: jumpInterval }))
+    // Consume GPX timestamps once — same as startLoop so fan-out paths also
+    // activate the timed-replay branch when a timed saved route is played.
+    const timestamps = waypointTimestampsRef.current ?? undefined
+    waypointTimestampsRef.current = null
+    return fanout(udids, 'loop', (u) => api.startLoop(wps, moveMode, { speed_kmh: customSpeedKmh, speed_min_kmh: speedMinKmh, speed_max_kmh: speedMaxKmh }, { pause_enabled: pauseLoop.enabled, pause_min: pauseLoop.min, pause_max: pauseLoop.max }, u, straightLine, loopLapCount, routeEngine, { jump_mode: jumpMode, jump_interval: jumpInterval }, timestamps))
   }, [fanout, preSyncStart, moveMode, customSpeedKmh, speedMinKmh, speedMaxKmh, pauseLoop, straightLine, loopLapCount, routeEngine, jumpMode, jumpInterval])
   const multiStopAll = useCallback(async (udids: string[], wps: LatLng[], dur: number, loop: boolean) => {
     await preSyncStart(udids)
@@ -1077,6 +1093,7 @@ export function useSimulation(
     eta,
     waypoints,
     setWaypoints,
+    setWaypointTimestamps,
     routePath,
     customSpeedKmh,
     setCustomSpeedKmh,

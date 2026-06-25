@@ -18,6 +18,10 @@ export interface SavedRoute {
   category_id?: string;
   created_at?: string;
   updated_at?: string;
+  // Per-waypoint seconds-from-start offsets from a GPX import. When present
+  // the backend activates timed replay instead of constant-speed playback.
+  // Absent for hand-drawn or legacy routes (pre-GPX import).
+  timestamps?: number[];
 }
 
 interface RouteListProps {

@@ -251,8 +251,8 @@ export type JumpOpts = { jump_mode?: boolean; jump_interval?: number }
 const jm = (o?: JumpOpts) => (o?.jump_mode ? { jump_mode: true, jump_interval: o.jump_interval ?? 12 } : {})
 export const navigate = (lat: number, lng: number, mode: string, speed?: SpeedOpts, udid?: string, straightLine?: boolean, routeEngine?: string) =>
   request<any>('POST', '/api/location/navigate', { lat, lng, mode, ...sp(speed), ...sl(straightLine), ...re(routeEngine), ...ud(udid) })
-export const startLoop = (waypoints: { lat: number; lng: number }[], mode: string, speed?: SpeedOpts, pause?: PauseOpts, udid?: string, straightLine?: boolean, lapCount?: number | null, routeEngine?: string, jump?: JumpOpts) =>
-  request<any>('POST', '/api/location/loop', { waypoints, mode, ...sp(speed), ...pp(pause), ...sl(straightLine), ...re(routeEngine), ...ud(udid), ...(lapCount != null && lapCount > 0 ? { lap_count: lapCount } : {}), ...jm(jump) })
+export const startLoop = (waypoints: { lat: number; lng: number }[], mode: string, speed?: SpeedOpts, pause?: PauseOpts, udid?: string, straightLine?: boolean, lapCount?: number | null, routeEngine?: string, jump?: JumpOpts, timestamps?: number[]) =>
+  request<any>('POST', '/api/location/loop', { waypoints, mode, ...sp(speed), ...pp(pause), ...sl(straightLine), ...re(routeEngine), ...ud(udid), ...(lapCount != null && lapCount > 0 ? { lap_count: lapCount } : {}), ...jm(jump), ...(timestamps && timestamps.length > 0 ? { timestamps } : {}) })
 export const multiStop = (waypoints: { lat: number; lng: number }[], mode: string, stop_duration: number, loop: boolean, speed?: SpeedOpts, pause?: PauseOpts, udid?: string, straightLine?: boolean, routeEngine?: string, jump?: JumpOpts) =>
   request<any>('POST', '/api/location/multistop', { waypoints, mode, stop_duration, loop, ...sp(speed), ...pp(pause), ...sl(straightLine), ...re(routeEngine), ...ud(udid), ...jm(jump) })
 export const randomWalk = (center: { lat: number; lng: number }, radius_m: number, mode: string, speed?: SpeedOpts, pause?: PauseOpts, udid?: string, seed?: number | null, straightLine?: boolean, routeEngine?: string) =>

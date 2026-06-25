@@ -626,18 +626,28 @@ const App: React.FC = () => {
   }, [routePasteText, parseRoutePaste, sim, device, t, showToast])
 
   // -- ControlPanel handlers --
-  const [routeLoadConfirm, setRouteLoadConfirm] = useState<{ name: string; waypoints: { lat: number; lng: number }[] } | null>(null)
+  const [routeLoadConfirm, setRouteLoadConfirm] = useState<{
+    name: string;
+    waypoints: { lat: number; lng: number }[];
+    timestamps?: number[];
+  } | null>(null)
   const handleRouteLoad = useCallback((id: string) => {
     const route = savedRoutes.find((r) => r.id === id)
     if (!route || !Array.isArray(route.waypoints) || route.waypoints.length === 0) return
     const wps = route.waypoints.map((w: any) => ({ lat: w.lat, lng: w.lng }))
-    setRouteLoadConfirm({ name: route.name ?? '', waypoints: wps })
+    const ts = Array.isArray((route as any).timestamps) && (route as any).timestamps.length > 0
+      ? (route as any).timestamps as number[]
+      : undefined
+    setRouteLoadConfirm({ name: route.name ?? '', waypoints: wps, timestamps: ts })
   }, [savedRoutes])
 
   const confirmRouteLoad = useCallback(async (flyToStart: boolean) => {
     if (!routeLoadConfirm) return
-    const { waypoints } = routeLoadConfirm
+    const { waypoints, timestamps } = routeLoadConfirm
     sim.setWaypoints(waypoints)
+    // Store GPX timestamps for the next startLoop / startLoopAll call.
+    // setWaypointTimestamps(null) is a no-op reset for timestamp-free routes.
+    sim.setWaypointTimestamps(timestamps ?? null)
     if (flyToStart && waypoints.length > 0) {
       const first = waypoints[0]
       const udids = device.connectedDevices.map((d) => d.udid)
@@ -984,6 +994,11 @@ const App: React.FC = () => {
       category_id: r.category_id || 'default',
       created_at: r.created_at,
       updated_at: r.updated_at,
+      // Thread GPX timestamps through to the panel so RouteList exposes them
+      // and handleRouteLoad can pass them into the loop request.
+      timestamps: Array.isArray(r.timestamps) && r.timestamps.length > 0
+        ? r.timestamps as number[]
+        : undefined,
     })),
     [savedRoutes],
   )
