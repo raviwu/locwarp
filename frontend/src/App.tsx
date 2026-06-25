@@ -22,6 +22,7 @@ import { UserAvatar, avatarToHtml, loadAvatar, saveAvatar, loadCustomPng, saveCu
 import type { ApiGateway } from './contract/apiGateway'
 import { parseCoord } from './utils/coords'
 import { toastForFanout } from './utils/toast'
+import { readSavedipEntry } from './hooks/savedips'
 
 import MapView from './components/MapView'
 import ControlPanel from './components/ControlPanel'
@@ -1599,11 +1600,35 @@ const App: React.FC = () => {
               position: 'absolute', top: 12, left: '50%', transform: 'translateX(-50%)',
               zIndex: 2000, background: '#e53935', color: '#fff', padding: '8px 20px',
               borderRadius: 6, fontSize: 13, boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
-              cursor: 'pointer', maxWidth: '80%', textAlign: 'center',
+              maxWidth: '80%', textAlign: 'center',
+              display: 'flex', alignItems: 'center', gap: 12, justifyContent: 'center',
             }}
-            onClick={sim.clearError}
           >
-            {sim.error}
+            <span style={{ cursor: 'pointer' }} onClick={sim.clearError}>{sim.error}</span>
+            {(() => {
+              const entry = readSavedipEntry(sim.lostUdid)
+              if (!entry) return null
+              return (
+                <button
+                  onClick={async (e) => {
+                    e.stopPropagation()
+                    try {
+                      await device.startWifiTunnel(entry.ip, entry.port, entry.udid)
+                      sim.clearError()
+                    } catch (err: any) {
+                      showToast(err?.message ?? t('wifi.tunnel_reconnect_now'))
+                    }
+                  }}
+                  style={{
+                    fontSize: 12, fontWeight: 600, padding: '4px 12px', borderRadius: 4,
+                    background: '#fff', color: '#e53935', border: 'none', cursor: 'pointer',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {t('wifi.tunnel_reconnect_now')}
+                </button>
+              )
+            })()}
           </div>
         )}
         {/* Transient amber "reconnecting…" banner for the backend's tunnel

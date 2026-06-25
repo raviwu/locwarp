@@ -213,6 +213,10 @@ export function useSimulation(
   const [reconnectInfo, setReconnectInfo] = useState<
     { attempt: number; maxAttempts: number; retryInSec: number } | null
   >(null)
+  // The udid whose tunnel was just LOST (terminal). Drives the one-click
+  // Reconnect button on the error banner. Cleared when the tunnel recovers or
+  // the device reconnects.
+  const [lostUdid, setLostUdid] = useState<string | null>(null)
   // Random-walk pause countdown (unix epoch seconds of when pause ends)
   const [pauseEndAt, setPauseEndAt] = useState<number | null>(null)
   const [pauseRemaining, setPauseRemaining] = useState<number | null>(null)
@@ -493,6 +497,7 @@ export function useSimulation(
       // which the backend emits one frame after this anyway.)
       setTunnelReconnecting(false)
       setReconnectInfo(null)
+      setLostUdid(null)
       setError(null)
       onTunnelRecoveredRef.current?.()
     })
@@ -509,6 +514,7 @@ export function useSimulation(
       setError((typeof localStorage !== 'undefined' && localStorage.getItem('locwarp.lang') === 'en')
         ? 'Wi-Fi tunnel dropped, please reconnect'
         : 'WiFi Tunnel 連線中斷,請重新建立')
+      setLostUdid((msgUdid as string | undefined) ?? null)
     })
 
     const offDisc = ws.subscribe('device_disconnected', (e: WsEvent) => {
@@ -557,6 +563,7 @@ export function useSimulation(
       setError(null)
       setTunnelReconnecting(false)
       setReconnectInfo(null)
+      setLostUdid(null)
     })
 
     const offDeviceError = ws.subscribe('device_error', (e: WsEvent) => {
@@ -1104,6 +1111,7 @@ export function useSimulation(
     clearError,
     tunnelReconnecting,
     reconnectInfo,
+    lostUdid,
     teleport,
     stop,
     navigate,

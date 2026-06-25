@@ -174,6 +174,22 @@ describe('useSimulation — WiFi tunnel three-state', () => {
     expect(result.current.reconnectInfo?.retryInSec).toBe(0)
   })
 
+  it('tunnel_lost captures the lost udid', () => {
+    const ws = createWsRouter()
+    const { result } = renderHook(() => useSimulation(ws, null))
+    act(() => { ws.dispatch({ type: 'tunnel_lost', udid: 'dev-lost', reason: 'task_exited' }) })
+    expect(result.current.lostUdid).toBe('dev-lost')
+  })
+
+  it('tunnel_recovered clears lostUdid', () => {
+    const ws = createWsRouter()
+    const { result } = renderHook(() => useSimulation(ws, null))
+    act(() => { ws.dispatch({ type: 'tunnel_lost', udid: 'dev-lost' }) })
+    expect(result.current.lostUdid).toBe('dev-lost')
+    act(() => { ws.dispatch({ type: 'tunnel_recovered', udid: 'dev-lost', rsd_address: 'x', rsd_port: 1 }) })
+    expect(result.current.lostUdid).toBeNull()
+  })
+
   // ── Finding 2: device_connected is a backstop that clears reconnectInfo ──
   it('device_connected clears reconnectInfo (backstop clear path)', () => {
     const ws = createWsRouter()

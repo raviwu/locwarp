@@ -273,6 +273,7 @@ export const STRINGS = {
     zh: 'WiFi Tunnel 連線中斷,重試 {attempt}/{max},{sec} 秒後重連…',
     en: 'Wi-Fi tunnel dropped — attempt {attempt}/{max}, retrying in {sec}s…',
   },
+  'wifi.tunnel_reconnect_now': { zh: '重新連線', en: 'Reconnect' },
   'wifi.tunnel_recovered': { zh: 'WiFi Tunnel 已恢復', en: 'Wi-Fi tunnel restored' },
   'wifi.autoconnect_failed': { zh: 'WiFi 自動連線失敗,請開啟 WiFi 區塊手動連線', en: 'Wi-Fi auto-connect failed — open the Wi-Fi section to connect manually' },
   'device.pair_chip_trust': { zh: '需要信任', en: 'Trust required' },
