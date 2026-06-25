@@ -1,14 +1,11 @@
 import React, { useEffect, useState } from 'react'
 import { useT } from '../i18n'
-import {
-  cloudSyncStatus,
-  cloudSyncEnable,
-  cloudSyncDisable,
-  type CloudSyncStatus,
-} from '../services/api'
+import type { CloudSyncStatus } from '../contract/apiGateway'
+import { useServices } from '../contexts/ServicesContext'
 import { useCloudSyncBusy } from '../contexts/CloudSyncBusyContext'
 
 export function CloudSyncSection() {
+  const { api } = useServices()
   const t = useT()
   const [status, setStatus] = useState<CloudSyncStatus | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -16,7 +13,7 @@ export function CloudSyncSection() {
 
   const refresh = async () => {
     try {
-      setStatus(await cloudSyncStatus())
+      setStatus(await api.cloudSyncStatus())
     } catch (e) {
       setError(String(e))
     }
@@ -31,7 +28,7 @@ export function CloudSyncSection() {
     setError(null)
     try {
       const next = await run((signal) =>
-        status.enabled ? cloudSyncDisable(signal) : cloudSyncEnable(undefined, signal),
+        status.enabled ? api.cloudSyncDisable(signal) : api.cloudSyncEnable(undefined, signal),
       )
       setStatus(next)
     } catch (e) {

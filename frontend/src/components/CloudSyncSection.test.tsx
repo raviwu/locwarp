@@ -2,7 +2,7 @@ import React from 'react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { CloudSyncSection } from './CloudSyncSection'
-import type { CloudSyncStatus } from '../services/api'
+import type { CloudSyncStatus } from '../contract/apiGateway'
 
 // Passthrough i18n: t(key, vars) -> "key" with any vars appended so
 // assertions can target both the key and the interpolated values.
@@ -13,10 +13,16 @@ vi.mock('../i18n', () => ({
       vars ? `${key}:${JSON.stringify(vars)}` : key,
 }))
 
-vi.mock('../services/api', () => ({
+// Hoist the api mock functions so they can be referenced in the ServicesContext
+// mock factory (which is also hoisted by Vitest).
+const { cloudSyncStatus, cloudSyncEnable, cloudSyncDisable } = vi.hoisted(() => ({
   cloudSyncStatus: vi.fn(),
   cloudSyncEnable: vi.fn(),
   cloudSyncDisable: vi.fn(),
+}))
+
+vi.mock('../contexts/ServicesContext', () => ({
+  useServices: () => ({ api: { cloudSyncStatus, cloudSyncEnable, cloudSyncDisable } }),
 }))
 
 // Controllable busy context: `run` simply invokes fn (no overlay logic here).
@@ -25,12 +31,6 @@ let busyValue = false
 vi.mock('../contexts/CloudSyncBusyContext', () => ({
   useCloudSyncBusy: () => ({ busy: busyValue, run: runMock }),
 }))
-
-import {
-  cloudSyncStatus,
-  cloudSyncEnable,
-  cloudSyncDisable,
-} from '../services/api'
 
 const STATUS = (over: Partial<CloudSyncStatus> = {}): CloudSyncStatus => ({
   enabled: false,
