@@ -355,9 +355,10 @@ class RouteManager:
         Behaviour:
           - Categories: imported only if their id is new.
           - Routes: imported with their original id when free; on id
-            collision a fresh id is minted so the existing route is
-            preserved. On name collision inside the same category the
-            imported route gets a `(匯入)` suffix so both stay visible.
+            collision the incoming route is skipped (idempotent — a
+            re-imported export does not duplicate routes). On name
+            collision inside the same category the imported route gets
+            a `(匯入)` suffix so both stay visible.
           - A route pointing at an unknown category_id falls back to default.
         """
         try:
