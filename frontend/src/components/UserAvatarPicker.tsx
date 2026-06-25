@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   UserAvatar,
   PRESETS,
@@ -93,11 +93,11 @@ const UserAvatarPicker: React.FC<Props> = ({ avatar, customPng, onSave, onClose,
     onClose();
   };
 
-  const handleCancel = () => {
+  const handleCancel = useCallback(() => {
     setPending(avatar);
     setPendingCustom(customPng);
     onClose();
-  };
+  }, [avatar, customPng, onClose]);
 
   const closeBtnRef = useRef<HTMLButtonElement>(null);
   useEffect(() => { closeBtnRef.current?.focus(); }, []);
