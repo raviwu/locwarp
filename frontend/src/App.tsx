@@ -83,10 +83,11 @@ const App: React.FC = () => {
   // reference to a later declaration.
   const { toastMsg, showToast, setToastMsg } = useToast()
   const device = useDevice(router)
-  // speedJitter is declared here so it can be passed to useSimulation below
-  // (which threads it through to the start-sim API calls). The checkbox UI
-  // lives in ControlPanel, threaded as props from App (same pattern as
-  // showBookmarkPins). Default ON: key absent → true.
+  // speedJitter is declared before useSimulation so it can be passed as a
+  // param (hook call ORDER must be preserved — hooks must be called in the
+  // same sequence on every render). Threads into all start-sim API payloads.
+  // The checkbox UI lives in ControlPanel, threaded as props from App (same
+  // pattern as showBookmarkPins). Default ON: key absent → true.
   const [speedJitter, setSpeedJitterRaw] = useState<boolean>(() => {
     try { return localStorage.getItem('locwarp.speed_jitter') !== '0' } catch { return true }  // default ON
   })
