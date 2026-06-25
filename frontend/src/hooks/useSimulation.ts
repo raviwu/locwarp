@@ -299,19 +299,26 @@ export function useSimulation(
   }, [pauseEndAt])
 
   // Tick the reconnect retry countdown down to 0 at 1 Hz.
+  // Dep array uses the round-identity scalars (attempt, maxAttempts) rather
+  // than the full reconnectInfo object, so the interval is armed ONCE per
+  // reconnect round and ticks internally — not re-armed on every retryInSec
+  // tick (which would clear+create a new interval every second). The effect
+  // still re-arms when a new tunnel_degraded round arrives (attempt changes)
+  // and tears down cleanly when reconnectInfo is cleared (attempt→undefined).
+  // The functional updater reads `prev`, not the outer closure, so stale
+  // closure is not a concern.
   useEffect(() => {
     if (reconnectInfo == null) return
     if (reconnectInfo.retryInSec <= 0) return
     const id = setInterval(() => {
       setReconnectInfo((prev) => {
-        if (prev == null) return prev
-        const next = Math.max(0, prev.retryInSec - 1)
-        if (next === prev.retryInSec) return prev
-        return { ...prev, retryInSec: next }
+        if (prev == null || prev.retryInSec <= 0) return prev
+        return { ...prev, retryInSec: Math.max(0, prev.retryInSec - 1) }
       })
     }, 1000)
     return () => clearInterval(id)
-  }, [reconnectInfo])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reconnectInfo?.attempt, reconnectInfo?.maxAttempts])
 
   // Process incoming WS messages via typed WsRouter subscriptions. The old
   // useState-based approach dropped messages when two arrived in the

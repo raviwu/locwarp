@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
 import { createWsRouter } from '../adapters/ws/router'
 import { useSimulation } from './useSimulation'
@@ -9,6 +9,10 @@ vi.mock('../services/api')
 beforeEach(() => {
   localStorage.removeItem('locwarp.lang')
   vi.mocked(api.getStatus).mockResolvedValue({ position: null, mode: null, running: false, paused: false, speed: 0 } as any)
+})
+
+afterEach(() => {
+  vi.useRealTimers()
 })
 
 // The WiFi-tunnel three-state lifecycle (per-udid, primary-filtered):
@@ -136,6 +140,51 @@ describe('useSimulation — WiFi tunnel three-state', () => {
     })
     expect(result.current.reconnectInfo).not.toBeNull()
     act(() => { ws.dispatch({ type: 'tunnel_lost', udid: 'dev-a', reason: 'task_exited' }) })
+    expect(result.current.reconnectInfo).toBeNull()
+  })
+
+  // ── Finding 1: countdown arms once per round, ticks internally ──────────
+  // The dep array uses [attempt, maxAttempts] rather than the full object so
+  // each retryInSec tick does NOT re-arm the interval. This test verifies the
+  // countdown still decrements correctly (6→5→4→…→0) and floors at 0.
+  it('countdown ticks retryInSec from 6 down to 0 and does not go negative (arm-once-per-round)', () => {
+    vi.useFakeTimers()
+    const ws = createWsRouter()
+    const { result } = renderHook(() => useSimulation(ws, null))
+
+    act(() => {
+      ws.dispatch({ type: 'tunnel_degraded', udid: 'dev-a', attempt: 1, max_attempts: 3, next_delay_s: 6 })
+    })
+    expect(result.current.reconnectInfo?.retryInSec).toBe(6)
+
+    // tick 1s → 5
+    act(() => { vi.advanceTimersByTime(1000) })
+    expect(result.current.reconnectInfo?.retryInSec).toBe(5)
+
+    // tick 1s → 4
+    act(() => { vi.advanceTimersByTime(1000) })
+    expect(result.current.reconnectInfo?.retryInSec).toBe(4)
+
+    // advance the remaining 4s → should reach exactly 0, not go negative
+    act(() => { vi.advanceTimersByTime(4000) })
+    expect(result.current.reconnectInfo?.retryInSec).toBe(0)
+
+    // one more tick must not go below 0
+    act(() => { vi.advanceTimersByTime(1000) })
+    expect(result.current.reconnectInfo?.retryInSec).toBe(0)
+  })
+
+  // ── Finding 2: device_connected is a backstop that clears reconnectInfo ──
+  it('device_connected clears reconnectInfo (backstop clear path)', () => {
+    const ws = createWsRouter()
+    const { result } = renderHook(() => useSimulation(ws, null))
+
+    act(() => {
+      ws.dispatch({ type: 'tunnel_degraded', udid: 'dev-a', attempt: 2, max_attempts: 3, next_delay_s: 12 })
+    })
+    expect(result.current.reconnectInfo).toEqual({ attempt: 2, maxAttempts: 3, retryInSec: 12 })
+
+    act(() => { ws.dispatch({ type: 'device_connected', udid: 'dev-a', connection_type: 'Network' }) })
     expect(result.current.reconnectInfo).toBeNull()
   })
 })
