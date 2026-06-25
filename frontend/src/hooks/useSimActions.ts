@@ -113,6 +113,13 @@ export function useSimActions(args: UseSimActionsArgs) {
   const setPreviewPinRef = useRef(args.setPreviewPin)
   setPreviewPinRef.current = args.setPreviewPin
 
+  // ── Undo snapshot (single level) ─────────────────────────────────────────
+  // Captures the position the device was at BEFORE the most recent teleport so
+  // handleUndo can fly back to it. Populated on EVERY teleport (single AND dual
+  // device) — unlike the dual-only `prevPos` revert below, this is universal.
+  // Cleared after an Undo consumes it (single level, no stack — YAGNI).
+  const lastPositionRef = useRef<{ lat: number; lng: number } | null>(null)
+
   const handleRestore = useCallback(async () => {
     const sim = simRef.current
     const device = deviceRef.current
@@ -156,6 +163,11 @@ export function useSimActions(args: UseSimActionsArgs) {
     const pushRecent = pushRecentRef.current
     const lat = clampLatRef.current(latIn)
     const lng = normalizeLngRef.current(lngIn)
+    // Snapshot the pre-teleport position for single-level Undo. Read from the
+    // ref so it is the position BEFORE this teleport's optimistic move (the
+    // dual path calls setCurrentPosition below; the single path lets the engine
+    // update it). Captured on BOTH paths so Undo is universal.
+    lastPositionRef.current = sim.currentPosition ?? null
     setPreviewPinRef.current(null)
     const udids = device.connectedDevices.map((d) => d.udid)
     if (udids.length >= 2) {
@@ -348,6 +360,37 @@ export function useSimActions(args: UseSimActionsArgs) {
     }
   }, [])
 
+  const handleUndo = useCallback(async () => {
+    const snapshot = lastPositionRef.current
+    if (!snapshot) return // nothing to undo — silent no-op
+    // Consume the snapshot up front so a double-fire (key repeat / toast click)
+    // does not undo twice, and so a second Undo is a no-op (single level).
+    lastPositionRef.current = null
+    const sim = simRef.current
+    const device = deviceRef.current
+    const showToast = showToastRef.current
+    const t = tRef.current
+    const pushRecent = pushRecentRef.current
+    const { lat, lng } = snapshot
+    const udids = device.connectedDevices.map((d) => d.udid)
+    if (udids.length >= 2) {
+      sim.setCurrentPosition({ lat, lng })
+      const outcome = await sim.teleportAll(udids, lat, lng)
+      if (outcome.ok.length === 0 && outcome.failed.length > 0) {
+        sim.setCurrentPosition(snapshot)
+      }
+      showToast(toastForFanout(t, t('mode.teleport'), outcome, device.connectedDevices))
+    } else {
+      try {
+        await sim.teleport(lat, lng)
+      } catch {
+        showToast(t('toast.teleport_failed'))
+        return
+      }
+    }
+    void pushRecent(lat, lng, 'teleport')
+  }, [])
+
   return {
     handleRestore,
     handleTeleport,
@@ -358,5 +401,6 @@ export function useSimActions(args: UseSimActionsArgs) {
     handleApplySpeed,
     handlePause,
     handleResume,
+    handleUndo,
   }
 }

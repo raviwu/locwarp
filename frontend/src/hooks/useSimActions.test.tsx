@@ -317,3 +317,56 @@ describe('useSimActions — applySpeed / restore', () => {
     expect(dual.sim.restore).not.toHaveBeenCalled()
   })
 })
+
+describe('useSimActions — undo (single-level last-position snapshot)', () => {
+  it('single device: handleUndo teleports back to the pre-teleport position', async () => {
+    // Device starts at { lat: 1, lng: 2 } (makeSim default currentPosition).
+    const sim = makeSim({ currentPosition: { lat: 1, lng: 2 } })
+    const { result } = setup({ udids: ['A'], sim })
+    // Teleport to a new spot — snapshot should capture the prior {1,2}.
+    await act(async () => { await result.current.handleTeleport(10, 20) })
+    expect(sim.teleport).toHaveBeenCalledWith(10, 20)
+    sim.teleport.mockClear()
+    // Undo flies back to the snapshot.
+    await act(async () => { await result.current.handleUndo() })
+    expect(sim.teleport).toHaveBeenCalledWith(1, 2)
+  })
+
+  it('handleUndo is a silent no-op when nothing has been teleported yet', async () => {
+    const sim = makeSim({ currentPosition: { lat: 1, lng: 2 } })
+    const { result } = setup({ udids: ['A'], sim })
+    await act(async () => { await result.current.handleUndo() })
+    expect(sim.teleport).not.toHaveBeenCalled()
+    expect(sim.teleportAll).not.toHaveBeenCalled()
+  })
+
+  it('single level: a second consecutive Undo is a no-op (snapshot cleared after use)', async () => {
+    const sim = makeSim({ currentPosition: { lat: 1, lng: 2 } })
+    const { result } = setup({ udids: ['A'], sim })
+    await act(async () => { await result.current.handleTeleport(10, 20) })
+    sim.teleport.mockClear()
+    await act(async () => { await result.current.handleUndo() })
+    expect(sim.teleport).toHaveBeenCalledTimes(1) // first undo flew back
+    sim.teleport.mockClear()
+    await act(async () => { await result.current.handleUndo() })
+    expect(sim.teleport).not.toHaveBeenCalled() // second undo: snapshot consumed
+  })
+
+  it('no-op when the pre-teleport position was null (nothing to snapshot)', async () => {
+    const sim = makeSim({ currentPosition: null })
+    const { result } = setup({ udids: ['A'], sim })
+    await act(async () => { await result.current.handleTeleport(10, 20) })
+    sim.teleport.mockClear()
+    await act(async () => { await result.current.handleUndo() })
+    expect(sim.teleport).not.toHaveBeenCalled()
+  })
+
+  it('dual device: handleUndo fans out teleportAll back to the snapshot', async () => {
+    const sim = makeSim({ currentPosition: { lat: 1, lng: 2 } })
+    const { result } = setup({ udids: ['A', 'B'], sim })
+    await act(async () => { await result.current.handleTeleport(10, 20) })
+    sim.teleportAll.mockClear()
+    await act(async () => { await result.current.handleUndo() })
+    expect(sim.teleportAll).toHaveBeenCalledWith(['A', 'B'], 1, 2)
+  })
+})
