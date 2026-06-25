@@ -158,18 +158,26 @@ def resolve_speed_profile(
     speed_kmh: float | None = None,
     speed_min_kmh: float | None = None,
     speed_max_kmh: float | None = None,
+    jitter_enabled: bool = True,
 ) -> SpeedProfile:
     """Return a speed profile, picking a random km/h from the range if provided.
-    Precedence: range > fixed custom > mode default."""
+    Precedence: range > fixed custom > mode default. When jitter_enabled is
+    False, the returned profile's speed_jitter is forced to 0.0 (a COPY — the
+    shared SPEED_PROFILES table is never mutated) for byte-reproducible runs."""
     import random
     if speed_min_kmh is not None and speed_max_kmh is not None:
         lo, hi = sorted((float(speed_min_kmh), float(speed_max_kmh)))
         if lo <= 0:
             lo = 0.1
-        return make_speed_profile(random.uniform(lo, hi))
-    if speed_kmh:
-        return make_speed_profile(speed_kmh)
-    return SPEED_PROFILES[profile_name]
+        profile = make_speed_profile(random.uniform(lo, hi))
+    elif speed_kmh:
+        profile = make_speed_profile(speed_kmh)
+    else:
+        profile = dict(SPEED_PROFILES[profile_name])  # copy so we never mutate the table
+    if not jitter_enabled:
+        profile = dict(profile)
+        profile["speed_jitter"] = 0.0
+    return profile  # type: ignore[return-value]
 
 
 # Cooldown table: (max_distance_km, cooldown_seconds)
