@@ -63,9 +63,11 @@ describe('dependency-cruiser layering gate fails on a view → services/api prob
       removeProbe()
     }
 
-    // depcruise exits 1 when any `error`-severity rule is violated.
-    expect(withProbe.status).toBe(1)
-    expect(withProbe.status).not.toBe(0)
+    // depcruise exits with the count of violations (>= 1) when any error-severity
+    // rule fires. The broad no-view-imports-api rule and the scoped
+    // mapview-no-direct-api rule both catch the probe, so the exit code is 2.
+    // Assert non-zero rather than a fixed count to be resilient to future rule additions.
+    expect(withProbe.status).toBeGreaterThan(0)
     // The scoped rule named, and the offending edge it caught.
     expect(withProbe.output).toContain('mapview-no-direct-api')
     expect(withProbe.output).toContain('src/components/MapViewGateProbe.tsx')

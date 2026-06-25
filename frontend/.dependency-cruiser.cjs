@@ -1,11 +1,11 @@
 /**
  * Frontend layering gate — the hexagon-lite analogue of the backend import-linter.
  *
- * P4b-0: report-only (severity "warn") for the broad view-rule, so existing
- * production violations surface on every PR as the baseline debt without
- * blocking. As each god-component is decomposed and cleaned, a scoped "error"
- * rule is added for its subtree (see bookmarklist-no-direct-api, added at the
- * end of P4b-3).
+ * All five previously-warning components (StatusBar, ExportPopover, DeviceStatus,
+ * CloudSyncSection, AddressSearch) now reach the backend exclusively via
+ * useServices().api. The broad view-rule is ENFORCED (severity "error") so no
+ * new direct services/api import can regress undetected. Per-subtree error rules
+ * added in P4b-1 through P4b-3 remain as narrower guards.
  *
  * Test/spec files are excluded — they legitimately import services/api to mock
  * or assert against it.
@@ -16,7 +16,7 @@ module.exports = {
   forbidden: [
     {
       name: "no-view-imports-api",
-      severity: "warn",
+      severity: "error",
       comment:
         "View (components/* + App.tsx) must reach the backend via useServices().api, not a direct services/api or adapters import.",
       from: { path: "^src/(components/|App\\.tsx)", pathNot: TEST_FILES },
