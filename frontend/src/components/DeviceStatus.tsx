@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useServices } from '../contexts/ServicesContext';
 import type { TunnelInfo } from '../contract/apiGateway';
 import { useT } from '../i18n';
+import type { StringKey } from '../i18n/strings';
 import DialogShell from './DialogShell';
 
 const MAX_TUNNEL_DEVICES = 3;
@@ -39,6 +40,7 @@ interface DeviceStatusProps {
   tunnelStatus?: TunnelStatus;
   tunnels?: TunnelInfo[];
   onRevealDeveloperMode?: (udid: string) => Promise<void>;
+  connectPhase?: string | null;
 }
 
 const DeviceStatus: React.FC<DeviceStatusProps> = ({
@@ -52,9 +54,17 @@ const DeviceStatus: React.FC<DeviceStatusProps> = ({
   tunnelStatus = { running: false },
   tunnels = [],
   onRevealDeveloperMode,
+  connectPhase,
 }) => {
   const { api } = useServices();
   const t = useT();
+  const PHASE_KEYS: Record<string, StringKey> = {
+    opening_tunnel: 'wifi.connect_phase.opening_tunnel',
+    rsd_attempt:    'wifi.connect_phase.rsd_attempt',
+    checking_ddi:   'wifi.connect_phase.checking_ddi',
+    opening_dvt:    'wifi.connect_phase.opening_dvt',
+    connected:      'wifi.connect_phase.connected',
+  }
   const [showDropdown, setShowDropdown] = useState(false);
   const [tunnelIp, setTunnelIp] = useState(() => localStorage.getItem('locwarp.tunnel.ip') || '');
   const [tunnelPort, setTunnelPort] = useState(() => localStorage.getItem('locwarp.tunnel.port') || '');
@@ -287,6 +297,23 @@ const DeviceStatus: React.FC<DeviceStatusProps> = ({
           )}
         </button>
       </div>
+
+      {connectPhase && (
+        <div
+          style={{
+            display: 'flex', alignItems: 'center', gap: 6,
+            fontSize: 11, padding: '4px 8px', marginBottom: 6,
+            background: 'rgba(108, 140, 255, 0.08)',
+            border: '1px solid rgba(108, 140, 255, 0.3)',
+            borderRadius: 4, color: '#6c8cff',
+          }}
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ animation: 'spin 1s linear infinite' }}>
+            <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83" />
+          </svg>
+          <span>{PHASE_KEYS[connectPhase] ? t(PHASE_KEYS[connectPhase]) : null}</span>
+        </div>
+      )}
 
       {/* Reveal Developer Mode button — only show when device is connected,
           iOS >= 16, and dev mode is explicitly reported as OFF. Clicking it

@@ -125,4 +125,15 @@ describe('DeviceStatus', () => {
     // The hardcoded English summary must be gone.
     expect(screen.queryByText('2 devices found')).not.toBeInTheDocument()
   })
+
+  it('renders the connect phase label in the spinner region', () => {
+    render(<DeviceStatus {...baseProps} connectPhase="rsd_attempt" />)
+    // i18n mock returns the key; the phase line renders the phase-label key.
+    expect(screen.getByText('wifi.connect_phase.rsd_attempt')).toBeInTheDocument()
+  })
+
+  it('renders nothing extra when connectPhase is null', () => {
+    render(<DeviceStatus {...baseProps} connectPhase={null} />)
+    expect(screen.queryByText('wifi.connect_phase.rsd_attempt')).not.toBeInTheDocument()
+  })
 })

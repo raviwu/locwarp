@@ -14,6 +14,7 @@ import { useGoldDittoSubscription } from './hooks/useGoldDittoSubscription'
 import { useSimActions } from './hooks/useSimActions'
 import { useGlobalShortcuts } from './hooks/useGlobalShortcuts'
 import { useMapClick } from './hooks/useMapClick'
+import { useConnectProgress } from './hooks/useConnectProgress'
 import { useServices } from './contexts/ServicesContext'
 import { useToast } from './hooks/useToast'
 import UserAvatarPicker from './components/UserAvatarPicker'
@@ -91,6 +92,7 @@ const App: React.FC = () => {
     device.primaryDevice?.udid,
     () => showToast(t('wifi.tunnel_recovered')),
   )
+  const { connectPhase } = useConnectProgress(router)
   const joystick = useJoystick(sendMessage, sim.mode === SimMode.Joystick)
   const bm = useBookmarks()
 
@@ -1200,6 +1202,7 @@ const App: React.FC = () => {
               showToast(t('dev_mode.reveal_failed') + (err?.message ? `: ${err.message}` : ''))
             }
           }}
+          connectPhase={connectPhase}
         />
         <ControlPanel
           simMode={sim.mode}
