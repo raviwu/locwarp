@@ -304,6 +304,118 @@ class RouteInterpolator:
 
         return results
 
+    @staticmethod
+    def interpolate_with_timing(
+        coords: list["Coordinate"],
+        offsets: list[float] | None,
+        speed_mps: float,
+        interval_sec: float = 1.0,
+    ) -> list[dict]:
+        """Timing-aware dense interpolation.
+
+        When *offsets* (per-vertex seconds-from-start, same length as
+        *coords*, monotonically non-decreasing, non-zero total span) is valid,
+        emit one point every *interval_sec* of ORIGINAL time, walking the
+        polyline by the fraction of elapsed original time within each segment
+        so a recorded trail replays at its original cadence. Otherwise fall
+        back to the constant-speed interpolate() (byte-identical output)."""
+        if not coords:
+            return []
+        # Validate the timing track; any defect → constant-speed fallback.
+        valid = (
+            offsets is not None
+            and len(offsets) == len(coords)
+            and all(offsets[i] <= offsets[i + 1] for i in range(len(offsets) - 1))
+            and len(offsets) >= 2
+            and offsets[-1] > offsets[0]
+        )
+        if not valid:
+            return RouteInterpolator.interpolate(coords, speed_mps, interval_sec)
+
+        assert offsets is not None  # narrowed by `valid`
+        base = offsets[0]
+        rel = [o - base for o in offsets]  # 0-based original timeline
+        total_time = rel[-1]
+
+        # Seed the first point.
+        results: list[dict] = [
+            {
+                "lat": coords[0].lat,
+                "lng": coords[0].lng,
+                "timestamp_offset": 0.0,
+                "bearing": (
+                    RouteInterpolator.bearing(
+                        coords[0].lat, coords[0].lng,
+                        coords[1].lat, coords[1].lng,
+                    )
+                    if len(coords) > 1
+                    else 0.0
+                ),
+                "seg_idx": 0,
+            }
+        ]
+
+        if interval_sec <= 0:
+            # Degenerate cadence — just return seed + final vertex.
+            last = coords[-1]
+            results.append(
+                {
+                    "lat": last.lat,
+                    "lng": last.lng,
+                    "timestamp_offset": total_time,
+                    "bearing": results[0]["bearing"],
+                    "seg_idx": max(len(coords) - 2, 0),
+                }
+            )
+            return results
+
+        # Walk the ORIGINAL time axis. For each emit time t, find the segment
+        # whose [rel[i], rel[i+1]] range contains t and interpolate position
+        # by the time-fraction within that segment.
+        seg = 0
+        t = interval_sec
+        while t < total_time:
+            # Advance seg so rel[seg] <= t <= rel[seg+1].
+            while seg < len(rel) - 2 and t > rel[seg + 1]:
+                seg += 1
+            seg_dt = rel[seg + 1] - rel[seg]
+            a = coords[seg]
+            b = coords[seg + 1]
+            if seg_dt <= 0:
+                frac = 0.0
+            else:
+                frac = (t - rel[seg]) / seg_dt
+            lat = a.lat + frac * (b.lat - a.lat)
+            lng = a.lng + frac * (b.lng - a.lng)
+            results.append(
+                {
+                    "lat": lat,
+                    "lng": lng,
+                    "timestamp_offset": t,
+                    "bearing": RouteInterpolator.bearing(a.lat, a.lng, b.lat, b.lng),
+                    "seg_idx": seg,
+                }
+            )
+            t += interval_sec
+
+        # Always include the final vertex at the total original span.
+        last = coords[-1]
+        prev = results[-1]
+        if prev["lat"] != last.lat or prev["lng"] != last.lng or prev["timestamp_offset"] != total_time:
+            last_seg = max(len(coords) - 2, 0)
+            a = coords[last_seg]
+            b = coords[last_seg + 1] if len(coords) > 1 else coords[last_seg]
+            results.append(
+                {
+                    "lat": last.lat,
+                    "lng": last.lng,
+                    "timestamp_offset": total_time,
+                    "bearing": RouteInterpolator.bearing(a.lat, a.lng, b.lat, b.lng) if len(coords) > 1 else 0.0,
+                    "seg_idx": last_seg,
+                }
+            )
+        return results
+
     # ------------------------------------------------------------------
     # Jitter & movement helpers
     # ------------------------------------------------------------------
