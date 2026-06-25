@@ -217,6 +217,33 @@ describe('DeviceChipRow callbacks wire the device udid', () => {
   })
 })
 
+describe('DeviceChipRow trust chip letter collision (FIX 6)', () => {
+  function trustDevice(udid: string, name: string): DeviceInfo {
+    return { udid, name, ios_version: '17.0', connection_type: 'usb', is_connected: false, pair_status: 'trust_required' }
+  }
+
+  it('two trust chips with 2 connected devices get DISTINCT visible labels (not both C)', () => {
+    const props = baseProps()
+    const onReTrust = vi.fn()
+    render(
+      <DeviceChipRow
+        devices={[makeDevice('u1', 'Connected One'), makeDevice('u2', 'Connected Two')]}
+        trustRequired={[trustDevice('t1', 'Trust Alpha'), trustDevice('t2', 'Trust Beta')]}
+        runtimes={emptyRuntimes}
+        onReTrust={onReTrust}
+        {...props}
+      />,
+    )
+    // Both trust chips must be present and have DIFFERENT letters.
+    const chipAlpha = screen.getByTitle(/Trust Alpha/)
+    const chipBeta = screen.getByTitle(/Trust Beta/)
+    const letterAlpha = chipAlpha.getAttribute('title')!.split(' ·')[0]
+    const letterBeta = chipBeta.getAttribute('title')!.split(' ·')[0]
+    // Before fix both would be 'C'; after fix they must differ.
+    expect(letterAlpha).not.toBe(letterBeta)
+  })
+})
+
 describe('DeviceChipRow device cap is unified at MAX_DEVICES (U18)', () => {
   it('exposes MAX_DEVICES === 3', () => {
     expect(MAX_DEVICES).toBe(3);
