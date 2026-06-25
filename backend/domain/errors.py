@@ -33,3 +33,16 @@ class GeocodeError(Exception):
         self.status_code = status_code
         self.code = code
         self.detail = detail
+
+
+class NearbyPoiError(Exception):
+    """Raised by the nearby-POI service on a bad request (out-of-range
+    radius / limit). Mirrors GeocodeError's shape so the controller maps it
+    to an HTTPException uniformly. Upstream Overpass failures do NOT raise —
+    nearby_pois returns an empty list for those (degrade-to-empty, not 500)."""
+
+    def __init__(self, status_code: int, code: str, detail: str) -> None:
+        super().__init__(detail)
+        self.status_code = status_code
+        self.code = code
+        self.detail = detail

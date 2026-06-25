@@ -14,6 +14,7 @@ from itertools import permutations
 import httpx
 
 from config import OSRM_BASE_URL
+from domain.errors import NearbyPoiError
 from models.schemas import (
     Coordinate,
     GeocodingResult,
@@ -217,6 +218,22 @@ async def nearby_pois(lat: float, lng: float, radius_m: int = 200, limit: int = 
 
     results.sort(key=lambda p: p.distance_m)
     return results[:limit]
+
+
+async def nearby_pois_checked(
+    lat: float, lng: float, radius_m: int = 200, limit: int = 40,
+) -> list[NearbyPoi]:
+    """Validate request bounds then delegate to nearby_pois.
+
+    Raises NearbyPoiError(400, "invalid_bounds", ...) for out-of-range
+    radius/limit so the controller never has to decide HTTP status. On an
+    upstream Overpass failure nearby_pois already returns [] — that path is
+    passed through unchanged (degrade-to-empty, never a 500)."""
+    if radius_m <= 0 or radius_m > 5000:
+        raise NearbyPoiError(400, "invalid_bounds", "radius_m must be 1..5000")
+    if limit <= 0 or limit > 200:
+        raise NearbyPoiError(400, "invalid_bounds", "limit must be 1..200")
+    return await nearby_pois(lat, lng, radius_m, limit)
 
 
 # ── OSRM Table multi-stop optimize ─────────────────────────
