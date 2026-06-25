@@ -12,6 +12,7 @@ import { useCatalog } from './hooks/useCatalog'
 import { useExternalChangeSubscriptions } from './hooks/useExternalChangeSubscriptions'
 import { useGoldDittoSubscription } from './hooks/useGoldDittoSubscription'
 import { useSimActions } from './hooks/useSimActions'
+import { useGlobalShortcuts } from './hooks/useGlobalShortcuts'
 import { useMapClick } from './hooks/useMapClick'
 import { useServices } from './contexts/ServicesContext'
 import { useToast } from './hooks/useToast'
@@ -337,6 +338,7 @@ const App: React.FC = () => {
   const {
     handleRestore, handleTeleport, handleNavigate,
     handleStart, handleStop, handleApplySpeed, handlePause, handleResume,
+    handleUndo,
   } = simActions
 
   const mapApiRef = useRef<{ panTo: (lat: number, lng: number, zoom?: number) => void } | null>(null)
@@ -408,6 +410,42 @@ const App: React.FC = () => {
     } as any)
     setAddBmDialog(null)
   }, [addBmDialog, bm])
+
+  // ── App-window keyboard shortcuts (Cluster 1) ────────────────────────────
+  // Scope = renderer window only (NO Electron globalShortcut). Maps keys to the
+  // existing precondition-guarded handlers, so each is a safe no-op when its
+  // precondition is absent.
+  const onPauseToggle = useCallback(() => {
+    // Resume if currently paused, otherwise pause. sim.status?.paused is read
+    // through the latest sim object captured by this callback's render.
+    if (sim.status?.paused) {
+      void handleResume()
+    } else {
+      void handlePause()
+    }
+  }, [sim.status?.paused, handlePause, handleResume])
+
+  const onBookmarkHere = useCallback(() => {
+    if (!sim.currentPosition) {
+      showToast(t('toast.no_position_random'))
+      return
+    }
+    handleAddBookmark(sim.currentPosition.lat, sim.currentPosition.lng)
+  }, [sim.currentPosition, handleAddBookmark, showToast, t])
+
+  const onFocusSearch = useCallback(() => {
+    const input = document.querySelector<HTMLInputElement>('.search-input')
+    input?.focus()
+  }, [])
+
+  useGlobalShortcuts({
+    onStop: handleStop,
+    onRestore: handleRestore,
+    onPauseToggle,
+    onBookmarkHere,
+    onFocusSearch,
+    onUndo: handleUndo,
+  })
 
   // Bulk-paste bookmark dialog state. Per-line parser scrapes the first
   // valid lat/lng out of each line via parseCoord — extra label text on
