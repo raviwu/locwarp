@@ -118,3 +118,39 @@ describe('DialogShell', () => {
     expect(document.activeElement).toBe(last);
   });
 });
+
+describe('DialogShell topmost-only Escape (FU#5)', () => {
+  it('Escape closes only the topmost (second-opened) dialog when two are open', () => {
+    const onCloseFirst = vi.fn();
+    const onCloseSecond = vi.fn();
+    render(
+      <>
+        <DialogShell open onClose={onCloseFirst}><button>Dialog One</button></DialogShell>
+        <DialogShell open onClose={onCloseSecond}><button>Dialog Two</button></DialogShell>
+      </>,
+    );
+    // First Escape: only the topmost (second) dialog closes.
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(onCloseSecond).toHaveBeenCalledTimes(1);
+    expect(onCloseFirst).not.toHaveBeenCalled();
+  });
+
+  it('a second Escape (after top is removed) closes the remaining dialog', () => {
+    const onCloseFirst = vi.fn();
+    const { rerender } = render(
+      <>
+        <DialogShell open onClose={onCloseFirst}><button>Dialog One</button></DialogShell>
+        <DialogShell open onClose={() => {}}><button>Dialog Two</button></DialogShell>
+      </>,
+    );
+    // Unmount the second dialog (simulates it having been closed).
+    rerender(
+      <>
+        <DialogShell open onClose={onCloseFirst}><button>Dialog One</button></DialogShell>
+      </>,
+    );
+    // Now Escape should close the first (now topmost) dialog.
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(onCloseFirst).toHaveBeenCalledTimes(1);
+  });
+});

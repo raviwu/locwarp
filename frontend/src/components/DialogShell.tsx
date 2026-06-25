@@ -1,6 +1,12 @@
 import React, { useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 
+// Module-level open-shell stack so Escape closes only the TOPMOST dialog.
+// Each open DialogShell pushes a stable token (object identity) on mount and
+// pops it on unmount. The Escape handler fires onClose only when this shell's
+// token is at the top of the stack.
+const _openShells: object[] = [];
+
 interface DialogShellProps {
   open: boolean;
   onClose: () => void;
@@ -36,25 +42,44 @@ const DialogShell: React.FC<DialogShellProps> = ({
   backdropStyle, panelStyle, panelClassName, backdropClassName, panelProps, children,
 }) => {
   const panelRef = useRef<HTMLDivElement>(null);
+  // Stable token representing this shell instance in the open-shell stack.
+  const tokenRef = useRef<object>({});
 
-  // Escape-to-close (capture phase so it fires before inner inputs swallow it).
+  // Maintain the open-shell stack: push when open, pop on close/unmount.
   useEffect(() => {
     if (!open) return;
+    const token = tokenRef.current;
+    _openShells.push(token);
+    return () => {
+      const idx = _openShells.lastIndexOf(token);
+      if (idx !== -1) _openShells.splice(idx, 1);
+    };
+  }, [open]);
+
+  // Escape-to-close (capture phase so it fires before inner inputs swallow it).
+  // Only fires when this shell is the topmost open dialog.
+  useEffect(() => {
+    if (!open) return;
+    const token = tokenRef.current;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !busy) onClose();
+      if (e.key === 'Escape' && !busy && _openShells[_openShells.length - 1] === token) {
+        onClose();
+      }
     };
     document.addEventListener('keydown', onKey, true);
     return () => document.removeEventListener('keydown', onKey, true);
   }, [open, busy, onClose]);
 
-  // Initial focus on open.
+  // Initial focus on open. initialFocusRef is a stable RefObject (the object
+  // reference never changes, only .current does), so [open] is the correct
+  // dep — re-running when initialFocusRef itself changes would be spurious.
   useEffect(() => {
     if (!open) return;
     const target = initialFocusRef?.current
       ?? panelRef.current?.querySelector<HTMLElement>(FOCUSABLE)
       ?? null;
     target?.focus();
-  }, [open, initialFocusRef]);
+  }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!open) return null;
 
