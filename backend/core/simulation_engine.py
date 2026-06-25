@@ -116,6 +116,9 @@ class SimulationEngine:
         self._current_speed_mps: float = 0.0
         # Hot-swap speed support (see apply_speed + _move_along_route).
         self._active_route_coords: list[Coordinate] = []
+        # Per-coord timing offsets (seconds-from-start) for the active route,
+        # when the route carries GPX <time> cadence. None = constant-speed pacing.
+        self._active_route_offsets: list[float] | None = None
         self._active_speed_profile: "SpeedProfile | None" = None
         self._pending_speed_profile: "SpeedProfile | None" = None
         # User-facing waypoints used for waypoint_progress emission.
@@ -611,6 +614,7 @@ class SimulationEngine:
         self,
         coords: list[Coordinate],
         speed_profile: "SpeedProfile",
+        offsets: list[float] | None = None,
     ) -> None:
         """Core movement loop shared by navigate, loop, multi-stop, and
         random walk modes.
@@ -632,6 +636,7 @@ class SimulationEngine:
         self._active_route_coords = list(coords)
         self._active_speed_profile = dict(speed_profile)
         self._pending_speed_profile = None
+        self._active_route_offsets = list(offsets) if offsets else None
         self.total_segments = max(len(coords) - 1, 0)
 
         # Outer loop: each iteration plans a fresh interpolation of the
@@ -684,9 +689,17 @@ class SimulationEngine:
             self.eta_tracker.start(total_distance, speed_mps)
             self.distance_remaining = total_distance
 
-            timed_points = RouteInterpolator.interpolate(
-                planned_coords, speed_mps, update_interval,
-            )
+            if (
+                self._active_route_offsets is not None
+                and len(self._active_route_offsets) == len(planned_coords)
+            ):
+                timed_points = RouteInterpolator.interpolate_with_timing(
+                    planned_coords, self._active_route_offsets, speed_mps, update_interval,
+                )
+            else:
+                timed_points = RouteInterpolator.interpolate(
+                    planned_coords, speed_mps, update_interval,
+                )
 
             if not timed_points:
                 return
@@ -867,6 +880,7 @@ class SimulationEngine:
 
         self._pending_speed_profile = None
         self._active_route_coords = []
+        self._active_route_offsets = None
         self._current_speed_mps = 0.0
 
     async def _ensure_stopped(self) -> None:
