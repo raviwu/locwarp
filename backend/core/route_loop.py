@@ -65,6 +65,50 @@ class RouteLooper:
             )
             return
 
+        # Timed-replay branch: a GPX-imported route carries per-waypoint
+        # timing offsets (seconds-from-start, 1:1 with `waypoints`). Replay it
+        # at its ORIGINAL cadence by handing the raw waypoints + offsets to
+        # _move_along_route ONCE, bypassing the per-leg OSRM re-routing/densify
+        # below (which would (a) discard the GPX geometry and (b) destroy the
+        # 1:1 offsets-coords mapping the timing-aware interpolation needs).
+        pending_offsets = engine._pending_route_offsets
+        if (
+            pending_offsets is not None
+            and len(pending_offsets) == len(waypoints)
+            and len(waypoints) >= 2
+        ):
+            # Consume the offsets so a later apply_speed re-plan won't re-apply.
+            engine._pending_route_offsets = None
+            engine.state = SimulationState.LOOPING
+            engine.total_segments = max(len(waypoints) - 1, 0)
+            engine.lap_count = 0
+            engine.segment_index = 0
+            engine._user_waypoints = list(waypoints)
+            engine._user_waypoint_next = 1 if len(waypoints) > 1 else 0
+            await engine._emit("route_path", {
+                "coords": [{"lat": wp.lat, "lng": wp.lng} for wp in waypoints],
+            })
+            await engine._emit("state_change", {
+                "state": engine.state.value,
+                "waypoints": [{"lat": wp.lat, "lng": wp.lng} for wp in waypoints],
+            })
+            # Resolve a profile the same way _pick_profile does for the normal
+            # path (applied speed wins; else resolve from the request args).
+            if engine._speed_was_applied and engine._active_speed_profile is not None:
+                speed_profile = dict(engine._active_speed_profile)
+            else:
+                speed_profile = resolve_speed_profile(
+                    mode.value, speed_kmh, speed_min_kmh, speed_max_kmh,
+                )
+            await engine._move_along_route(
+                list(waypoints), speed_profile, offsets=pending_offsets,
+            )
+            if engine.state == SimulationState.LOOPING:
+                engine.state = SimulationState.IDLE
+                await engine._emit("state_change", {"state": engine.state.value})
+            logger.info("Timed GPX replay finished (%d waypoints)", len(waypoints))
+            return
+
         profile_name = mode.value
         osrm_profile = "foot" if mode in (MovementMode.WALKING, MovementMode.RUNNING) else "car"
 

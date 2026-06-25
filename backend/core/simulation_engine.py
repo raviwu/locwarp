@@ -119,6 +119,10 @@ class SimulationEngine:
         # Per-coord timing offsets (seconds-from-start) for the active route,
         # when the route carries GPX <time> cadence. None = constant-speed pacing.
         self._active_route_offsets: list[float] | None = None
+        # Offsets queued by start_loop(timestamps=...) for the looper's
+        # dedicated timed-replay branch to hand to its single _move_along_route
+        # call over the raw waypoints. None = constant-speed leg-by-leg replay.
+        self._pending_route_offsets: list[float] | None = None
         self._active_speed_profile: "SpeedProfile | None" = None
         self._pending_speed_profile: "SpeedProfile | None" = None
         # User-facing waypoints used for waypoint_progress emission.
@@ -233,11 +237,15 @@ class SimulationEngine:
         lap_count: int | None = None,
         jump_mode: bool = False,
         jump_interval: float = 12.0,
+        timestamps: list[float] | None = None,
     ) -> None:
         """Start looping through a closed route."""
         await self._ensure_stopped()
         self._stop_event.clear()
         self._pause_event.set()
+        # Queue per-waypoint GPX timing offsets (if any) for the looper's
+        # dedicated timed-replay branch to consume; None = constant-speed.
+        self._pending_route_offsets = list(timestamps) if timestamps else None
         self._last_sim_kind = "start_loop"
         self._last_sim_args = dict(
             waypoints=waypoints, mode=mode, speed_kmh=speed_kmh,
@@ -246,6 +254,7 @@ class SimulationEngine:
             straight_line=straight_line, route_engine=route_engine,
             lap_count=lap_count,
             jump_mode=jump_mode, jump_interval=jump_interval,
+            timestamps=timestamps,
         )
         await self._run_handler(
             self._looper.start_loop(
