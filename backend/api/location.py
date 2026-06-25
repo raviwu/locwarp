@@ -308,6 +308,11 @@ async def resume(udid: str | None = None, registry=Depends(get_engine_registry))
 
 @router.post("/restore")
 async def restore(udid: str | None = None, registry=Depends(get_engine_registry)):
+    # Resolve the engine first (may set _primary_udid via lazy rebuild),
+    # THEN capture action_udid so cleanup_device_lost targets the actual
+    # resolved device even when udid is None and _primary_udid was not set
+    # at entry. Mirrors teleport's ordering.
+    await _engine(udid, registry)
     action_udid = udid or registry.get_primary_udid()
 
     async def _do_restore():
