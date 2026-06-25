@@ -21,6 +21,7 @@ export const WS_EVENT_TYPES = [
   'lap_complete', 'loop_complete', 'multi_stop_complete', 'stop_reached',
   'user_waypoint_advance', 'connection_lost', 'random_walk_arrived',
   'random_walk_complete', 'teleport', 'restored', 'goldditto_cycle',
+  'connect_progress',
 ] as const
 
 // String-literal union of the backend vocabulary. subscribe() is typed with
@@ -37,4 +38,18 @@ export interface DeviceDisconnectedEvent {
   udids?: string[]
   reason?: string
   remaining_count?: number
+}
+
+// connect_progress — coarse phases of the iOS connect path (WiFi-tunnel RSD
+// loop, then DDI check + DVT open). Streamed so a slow connect is
+// distinguishable from a hang. udid is absent during the RSD loop (device
+// identity is only known after rsd.connect() succeeds). attempt/max are
+// present only on the 'rsd_attempt' phase. All optional keys are omitted by
+// the backend (exclude_unset/exclude_none).
+export interface ConnectProgressEvent {
+  type: 'connect_progress'
+  udid?: string
+  phase: 'opening_tunnel' | 'rsd_attempt' | 'checking_ddi' | 'opening_dvt' | 'connected'
+  attempt?: number
+  max?: number
 }

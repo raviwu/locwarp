@@ -70,6 +70,7 @@ const CANONICAL_BACKEND_EVENT_TYPES = [
   'restored', // core/restore.py:47
   // --- core/goldditto.py ---
   'goldditto_cycle', // core/goldditto.py:79,102,109
+  'connect_progress', // core/device_manager.py connect path (ConnectProgressEvent)
 ] as const
 
 // Backend-emitted types that NO hook subscribes to BY DESIGN (purely
@@ -88,6 +89,8 @@ const UI_IGNORED_BY_DESIGN = new Set<string>([
   'user_waypoint_advance', // multi-stop / loop internal advance, not surfaced
   'teleport', // one-shot REST result; UI updates from position_update
   'restored', // restore.py result; UI updates from position_update / state_change
+  'connect_progress', // consumed by useConnectProgress mounted in App.tsx (not by
+  // the four hooks the wiring guard mounts). Must STAY allowlisted permanently.
 ])
 
 // The canonical types we REQUIRE a subscriber for.

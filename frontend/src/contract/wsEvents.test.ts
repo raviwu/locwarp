@@ -17,6 +17,7 @@ const CANONICAL_BACKEND_EVENT_TYPES = [
   'lap_complete', 'loop_complete', 'multi_stop_complete', 'stop_reached',
   'user_waypoint_advance', 'connection_lost', 'random_walk_arrived',
   'random_walk_complete', 'teleport', 'restored', 'goldditto_cycle',
+  'connect_progress',
 ] as const
 
 describe('WsEventType union', () => {
