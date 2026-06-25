@@ -7,15 +7,13 @@ vi.mock('../i18n', () => ({
   useT: () => (key: string) => key,
 }));
 
-// Mock the geocode service so we control results / errors deterministically.
-vi.mock('../services/api', () => ({
-  searchAddress: vi.fn(),
+// Mock useServices so the component reads api.searchAddress from context.
+const { mockedSearch } = vi.hoisted(() => ({ mockedSearch: vi.fn() }));
+vi.mock('../contexts/ServicesContext', () => ({
+  useServices: () => ({ api: { searchAddress: mockedSearch } }),
 }));
 
 import AddressSearch from './AddressSearch';
-import { searchAddress } from '../services/api';
-
-const mockedSearch = searchAddress as unknown as ReturnType<typeof vi.fn>;
 
 // Advance past the 300ms input debounce, then flush the awaited searchAddress
 // promise + the setState that follows. Mixing fake timers with findBy/waitFor

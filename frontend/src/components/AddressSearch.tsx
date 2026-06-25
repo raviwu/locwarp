@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { isSubmitEnter } from '../utils/keyboard';
 import { createPortal } from 'react-dom';
-import { searchAddress } from '../services/api';
+import { useServices } from '../contexts/ServicesContext';
 import { useT } from '../i18n';
 
 interface SearchResult {
@@ -18,6 +18,7 @@ interface AddressSearchProps {
 type Provider = 'nominatim' | 'google';
 
 const AddressSearch: React.FC<AddressSearchProps> = ({ onSelect }) => {
+  const { api } = useServices();
   const t = useT();
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<SearchResult[]>([]);
@@ -80,7 +81,7 @@ const AddressSearch: React.FC<AddressSearchProps> = ({ onSelect }) => {
     setIsLoading(true);
     setSearchError(null);
     try {
-      const raw = await searchAddress(q);
+      const raw = await api.searchAddress(q);
       const mapped = (Array.isArray(raw) ? raw : []).map((r: any) => ({
         name: r.display_name || r.name || '',
         lat: r.lat,
