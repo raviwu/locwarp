@@ -90,6 +90,27 @@ describe('useGlobalShortcuts', () => {
     expect(handlers.onStop).not.toHaveBeenCalled();
   });
 
+  it('Space on a focused <button> does NOT call onStop and does NOT preventDefault', () => {
+    const btn = document.createElement('button');
+    const ev = fireKey({ code: 'Space', key: ' ', target: btn });
+    expect(handlers.onStop).not.toHaveBeenCalled();
+    expect(ev.defaultPrevented).toBe(false);
+  });
+
+  it('Space on an element with role="button" does NOT call onStop and does NOT preventDefault', () => {
+    const div = document.createElement('div');
+    div.setAttribute('role', 'button');
+    const ev = fireKey({ code: 'Space', key: ' ', target: div });
+    expect(handlers.onStop).not.toHaveBeenCalled();
+    expect(ev.defaultPrevented).toBe(false);
+  });
+
+  it('Space on a non-interactive element (e.g. <div>) still calls onStop', () => {
+    const div = document.createElement('div');
+    fireKey({ code: 'Space', key: ' ', target: div });
+    expect(handlers.onStop).toHaveBeenCalledTimes(1);
+  });
+
   it('Cmd+K still fires while focus is in an INPUT (focus-search is global)', () => {
     const input = document.createElement('input');
     fireKey({ key: 'k', metaKey: true, target: input });

@@ -71,6 +71,13 @@ export function useGlobalShortcuts(handlers: GlobalShortcutHandlers): void {
       if (typing || e.metaKey || e.ctrlKey || e.altKey) return;
 
       if (e.code === 'Space') {
+        // Let the browser handle native Space-to-activate for buttons so they
+        // receive their own click. isTypingTarget already covers INPUT/TEXTAREA/
+        // contentEditable; this closes the gap for <button> and role="button".
+        if (
+          e.target instanceof HTMLElement &&
+          (e.target.tagName === 'BUTTON' || e.target.getAttribute('role') === 'button')
+        ) return;
         e.preventDefault();
         h.onStop();
         return;
