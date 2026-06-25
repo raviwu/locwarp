@@ -565,6 +565,7 @@ export const STRINGS = {
   // Settings panel opened from the bottom status bar.
   'status.settings': { zh: '設定', en: 'Settings' },
   'status.settings_tooltip': { zh: '開啟 LocWarp 設定面板', en: 'Open LocWarp settings' },
+  'settings.speed_jitter': { zh: '速度抖動（擬真）', en: 'Speed jitter (realistic)' },
   'settings.title': { zh: '設定', en: 'Settings' },
   'settings.alert_sound_label': { zh: '路線結束提示音', en: 'Route completion alert sound' },
   'settings.alert_sound_desc': { zh: '導航 / 巡迴 / 多點繞路跑完時播放層疊鐘聲 (約 2 秒),提醒你回到 LocWarp。', en: 'Plays a cascading-bell sound (~2s) when navigate / loop / multi-stop finishes so you know to come back to LocWarp.' },

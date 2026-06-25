@@ -83,15 +83,28 @@ const App: React.FC = () => {
   // reference to a later declaration.
   const { toastMsg, showToast, setToastMsg } = useToast()
   const device = useDevice(router)
+  // speedJitter is declared here so it can be passed to useSimulation below
+  // (which threads it through to the start-sim API calls). The checkbox UI
+  // lives in ControlPanel, threaded as props from App (same pattern as
+  // showBookmarkPins). Default ON: key absent → true.
+  const [speedJitter, setSpeedJitterRaw] = useState<boolean>(() => {
+    try { return localStorage.getItem('locwarp.speed_jitter') !== '0' } catch { return true }  // default ON
+  })
+  const setSpeedJitter = useCallback((v: boolean) => {
+    setSpeedJitterRaw(v)
+    try { localStorage.setItem('locwarp.speed_jitter', v ? '1' : '0') } catch { /* ignore */ }
+  }, [])
   // Pass primary-device udid into useSimulation so its legacy single-device
   // setters only react to the primary's WS events in dual-device mode,
   // stopping the map marker from ping-ponging between both devices'
   // independently-jittered positions.
   // 3rd arg: positive "WiFi tunnel restored" toast on recovery.
+  // 4th arg: speedJitter — threaded into start-sim API payloads.
   const sim = useSimulation(
     router,
     device.primaryDevice?.udid,
     () => showToast(t('wifi.tunnel_recovered')),
+    speedJitter,
   )
   const { connectPhase } = useConnectProgress(router)
   const joystick = useJoystick(sendMessage, sim.mode === SimMode.Joystick)
@@ -1305,6 +1318,8 @@ const App: React.FC = () => {
           onJumpModeChange={sim.setJumpMode}
           jumpInterval={sim.jumpInterval}
           onJumpIntervalChange={sim.setJumpInterval}
+          speedJitter={speedJitter}
+          onSpeedJitterChange={setSpeedJitter}
           openLibraryToken={openLibraryToken}
           goldDittoConnectedUdids={goldDittoConnectedUdids}
           goldDittoCycling={sim.goldDittoCycling}

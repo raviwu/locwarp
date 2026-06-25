@@ -156,6 +156,8 @@ interface ControlPanelProps {
   onJumpModeChange?: (v: boolean) => void;
   jumpInterval?: number;
   onJumpIntervalChange?: (v: number) => void;
+  speedJitter?: boolean;
+  onSpeedJitterChange?: (v: boolean) => void;
   // Incremented by any external source (e.g. map top-left library
   // button) to request the library panel be opened. useEffect on the
   // value toggles libraryOpen=true so the parent doesn't have to own
@@ -357,6 +359,8 @@ const ControlPanelInner: React.FC<ControlPanelProps> = ({
   onJumpModeChange,
   jumpInterval = 12,
   onJumpIntervalChange,
+  speedJitter = true,
+  onSpeedJitterChange,
   openLibraryToken,
   openLibraryTab,
   goldDittoConnectedUdids = [],
@@ -613,6 +617,20 @@ const ControlPanelInner: React.FC<ControlPanelProps> = ({
                   </span>
                 )}
               </div>
+            )}
+            {onSpeedJitterChange && (
+              <label className="lw-checkbox" style={{ fontSize: 11 }}>
+                <input
+                  type="checkbox"
+                  aria-label="Speed jitter"
+                  checked={speedJitter ?? true}
+                  onChange={(e) => onSpeedJitterChange(e.target.checked)}
+                />
+                <span className="lw-checkbox-box"></span>
+                <span className="lw-checkbox-label" style={{ lineHeight: 1.15 }}>
+                  {t('settings.speed_jitter')}
+                </span>
+              </label>
             )}
           </div>
         )}
