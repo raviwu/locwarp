@@ -6,6 +6,7 @@ non-empty (plus one substring sanity check) because the exact GeoNames
 string depends on the snapshot the generator pulled.
 """
 import logging
+import time
 
 import services.geo_offline as geo
 from services.geo_offline import resolve
@@ -102,3 +103,121 @@ def test_resolve_warns_throttled_when_tables_unavailable(monkeypatch, caplog):
     # Throttled: the two back-to-back calls produce exactly one WARNING.
     assert len(warnings) == 1
     assert "geo" in warnings[0].getMessage().lower()
+
+
+# ── Fix 3: time-based retry gate tests ────────────────────────────────────────
+
+def test_failed_load_short_circuits_within_window(monkeypatch):
+    """Fix 3: when load fails, subsequent calls within _RETRY_AFTER_S must
+    NOT re-attempt the import — they must short-circuit and return False without
+    calling the loader again. This prevents N failed imports + N tracebacks on
+    bulk bookmark imports."""
+    load_call_count = [0]
+
+    def _failing_loader():
+        load_call_count[0] += 1
+        raise ImportError("numpy not available")
+
+    # Cold module state + a very wide retry window.
+    monkeypatch.setattr(geo, "_loaded", False)
+    monkeypatch.setattr(geo, "_last_attempt_ts", 0.0)
+    monkeypatch.setattr(geo, "_RETRY_AFTER_S", 3600.0)  # 1 hour — never expires in test
+
+    # Patch the inner loader (numpy import) by patching _ensure_loaded directly,
+    # BUT we need to test the real _ensure_loaded (the retry gate). So instead
+    # we patch the inner_loader by patching numpy import via the module global.
+    # Simpler: reset state then patch the inner try block via the module-level
+    # _loaded=False + inject a fake "already failed" timestamp after first call.
+
+    # We'll test via resolve() calling _ensure_loaded() multiple times.
+    # Patch numpy to make the load fail deterministically.
+    import builtins
+    real_import = builtins.__import__
+
+    def _bad_import(name, *args, **kwargs):
+        if name == "numpy":
+            load_call_count[0] += 1
+            raise ImportError("numpy unavailable for test")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", _bad_import)
+
+    # First call: should attempt load, fail, record timestamp, return ("","","","").
+    result1 = geo.resolve(25.0, 121.0)
+    assert result1 == ("", "", "", "")
+    count_after_first = load_call_count[0]
+    assert count_after_first >= 1, "loader must be attempted on first call"
+
+    # Second call: within the retry window → must NOT re-attempt the import.
+    result2 = geo.resolve(26.0, 122.0)
+    assert result2 == ("", "", "", "")
+    assert load_call_count[0] == count_after_first, (
+        f"load was re-attempted within the window (call count rose from "
+        f"{count_after_first} to {load_call_count[0]})"
+    )
+
+
+def test_failed_load_retries_after_window(monkeypatch):
+    """Fix 3: once _RETRY_AFTER_S has elapsed, _ensure_loaded must retry the
+    import (the underlying issue may have been fixed — venv updated, file
+    re-materialized from iCloud). The success path still self-recovers."""
+    load_call_count = [0]
+
+    import builtins
+    real_import = builtins.__import__
+
+    def _bad_import(name, *args, **kwargs):
+        if name == "numpy":
+            load_call_count[0] += 1
+            raise ImportError("numpy unavailable for test")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", _bad_import)
+    monkeypatch.setattr(geo, "_loaded", False)
+    monkeypatch.setattr(geo, "_last_attempt_ts", 0.0)
+    monkeypatch.setattr(geo, "_RETRY_AFTER_S", 0.05)  # 50ms window — expires fast
+
+    # First call: attempt + fail.
+    geo.resolve(25.0, 121.0)
+    count_after_first = load_call_count[0]
+
+    # Still within window → no retry.
+    geo.resolve(25.0, 121.0)
+    assert load_call_count[0] == count_after_first
+
+    # Advance past the window by sleeping longer than 50ms.
+    time.sleep(0.1)
+
+    # Now: the window has expired, should retry.
+    geo.resolve(25.0, 121.0)
+    assert load_call_count[0] > count_after_first, (
+        "load must be retried after the window expires"
+    )
+
+
+def test_load_failure_logs_at_most_once_per_window(monkeypatch, caplog):
+    """Fix 3: the logger.exception inside the failing load must not fire once
+    per call — it must be throttled (at most once per retry window)."""
+    import builtins
+    real_import = builtins.__import__
+
+    def _bad_import(name, *args, **kwargs):
+        if name == "numpy":
+            raise ImportError("numpy unavailable")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", _bad_import)
+    monkeypatch.setattr(geo, "_loaded", False)
+    monkeypatch.setattr(geo, "_last_attempt_ts", 0.0)
+    monkeypatch.setattr(geo, "_RETRY_AFTER_S", 3600.0)
+
+    with caplog.at_level(logging.ERROR, logger="services.geo_offline"):
+        for _ in range(5):
+            geo.resolve(float(_ * 10), float(_ * 10))
+
+    # Only the first call should produce an exception/error log.
+    error_records = [r for r in caplog.records if r.levelno >= logging.ERROR]
+    assert len(error_records) <= 1, (
+        f"Expected at most 1 error log within window, got {len(error_records)}: "
+        + "; ".join(r.getMessage() for r in error_records)
+    )

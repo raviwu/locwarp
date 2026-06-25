@@ -26,6 +26,15 @@ _loaded = False
 _last_warn_ts = 0.0           # monotonic ts of the last "tables unavailable" WARNING
 _WARN_THROTTLE_S = 60.0       # at most one such WARNING per minute
 
+# Time-based retry gate: a failed load is retried at most once per window.
+# This prevents N failed imports + N tracebacks when a bulk bookmark import
+# calls resolve() many times while deps are genuinely missing.
+# The SUCCESS path is unchanged: _loaded caches success, retries always
+# happen after the window so a fixed venv / re-materialized file is picked
+# up within _RETRY_AFTER_S (not latched permanently).
+_RETRY_AFTER_S = 30.0
+_last_attempt_ts = 0.0        # monotonic ts of the last load ATTEMPT (0 = never)
+
 _tf = None                    # TimezoneFinderL instance
 _lat = None                   # numpy array — city latitudes
 _lng = None                   # numpy array — city longitudes
@@ -57,15 +66,24 @@ def _ensure_loaded() -> bool:
     anything is unavailable — resolve() then degrades to empty results.
 
     No permanent failure latch: a transient failure (e.g. an iCloud-evicted
-    data file, a not-yet-installed numpy in the venv) is retried on the next
-    call. Only success is cached (via _loaded)."""
+    data file, a not-yet-installed numpy in the venv) is retried once per
+    _RETRY_AFTER_S window. This prevents N failed imports + N tracebacks when
+    a bulk import calls resolve() many times while deps are genuinely missing.
+    Success is cached via _loaded and never time-gated."""
     global _loaded, _tf, _lat, _lng, _name, _cc, _admin1
-    global _zone_to_country, _admin1_names
+    global _zone_to_country, _admin1_names, _last_attempt_ts
     if _loaded:
         return True
     with _lock:
         if _loaded:
             return True
+        # Short-circuit within the retry window: if the last load ATTEMPT
+        # failed recently, skip the re-import entirely.
+        # _last_attempt_ts is only set on FAILURE so a successful load never
+        # gate-blocks a later test or in-process reload.
+        now = time.monotonic()
+        if _last_attempt_ts > 0 and (now - _last_attempt_ts) < _RETRY_AFTER_S:
+            return False
         try:
             import numpy as np
             from timezonefinder import TimezoneFinderL
@@ -88,8 +106,14 @@ def _ensure_loaded() -> bool:
             logger.info("geo_offline loaded %d cities", len(_name))
             return True
         except Exception:
+            # Record the failure timestamp AFTER the attempt so the window
+            # starts from when we actually ran the (expensive) import attempt.
+            # Only set on failure — success resets via _loaded=True above.
+            _last_attempt_ts = now
+            # Log only once per retry window — bulk imports must not flood the log.
             logger.exception(
-                "geo_offline failed to load; geo fields stay empty (will retry)"
+                "geo_offline failed to load; geo fields stay empty "
+                "(will retry after %.0fs)", _RETRY_AFTER_S
             )
             return False
 
