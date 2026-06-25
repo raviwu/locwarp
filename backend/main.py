@@ -37,6 +37,19 @@ from services.geocoding import GeocodingService
 from services.route_service import RouteService
 from services.gpx_service import GpxService
 
+# Early branch: when run with --self-check, import the whole fragile native
+# chain (the PyInstaller metadata-gap history — pyimg4 / apple_compress /
+# prompt_toolkit / h3) and exit non-zero on the first failure, then exit
+# WITHOUT starting uvicorn. Unlike --tunnel-helper (which runs before any
+# backend import to keep the elevated helper small), this branch runs AFTER
+# the heavy imports above: reaching here proves `import core.device_manager`
+# already pulled the chain in, and run_self_check re-imports it explicitly to
+# surface any metadata gap with a precise label + a clean build-log exit code.
+if "--self-check" in sys.argv:
+    import self_check
+
+    raise SystemExit(self_check.run_self_check())
+
 # Configure logging — console + rotating file.
 #
 # Log directory resolution:
