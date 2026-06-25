@@ -206,6 +206,7 @@ class SimulationEngine:
         speed_max_kmh: float | None = None,
         straight_line: bool = False,
         route_engine: str | None = None,
+        speed_jitter_enabled: bool = True,
     ) -> None:
         """Navigate from current position to *dest*."""
         await self._ensure_stopped()
@@ -216,6 +217,7 @@ class SimulationEngine:
             dest=dest, mode=mode, speed_kmh=speed_kmh,
             speed_min_kmh=speed_min_kmh, speed_max_kmh=speed_max_kmh,
             straight_line=straight_line, route_engine=route_engine,
+            speed_jitter_enabled=speed_jitter_enabled,
         )
         await self._run_handler(
             self._navigator.navigate_to(
@@ -223,6 +225,7 @@ class SimulationEngine:
                 speed_min_kmh=speed_min_kmh, speed_max_kmh=speed_max_kmh,
                 straight_line=straight_line,
                 route_engine=route_engine,
+                speed_jitter_enabled=speed_jitter_enabled,
             ),
             "Navigate",
         )
@@ -243,6 +246,7 @@ class SimulationEngine:
         jump_mode: bool = False,
         jump_interval: float = 12.0,
         timestamps: list[float] | None = None,
+        speed_jitter_enabled: bool = True,
     ) -> None:
         """Start looping through a closed route."""
         await self._ensure_stopped()
@@ -260,6 +264,7 @@ class SimulationEngine:
             lap_count=lap_count,
             jump_mode=jump_mode, jump_interval=jump_interval,
             timestamps=timestamps,
+            speed_jitter_enabled=speed_jitter_enabled,
         )
         await self._run_handler(
             self._looper.start_loop(
@@ -269,6 +274,7 @@ class SimulationEngine:
                 straight_line=straight_line, route_engine=route_engine,
                 lap_count=lap_count,
                 jump_mode=jump_mode, jump_interval=jump_interval,
+                speed_jitter_enabled=speed_jitter_enabled,
             ),
             "Loop",
         )
@@ -304,6 +310,7 @@ class SimulationEngine:
         route_engine: str | None = None,
         jump_mode: bool = False,
         jump_interval: float = 12.0,
+        speed_jitter_enabled: bool = True,
     ) -> None:
         """Navigate through waypoints with optional stops."""
         await self._ensure_stopped()
@@ -316,6 +323,7 @@ class SimulationEngine:
             pause_enabled=pause_enabled, pause_min=pause_min, pause_max=pause_max,
             straight_line=straight_line, route_engine=route_engine,
             jump_mode=jump_mode, jump_interval=jump_interval,
+            speed_jitter_enabled=speed_jitter_enabled,
         )
         await self._run_handler(
             self._multi_stop.start(
@@ -324,6 +332,7 @@ class SimulationEngine:
                 pause_enabled=pause_enabled, pause_min=pause_min, pause_max=pause_max,
                 straight_line=straight_line, route_engine=route_engine,
                 jump_mode=jump_mode, jump_interval=jump_interval,
+                speed_jitter_enabled=speed_jitter_enabled,
             ),
             "Multi-stop",
         )
@@ -342,6 +351,7 @@ class SimulationEngine:
         seed: int | None = None,
         straight_line: bool = False,
         route_engine: str | None = None,
+        speed_jitter_enabled: bool = True,
     ) -> None:
         """Begin a random walk within a radius."""
         await self._ensure_stopped()
@@ -357,6 +367,7 @@ class SimulationEngine:
             speed_kmh=speed_kmh, speed_min_kmh=speed_min_kmh, speed_max_kmh=speed_max_kmh,
             pause_enabled=pause_enabled, pause_min=pause_min, pause_max=pause_max,
             seed=effective_seed, straight_line=straight_line, route_engine=route_engine,
+            speed_jitter_enabled=speed_jitter_enabled,
         )
         seed = effective_seed
         await self._run_handler(
@@ -367,6 +378,7 @@ class SimulationEngine:
                 pause_enabled=pause_enabled, pause_min=pause_min, pause_max=pause_max,
                 seed=seed,
                 straight_line=straight_line, route_engine=route_engine,
+                speed_jitter_enabled=speed_jitter_enabled,
             ),
             "Random walk",
         )

@@ -34,6 +34,7 @@ class RouteLooper:
         lap_count: int | None = None,
         jump_mode: bool = False,
         jump_interval: float = 12.0,
+        speed_jitter_enabled: bool = True,
     ) -> None:
         """Build a multi-waypoint route that forms a closed loop, then
         traverse it repeatedly until stopped.
@@ -104,6 +105,7 @@ class RouteLooper:
             else:
                 speed_profile = resolve_speed_profile(
                     mode.value, speed_kmh, speed_min_kmh, speed_max_kmh,
+                    jitter_enabled=speed_jitter_enabled,
                 )
             await engine._move_along_route(
                 list(waypoints), speed_profile, offsets=pending_offsets,
@@ -173,6 +175,7 @@ class RouteLooper:
                 return dict(engine._active_speed_profile)
             return resolve_speed_profile(
                 profile_name, speed_kmh, speed_min_kmh, speed_max_kmh,
+                jitter_enabled=speed_jitter_enabled,
             )
 
         # Per-station pause sampler. Returns a non-negative duration; 0 means

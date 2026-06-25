@@ -35,6 +35,7 @@ class MultiStopNavigator:
         route_engine: str | None = None,
         jump_mode: bool = False,
         jump_interval: float = 12.0,
+        speed_jitter_enabled: bool = True,
     ) -> None:
         """Navigate through *waypoints* one leg at a time.
 
@@ -84,6 +85,7 @@ class MultiStopNavigator:
                 return dict(engine._active_speed_profile)
             return resolve_speed_profile(
                 profile_name, speed_kmh, speed_min_kmh, speed_max_kmh,
+                jitter_enabled=speed_jitter_enabled,
             )
 
         # Resume support: when this engine is taking over from a peer

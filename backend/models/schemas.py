@@ -72,6 +72,7 @@ class NavigateRequest(BaseModel):
     straight_line: bool = False
     route_engine: str | None = None
     udid: str | None = None
+    speed_jitter_enabled: bool = True
 
 
 class LoopRequest(BaseModel):
@@ -86,6 +87,7 @@ class LoopRequest(BaseModel):
     straight_line: bool = False
     route_engine: str | None = None
     udid: str | None = None
+    speed_jitter_enabled: bool = True
     # Number of laps to run before auto-stopping. None / 0 / negative means
     # infinite laps (current default behaviour, user stops manually).
     lap_count: int | None = None
@@ -116,6 +118,7 @@ class MultiStopRequest(BaseModel):
     straight_line: bool = False
     route_engine: str | None = None
     udid: str | None = None
+    speed_jitter_enabled: bool = True
     # Jump mode: teleport point-to-point with a fixed interval instead of
     # walking the routed path. See LoopRequest.jump_mode for details.
     jump_mode: bool = False
@@ -135,6 +138,7 @@ class RandomWalkRequest(BaseModel):
     straight_line: bool = False
     route_engine: str | None = None
     udid: str | None = None
+    speed_jitter_enabled: bool = True
     # Dual-device group mode: both devices pass the same seed so they pick
     # identical sequences of random destinations, keeping their paths synced.
     seed: int | None = None

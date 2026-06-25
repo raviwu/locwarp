@@ -37,6 +37,7 @@ class RandomWalkHandler:
         seed: int | None = None,
         straight_line: bool = False,
         route_engine: str | None = None,
+        speed_jitter_enabled: bool = True,
     ) -> None:
         """Begin a random walk around *center* within *radius_m*.
 
@@ -149,6 +150,7 @@ class RandomWalkHandler:
                     else:
                         speed_profile = resolve_speed_profile(
                             profile_name, speed_kmh, speed_min_kmh, speed_max_kmh,
+                            jitter_enabled=speed_jitter_enabled,
                         )
                     # Random walk has no named waypoints — disable highlight
                     engine._user_waypoints = []

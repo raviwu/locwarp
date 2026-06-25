@@ -205,6 +205,7 @@ async def navigate(req: NavigateRequest, registry=Depends(get_engine_registry)):
         speed_min_kmh=req.speed_min_kmh, speed_max_kmh=req.speed_max_kmh,
         straight_line=req.straight_line,
         route_engine=req.route_engine,
+        speed_jitter_enabled=req.speed_jitter_enabled,
     ))
     return {"status": "started", "destination": {"lat": req.lat, "lng": req.lng}, "mode": req.mode}
 
@@ -222,6 +223,7 @@ async def loop(req: LoopRequest, registry=Depends(get_engine_registry)):
         lap_count=req.lap_count,
         jump_mode=req.jump_mode, jump_interval=req.jump_interval,
         timestamps=req.timestamps,
+        speed_jitter_enabled=req.speed_jitter_enabled,
     ))
     return {"status": "started", "waypoints": len(req.waypoints), "mode": req.mode}
 
@@ -237,6 +239,7 @@ async def multi_stop(req: MultiStopRequest, registry=Depends(get_engine_registry
         straight_line=req.straight_line,
         route_engine=req.route_engine,
         jump_mode=req.jump_mode, jump_interval=req.jump_interval,
+        speed_jitter_enabled=req.speed_jitter_enabled,
     ))
     return {"status": "started", "stops": len(req.waypoints), "mode": req.mode}
 
@@ -272,6 +275,7 @@ async def random_walk(req: RandomWalkRequest, registry=Depends(get_engine_regist
         seed=req.seed,
         straight_line=req.straight_line,
         route_engine=req.route_engine,
+        speed_jitter_enabled=req.speed_jitter_enabled,
     ))
     return {"status": "started", "radius_m": req.radius_m, "mode": req.mode}
 

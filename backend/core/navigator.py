@@ -23,6 +23,7 @@ class Navigator:
         speed_max_kmh: float | None = None,
         straight_line: bool = False,
         route_engine: str | None = None,
+        speed_jitter_enabled: bool = True,
     ) -> None:
         """Get an OSRM route from the current position to *dest*, then
         walk/run/drive along it using the engine's core movement loop.
@@ -41,7 +42,7 @@ class Navigator:
 
         start = engine.current_position
         profile_name = mode.value  # "walking" | "running" | "driving"
-        speed_profile = resolve_speed_profile(profile_name, speed_kmh, speed_min_kmh, speed_max_kmh)
+        speed_profile = resolve_speed_profile(profile_name, speed_kmh, speed_min_kmh, speed_max_kmh, jitter_enabled=speed_jitter_enabled)
 
         # Map movement mode to OSRM routing profile
         osrm_profile = "foot" if mode in (MovementMode.WALKING, MovementMode.RUNNING) else "car"
