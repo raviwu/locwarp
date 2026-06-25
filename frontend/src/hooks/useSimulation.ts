@@ -206,6 +206,13 @@ export function useSimulation(
   // Distinct from `error` (the terminal red banner) so a recovery doesn't get
   // conflated with a real failure. Primary-device focused, like `error`.
   const [tunnelReconnecting, setTunnelReconnecting] = useState(false)
+  // Attempt counter + retry countdown derived from the enriched tunnel_degraded
+  // payload ({attempt, max_attempts, next_delay_s}). Null when the backend
+  // sent no attempt keys (empty backoff) — the banner then falls back to the
+  // plain "reconnecting…" copy. retryInSec ticks down to 0 at 1 Hz.
+  const [reconnectInfo, setReconnectInfo] = useState<
+    { attempt: number; maxAttempts: number; retryInSec: number } | null
+  >(null)
   // Random-walk pause countdown (unix epoch seconds of when pause ends)
   const [pauseEndAt, setPauseEndAt] = useState<number | null>(null)
   const [pauseRemaining, setPauseRemaining] = useState<number | null>(null)
@@ -290,6 +297,21 @@ export function useSimulation(
     const id = setInterval(tick, 250)
     return () => clearInterval(id)
   }, [pauseEndAt])
+
+  // Tick the reconnect retry countdown down to 0 at 1 Hz.
+  useEffect(() => {
+    if (reconnectInfo == null) return
+    if (reconnectInfo.retryInSec <= 0) return
+    const id = setInterval(() => {
+      setReconnectInfo((prev) => {
+        if (prev == null) return prev
+        const next = Math.max(0, prev.retryInSec - 1)
+        if (next === prev.retryInSec) return prev
+        return { ...prev, retryInSec: next }
+      })
+    }, 1000)
+    return () => clearInterval(id)
+  }, [reconnectInfo])
 
   // Process incoming WS messages via typed WsRouter subscriptions. The old
   // useState-based approach dropped messages when two arrived in the
@@ -443,6 +465,15 @@ export function useSimulation(
       if (primary && msgUdid && msgUdid !== primary) return
       // Entering the backend retry/backoff window — show "reconnecting…".
       setTunnelReconnecting(true)
+      // Enriched payload (attempt/max_attempts/next_delay_s) drives the
+      // attempt counter + countdown. Absent (empty backoff) → leave null so
+      // the banner shows the plain reconnecting copy.
+      const attempt = typeof e.attempt === 'number' ? e.attempt : undefined
+      const maxAttempts = typeof e.max_attempts === 'number' ? e.max_attempts : undefined
+      const nextDelay = typeof e.next_delay_s === 'number' ? e.next_delay_s : undefined
+      if (attempt != null && maxAttempts != null && nextDelay != null) {
+        setReconnectInfo({ attempt, maxAttempts, retryInSec: Math.round(nextDelay) })
+      }
     })
 
     const offTunnelRecovered = ws.subscribe('tunnel_recovered', (e: WsEvent) => {
@@ -454,6 +485,7 @@ export function useSimulation(
       // to match the sibling device_connected/device_reconnected handlers,
       // which the backend emits one frame after this anyway.)
       setTunnelReconnecting(false)
+      setReconnectInfo(null)
       setError(null)
       onTunnelRecoveredRef.current?.()
     })
@@ -465,6 +497,7 @@ export function useSimulation(
       // Retries exhausted → terminal: drop the transient reconnecting state
       // and raise the persistent banner.
       setTunnelReconnecting(false)
+      setReconnectInfo(null)
       // Uses localStorage to get current language (hooks don't have i18n context easily here)
       setError((typeof localStorage !== 'undefined' && localStorage.getItem('locwarp.lang') === 'en')
         ? 'Wi-Fi tunnel dropped, please reconnect'
@@ -516,6 +549,7 @@ export function useSimulation(
       if (primary && msgUdid && msgUdid !== primary) return
       setError(null)
       setTunnelReconnecting(false)
+      setReconnectInfo(null)
     })
 
     const offDeviceError = ws.subscribe('device_error', (e: WsEvent) => {
@@ -1062,6 +1096,7 @@ export function useSimulation(
     error,
     clearError,
     tunnelReconnecting,
+    reconnectInfo,
     teleport,
     stop,
     navigate,

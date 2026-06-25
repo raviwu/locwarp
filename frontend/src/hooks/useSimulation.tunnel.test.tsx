@@ -99,4 +99,43 @@ describe('useSimulation — WiFi tunnel three-state', () => {
     act(() => { ws.dispatch({ type: 'device_connected', udid: 'dev-a', connection_type: 'Network' }) })
     expect(result.current.tunnelReconnecting).toBe(false)
   })
+
+  it('tunnel_degraded with attempt keys populates reconnectInfo', () => {
+    const ws = createWsRouter()
+    const { result } = renderHook(() => useSimulation(ws, null))
+    act(() => {
+      ws.dispatch({ type: 'tunnel_degraded', udid: 'dev-a', reason: 'task_exited', attempt: 1, max_attempts: 3, next_delay_s: 6 })
+    })
+    expect(result.current.reconnectInfo).toEqual({ attempt: 1, maxAttempts: 3, retryInSec: 6 })
+  })
+
+  it('tunnel_degraded without attempt keys leaves reconnectInfo null', () => {
+    const ws = createWsRouter()
+    const { result } = renderHook(() => useSimulation(ws, null))
+    act(() => { ws.dispatch({ type: 'tunnel_degraded', udid: 'dev-a', reason: 'task_exited' }) })
+    expect(result.current.tunnelReconnecting).toBe(true)
+    expect(result.current.reconnectInfo).toBeNull()
+  })
+
+  it('reconnectInfo is cleared on tunnel_recovered', () => {
+    const ws = createWsRouter()
+    const { result } = renderHook(() => useSimulation(ws, null))
+    act(() => {
+      ws.dispatch({ type: 'tunnel_degraded', udid: 'dev-a', attempt: 2, max_attempts: 3, next_delay_s: 12 })
+    })
+    expect(result.current.reconnectInfo).not.toBeNull()
+    act(() => { ws.dispatch({ type: 'tunnel_recovered', udid: 'dev-a', rsd_address: 'x', rsd_port: 1 }) })
+    expect(result.current.reconnectInfo).toBeNull()
+  })
+
+  it('reconnectInfo is cleared on tunnel_lost', () => {
+    const ws = createWsRouter()
+    const { result } = renderHook(() => useSimulation(ws, null))
+    act(() => {
+      ws.dispatch({ type: 'tunnel_degraded', udid: 'dev-a', attempt: 1, max_attempts: 3, next_delay_s: 6 })
+    })
+    expect(result.current.reconnectInfo).not.toBeNull()
+    act(() => { ws.dispatch({ type: 'tunnel_lost', udid: 'dev-a', reason: 'task_exited' }) })
+    expect(result.current.reconnectInfo).toBeNull()
+  })
 })

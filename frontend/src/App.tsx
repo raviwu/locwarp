@@ -1619,7 +1619,13 @@ const App: React.FC = () => {
               boxShadow: '0 4px 12px rgba(0,0,0,0.4)', maxWidth: '80%', textAlign: 'center',
             }}
           >
-            {t('wifi.tunnel_reconnecting')}
+            {sim.reconnectInfo
+              ? t('wifi.tunnel_reconnecting_attempt', {
+                  attempt: sim.reconnectInfo.attempt,
+                  max: sim.reconnectInfo.maxAttempts,
+                  sec: sim.reconnectInfo.retryInSec,
+                })
+              : t('wifi.tunnel_reconnecting')}
           </div>
         )}
         <StatusBar

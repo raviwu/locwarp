@@ -269,6 +269,10 @@ export const STRINGS = {
   'wifi.connect_phase.checking_ddi': { zh: '正在檢查 DDI…', en: 'Checking DDI…' },
   'wifi.connect_phase.opening_dvt': { zh: '正在開啟 DVT…', en: 'Opening DVT…' },
   'wifi.connect_phase.connected': { zh: '已連線', en: 'Connected' },
+  'wifi.tunnel_reconnecting_attempt': {
+    zh: 'WiFi Tunnel 連線中斷,重試 {attempt}/{max},{sec} 秒後重連…',
+    en: 'Wi-Fi tunnel dropped — attempt {attempt}/{max}, retrying in {sec}s…',
+  },
   'wifi.tunnel_recovered': { zh: 'WiFi Tunnel 已恢復', en: 'Wi-Fi tunnel restored' },
   'wifi.autoconnect_failed': { zh: 'WiFi 自動連線失敗,請開啟 WiFi 區塊手動連線', en: 'Wi-Fi auto-connect failed — open the Wi-Fi section to connect manually' },
   'device.pair_chip_trust': { zh: '需要信任', en: 'Trust required' },
