@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { isSubmitEnter } from '../utils/keyboard';
 import { createPortal } from 'react-dom';
 import { SimMode } from '../hooks/useSimulation';
+import { useServices } from '../contexts/ServicesContext';
 import type { RuntimesMap } from '../hooks/useSimulation';
 import type { DeviceInfo } from '../hooks/useDevice';
 import { useT } from '../i18n';
@@ -114,6 +115,7 @@ const StatusBar: React.FC<StatusBarProps> = ({
   timezoneZone = null,
   gmtOffsetSeconds = null,
 }) => {
+  const { api } = useServices();
   const t = useT();
   const { latest: updateLatest, releaseUrl: updateUrl } = useUpdateCheck();
   const [cooldownDisplay, setCooldownDisplay] = useState(cooldown);
@@ -192,13 +194,12 @@ const StatusBar: React.FC<StatusBarProps> = ({
   };
 
   const handleInitialDialogSave = async () => {
-    const { setInitialPosition } = await import('../services/api');
     const trimmed = initialDialogValue.trim();
     setInitialDialogError(null);
     if (trimmed === '') {
       setInitialDialogBusy(true);
       try {
-        await setInitialPosition(null, null);
+        await api.setInitialPosition(null, null);
         setInitialDialogOpen(false);
       } catch (e: any) {
         setInitialDialogError(e?.message || 'error');
@@ -218,7 +219,7 @@ const StatusBar: React.FC<StatusBarProps> = ({
     }
     setInitialDialogBusy(true);
     try {
-      await setInitialPosition(lat, lng);
+      await api.setInitialPosition(lat, lng);
       setInitialDialogOpen(false);
     } catch (e: any) {
       setInitialDialogError(e?.message || 'error');
@@ -515,9 +516,8 @@ const StatusBar: React.FC<StatusBarProps> = ({
           {/* Set initial map position (persisted in backend settings.json) */}
           <button
             onClick={async () => {
-              const { getInitialPosition } = await import('../services/api');
               try {
-                const res = await getInitialPosition();
+                const res = await api.getInitialPosition();
                 setInitialDialogValue(res.position ? `${res.position.lat}, ${res.position.lng}` : '');
               } catch { setInitialDialogValue(''); }
               setInitialDialogError(null);

@@ -9,6 +9,16 @@ vi.mock('../i18n', () => ({
   useT: () => (key: string) => key,
 }))
 
+// ServicesContext: stub api so the dynamic-import handlers don't fail.
+vi.mock('../contexts/ServicesContext', () => ({
+  useServices: () => ({
+    api: {
+      setInitialPosition: vi.fn().mockResolvedValue(undefined),
+      getInitialPosition: vi.fn().mockResolvedValue({ position: null }),
+    },
+  }),
+}))
+
 // Heavy / side-effecting children — replaced with inert stubs.
 vi.mock('./LangToggle', () => ({ default: () => <div data-testid="lang-toggle" /> }))
 vi.mock('./PhoneControl', () => ({ default: () => <div data-testid="phone-control" /> }))
