@@ -1,4 +1,4 @@
-pymobiledevice3>=9.9.0
+pymobiledevice3==9.27.0
 fastapi>=0.110.0
 uvicorn[standard]>=0.29.0
 websockets>=12.0
@@ -8,11 +8,21 @@ pydantic>=2.0.0
 python-multipart>=0.0.9
 psutil>=5.9.0
 watchdog>=3.0
-timezonefinder>=8.0
+timezonefinder==8.2.4
 # numpy is imported directly by services/geo_offline.py (also a timezonefinder
 # dep). Declared explicitly so the offline geo resolver never relies on a
 # transitive-only install.
-numpy>=1.24
+numpy==2.4.6
+# Native chain pinned to == (PyInstaller metadata-gap history — see CLAUDE.md
+# "PyInstaller copy_metadata gap"). pyimg4 / apple_compress / h3 / prompt_toolkit
+# are transitive via pymobiledevice3, but each historically broke ONLY in the
+# packaged DMG (silent DDI-mount / offline-geo no-op), so they are declared
+# direct + pinned here so every build resolves the same byte-reproducible graph.
+# The frozen-import self-check (main.py --self-check) imports exactly this chain.
+pyimg4==0.8.8
+apple_compress==0.2.3
+h3==4.5.0
+prompt_toolkit==3.0.52
 # tzdata gives stdlib zoneinfo a bundled IANA tz database so /api/geocode/timezone
 # can compute the UTC offset from an IANA zone on platforms without a system tz db
 # (notably Windows, and PyInstaller bundles). macOS/Linux already ship /usr/share/zoneinfo.
