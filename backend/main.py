@@ -865,6 +865,26 @@ def _spawn_bg(coro):
     return task
 
 
+async def _startup_autoconnect() -> None:
+    """Discover + auto-connect the first iOS device, off the boot critical
+    path. Spawned by the lifespan via _spawn_bg (Win 2). Holds the exact
+    logic that used to run awaited before `yield`; only the scheduling moved.
+    A failure is logged here AND by the _spawn_bg done-callback — startup
+    never crashes on a connect error."""
+    try:
+        devices = await app_state.device_manager.discover_devices()
+        if devices:
+            target = devices[0]
+            logger.info("Found device %s (%s), auto-connecting…", target.name, target.udid)
+            await app_state.device_manager.connect(target.udid)
+            await app_state.create_engine_for_device(target.udid)
+            logger.info("Auto-connected to %s", target.udid)
+        else:
+            logger.info("No iOS devices found on startup")
+    except Exception:
+        logger.exception("Auto-connect on startup failed (device may need manual connect)")
+
+
 @asynccontextmanager
 async def lifespan(application: FastAPI):
     import asyncio
@@ -978,20 +998,15 @@ async def lifespan(application: FastAPI):
 
         _spawn_bg(_deferred_enrich())
 
-    # ── Startup ──
+    # ── Startup auto-connect (Win 2) ──
+    # Discover + connect + create_engine moved OFF the awaited critical path:
+    # a slow phone / Trust dialog / RSD tunnel handshake used to inject a
+    # variable multi-second stall into cold-start before the window was
+    # interactive. Now spawned fire-and-forget so the server serves
+    # immediately; the device still ends up connected, only the timing moves.
+    # A failure here logs (done-callback) and does NOT crash startup.
     logger.info("LocWarp starting — scanning for devices…")
-    try:
-        devices = await app_state.device_manager.discover_devices()
-        if devices:
-            target = devices[0]
-            logger.info("Found device %s (%s), auto-connecting…", target.name, target.udid)
-            await app_state.device_manager.connect(target.udid)
-            await app_state.create_engine_for_device(target.udid)
-            logger.info("Auto-connected to %s", target.udid)
-        else:
-            logger.info("No iOS devices found on startup")
-    except Exception:
-        logger.exception("Auto-connect on startup failed (device may need manual connect)")
+    _spawn_bg(_startup_autoconnect())
 
     watchdog_task = asyncio.create_task(_usbmux_presence_watchdog())
 
