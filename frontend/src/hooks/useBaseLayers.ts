@@ -31,8 +31,13 @@ if (typeof window !== 'undefined' && !(window as any).maplibregl) {
 // base layers). The 4 custom leaflet-bar buttons stay in MapView (awaiting their
 // own extraction in the next task); only the base-layer lines moved here.
 //
-// Behavior is FROZEN: the localStorage key, the default-layer choice, the layer
-// set + order, and the switcher position are all preserved exactly.
+// Behavior is mostly FROZEN: the localStorage key, the layer set + order, and
+// the switcher position are preserved exactly. The DEFAULT-layer choice was
+// deliberately changed 2026-06-26 from OSM to CartoDB Voyager — the public OSM
+// raster endpoint rate-limits under follow-mode panning and produced the
+// reported map tearing (破圖). CartoDB Voyager is OSM data on the CARTO CDN
+// with no such limit. Only users who never picked a basemap are affected;
+// any stored choice (including an explicit 'osm') is untouched.
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
@@ -135,9 +140,12 @@ export function useBaseLayers(mapRef: React.RefObject<L.Map | null>) {
     )
 
     // Restore the user's previous choice so switching persists between launches.
+    // Default (no stored choice) is CartoDB Voyager, NOT OSM — see the header
+    // note: the public OSM raster endpoint rate-limits under follow-mode
+    // panning and tears.
     const savedLayer = (() => {
-      try { return localStorage.getItem('locwarp.tile_layer') || 'osm' }
-      catch { return 'osm' }
+      try { return localStorage.getItem('locwarp.tile_layer') || 'carto' }
+      catch { return 'carto' }
     })()
     const layers: Record<string, L.Layer> = {
       'OSM': osmLayer,
