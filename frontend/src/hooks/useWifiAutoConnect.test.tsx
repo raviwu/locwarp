@@ -280,6 +280,37 @@ describe('useWifiAutoConnect', () => {
     expect(new Set(ipsTried)).toEqual(new Set(['10.0.0.1', '10.0.0.9']))
   })
 
+  // Regression: discover-added connect leak — before the fix, the discover-only
+  // device's startWifiTunnel promise was pushed into `attempts` AFTER
+  // Promise.allSettled had already snapshotted the array, so its outcome was
+  // invisible to the all-failed toast accounting. With the fix (await discover
+  // before allSettled), the discover connect IS in the settled batch.
+  // Scenario: savedips device fails, discover-only device succeeds → NO toast.
+  it('does NOT call onError when a discover-only connect succeeds even if every savedip fails (leak closed)', async () => {
+    localStorage.setItem(
+      'locwarp.tunnel.savedips',
+      JSON.stringify([{ ip: '10.0.0.1', port: 49152, udid: 'a' }]),
+    )
+    const { api, stub } = makeApi()
+    stub.wifiTunnelDiscover.mockResolvedValue({ devices: [{ ip: '10.0.0.9', port: 49152 }] })
+    const startWifiTunnel = vi.fn(async (ip: string) => {
+      // savedip fails, discover-only device succeeds
+      if (ip === '10.0.0.1') throw new Error('unreachable')
+      return { udid: 'u2', name: 'n2', ios_version: '17', connection_type: 'Network', is_connected: true }
+    }) as unknown as WifiAutoConnectDevice['startWifiTunnel']
+    const device: WifiAutoConnectDevice = { connectedDevices: [], startWifiTunnel }
+    const onError = vi.fn()
+
+    renderHook(() => useWifiAutoConnect(true, api, device, onError))
+    await act(async () => { await vi.advanceTimersByTimeAsync(1600) })
+
+    // Both devices were attempted.
+    const ipsTried = (startWifiTunnel as ReturnType<typeof vi.fn>).mock.calls.map((c: any) => c[0])
+    expect(new Set(ipsTried)).toEqual(new Set(['10.0.0.1', '10.0.0.9']))
+    // The discover connect succeeded — no spurious all-failed toast.
+    expect(onError).not.toHaveBeenCalled()
+  })
+
   it('no-thrash guard: an already-connected device suppresses the savedips fire even after the reorder', async () => {
     localStorage.setItem(
       'locwarp.tunnel.savedips',

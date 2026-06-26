@@ -144,39 +144,30 @@ export function useWifiAutoConnect(
           // connection — the thrash fix (memory: wifi_autoconnect_tunnel_thrash)
           // is preserved.
           for (const entry of savedList) fire(entry.ip, entry.port, entry.udid)
-          // Discover runs CONCURRENTLY (best-effort) and only ADDS devices not
-          // already in savedips — e.g. a second iPhone connected via the
-          // auto-connect path itself that never went through the manual save.
-          // Its failure must not block (or surface a toast for) the savedips
-          // path, so we allSettle it alongside the saved attempts.
-          attempts.push(
-            (async () => {
-              try {
-                const dres = await api.wifiTunnelDiscover()
-                for (const d of (dres?.devices || [])) {
-                  fire(String(d.ip), Number(d.port) || 49152)
-                }
-              } catch { /* discover failed — savedips entries still tried */ }
-            })(),
-          )
+          // Discover runs CONCURRENTLY with the in-flight savedips connects
+          // (those startWifiTunnel calls are already in-flight above, so this
+          // await does NOT delay them). We await it HERE — before allSettled —
+          // so any discover-added device's startWifiTunnel promise lands in
+          // `attempts` BEFORE the snapshot is taken. That means every fired
+          // connect is awaited and counted in the all-failed accounting, closing
+          // the leak where a discover-only device's success/failure was invisible
+          // to the toast decision (results.slice ghost element, unobserved rejection).
+          try {
+            const dres = await api.wifiTunnelDiscover()
+            for (const d of (dres?.devices || [])) {
+              fire(String(d.ip), Number(d.port) || 49152)
+            }
+          } catch { /* discover failed — savedips entries still tried */ }
+          // Parallel: every iPhone gets its tunnel attempt at the same time.
+          // `attempts` now contains EXACTLY the promises for every fired connect
+          // (savedips + discover-added) — fired.size === attempts.length, so no
+          // slice is needed. If nothing fired at all, stay silent.
           if (attempts.length === 0) return
-          // Parallel: every iPhone gets its tunnel attempt at the same time
-          // (savedips fired up-front, discover-found ones added as discover
-          // resolves) so the user doesn't wait sequentially for unreachable
-          // ones to time out (~10s each). The udid hint was passed into
-          // startWifiTunnel so the backend tries the right pair record FIRST.
-          // `attempts` is [...savedStartWifiTunnel promises, discoverDriver];
-          // the discover driver resolves to undefined and can't be "rejected"
-          // here (it swallows its own error), so it never miscounts as a
-          // connect failure.
           const results = await Promise.allSettled(attempts)
           // The WiFi panel does NOT surface auto-pass failures (its tunnelError
-          // is manual-path only). Only count the actual connect attempts (the
-          // ones that fired a device); if EVERY fired candidate rejected, toast.
-          // If nothing fired at all (no saved + no discovered), stay silent.
-          const connectResults = results.slice(0, fired.size)
-          const anyOk = connectResults.some((r) => r.status === 'fulfilled')
-          if (connectResults.length > 0 && !anyOk) {
+          // is manual-path only). If EVERY fired candidate rejected, toast.
+          const anyOk = results.some((r) => r.status === 'fulfilled')
+          if (!anyOk) {
             onErrorRef.current?.('wifi.autoconnect_failed')
           }
         } catch {
