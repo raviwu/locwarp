@@ -178,10 +178,15 @@ class AppState:
         self._load_settings()
         from bootstrap.factories import make_bookmark_manager, make_route_manager
         self.bookmark_manager = make_bookmark_manager()
-        # Reconciliation sweep: backfill country / timezone / city / region
-        # on any bookmark (legacy, imported, offline-added) still missing
-        # them. Offline + idempotent — a no-op once everything is filled.
-        self.bookmark_manager.enrich_all()
+        # NOTE: the geo-enrichment reconciliation sweep (enrich_all) is NO
+        # LONGER run here. The first resolve() inside enrich_all loads numpy +
+        # timezonefinder + a 2.7MB cities5000.json (~530ms) — far too heavy to
+        # sit on the awaited boot critical path. It is spawned off-thread by
+        # the lifespan (see _spawn_bg(asyncio.to_thread(...enrich_all))) so the
+        # server serves immediately and enrichment completes concurrently.
+        # Safe: enrich_all mutates the store under _store_lock and is
+        # idempotent; its _save() fires the bookmarks_changed broadcast so a
+        # late geo fill renders without a reload.
         self.route_manager = make_route_manager()
 
         # Rotating local backup: snapshots both managers' live state to
@@ -834,6 +839,28 @@ async def _bookmark_backup_loop(service, *, interval_s, sleep=asyncio.sleep, now
         await sleep(interval_s)
 
 
+# Strong references to fire-and-forget startup tasks. asyncio only keeps weak
+# refs, so without this set Python can GC a task mid-flight (documented
+# footgun). Tasks self-remove on completion; exceptions are logged + swallowed
+# so a deferred-startup failure never takes the server down. Mirrors
+# api/location.py:_spawn / _bg_tasks.
+_startup_bg_tasks: set = set()
+
+
+def _spawn_bg(coro):
+    task = asyncio.create_task(coro)
+    _startup_bg_tasks.add(task)
+
+    def _on_done(t):
+        _startup_bg_tasks.discard(t)
+        exc = t.exception()
+        if exc is not None:
+            logger.exception("startup background task crashed: %s", exc, exc_info=exc)
+
+    task.add_done_callback(_on_done)
+    return task
+
+
 @asynccontextmanager
 async def lifespan(application: FastAPI):
     import asyncio
@@ -912,6 +939,17 @@ async def lifespan(application: FastAPI):
         )
 
     await app_state.load_state()
+
+    # ── Deferred geo enrichment (Win 1) ──
+    # Run the reconciliation sweep off the awaited critical path so uvicorn
+    # serves immediately. enrich_all is blocking (numpy + timezonefinder +
+    # 2.7MB JSON), so push it to a thread; the spawned task error-logs and
+    # discards on its own (_spawn_bg). The store itself is already loaded
+    # (above) so bookmarks/routes exist the instant the server is up — only
+    # the offline geo fields fill in a beat later, broadcast via the watcher's
+    # bookmarks_changed event.
+    if app_state.bookmark_manager is not None:
+        _spawn_bg(asyncio.to_thread(app_state.bookmark_manager.enrich_all))
 
     # ── Startup ──
     logger.info("LocWarp starting — scanning for devices…")
