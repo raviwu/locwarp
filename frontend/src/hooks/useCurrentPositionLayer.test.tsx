@@ -61,4 +61,11 @@ describe('useCurrentPositionLayer — follow-pan deadzone', () => {
     const { map } = render({ pt: { x: 790, y: 590 }, followMode: false })
     expect(map.panTo).not.toHaveBeenCalled()
   })
+
+  it('does NOT pan at the exact deadzone boundary (inclusive <=)', () => {
+    // x=600 is exactly size.x*0.25 (=200) off the 800-wide center → on the box
+    // edge; under the inclusive `<=` this counts as inside, so no pan.
+    const { map } = render({ pt: { x: 600, y: 300 } })
+    expect(map.panTo).not.toHaveBeenCalled()
+  })
 })
