@@ -122,44 +122,63 @@ export function useWifiAutoConnect(
           // through the manual save) — without it, only one iPhone keeps
           // auto-connecting on every launch even though both are paired.
           const seen = new Set<string>()
-          const uniq: Array<{ ip: string; port: number; udid?: string }> = []
-          const addCand = (ip: string, port: number, udid?: string) => {
+          const fired = new Set<string>()
+          const attempts: Array<Promise<unknown>> = []
+          const fire = (ip: string, port: number, udid?: string) => {
             const key = `${ip}:${port}`
             if (seen.has(key)) return
             if (alreadyTunneled.has(key)) return
+            // Cap at the MAX_DEVICES the backend enforces — anything beyond
+            // would 409 anyway. Count only what we've actually fired.
+            if (fired.size >= 3) return
             seen.add(key)
-            uniq.push({ ip, port, udid })
+            fired.add(key)
+            attempts.push(device.startWifiTunnel(ip, port, udid))
           }
-          for (const entry of savedList) addCand(entry.ip, entry.port, entry.udid)
-          // Discover is best-effort and runs in parallel; failures don't
-          // block the savedips path.
-          try {
-            const dres = await api.wifiTunnelDiscover()
-            for (const d of (dres?.devices || [])) {
-              addCand(String(d.ip), Number(d.port) || 49152)
-            }
-          } catch { /* discover failed — savedips entries still try */ }
-          // Cap at MAX_DEVICES the backend enforces — anything beyond
-          // would 409 anyway.
-          const limited = uniq.slice(0, 3)
-          if (limited.length === 0) return
-          // Parallel: every iPhone gets a tunnel attempt at the same
-          // time so the user doesn't wait sequentially for unreachable
-          // ones to time out (~10s each). Pass entry.udid so the backend
-          // tries the right pair record FIRST — without the hint, the
-          // second device's request can stall on the wrong candidate's
-          // 8s handshake timeout and bail.
-          const results = await Promise.allSettled(
-            limited.map((entry) =>
-              device.startWifiTunnel(entry.ip, entry.port, entry.udid),
-            ),
+          // (Win 3) Fire the savedips candidates IMMEDIATELY — they already
+          // hold exact {ip, port, udid} for known phones, so there's no reason
+          // to wait the full ~3s mDNS browse before connecting them. A
+          // single-phone user's auto-connect now starts ~3s earlier per launch.
+          // The already-connected guard above (connectedDevicesRef) has already
+          // run, so this never fires a spurious tunnel over a healthy USB/WiFi
+          // connection — the thrash fix (memory: wifi_autoconnect_tunnel_thrash)
+          // is preserved.
+          for (const entry of savedList) fire(entry.ip, entry.port, entry.udid)
+          // Discover runs CONCURRENTLY (best-effort) and only ADDS devices not
+          // already in savedips — e.g. a second iPhone connected via the
+          // auto-connect path itself that never went through the manual save.
+          // Its failure must not block (or surface a toast for) the savedips
+          // path, so we allSettle it alongside the saved attempts.
+          attempts.push(
+            (async () => {
+              try {
+                const dres = await api.wifiTunnelDiscover()
+                for (const d of (dres?.devices || [])) {
+                  fire(String(d.ip), Number(d.port) || 49152)
+                }
+              } catch { /* discover failed — savedips entries still tried */ }
+            })(),
           )
-          // The WiFi panel does NOT surface auto-pass failures (its
-          // tunnelError is manual-path only), so if EVERY candidate
-          // rejected, fire the injected toast so the user isn't left
-          // wondering why nothing connected.
-          const anyOk = results.some((r) => r.status === 'fulfilled')
-          if (!anyOk) onErrorRef.current?.('wifi.autoconnect_failed')
+          if (attempts.length === 0) return
+          // Parallel: every iPhone gets its tunnel attempt at the same time
+          // (savedips fired up-front, discover-found ones added as discover
+          // resolves) so the user doesn't wait sequentially for unreachable
+          // ones to time out (~10s each). The udid hint was passed into
+          // startWifiTunnel so the backend tries the right pair record FIRST.
+          // `attempts` is [...savedStartWifiTunnel promises, discoverDriver];
+          // the discover driver resolves to undefined and can't be "rejected"
+          // here (it swallows its own error), so it never miscounts as a
+          // connect failure.
+          const results = await Promise.allSettled(attempts)
+          // The WiFi panel does NOT surface auto-pass failures (its tunnelError
+          // is manual-path only). Only count the actual connect attempts (the
+          // ones that fired a device); if EVERY fired candidate rejected, toast.
+          // If nothing fired at all (no saved + no discovered), stay silent.
+          const connectResults = results.slice(0, fired.size)
+          const anyOk = connectResults.some((r) => r.status === 'fulfilled')
+          if (connectResults.length > 0 && !anyOk) {
+            onErrorRef.current?.('wifi.autoconnect_failed')
+          }
         } catch {
           // Pre-flight (wifiTunnelStatus/discover) threw — silent: a transient
           // 500/timeout during backend warmup must NOT pop a spurious toast for

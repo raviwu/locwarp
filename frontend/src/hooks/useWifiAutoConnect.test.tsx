@@ -242,4 +242,66 @@ describe('useWifiAutoConnect', () => {
 
     expect(onError).toHaveBeenCalledWith('wifi.autoconnect_failed')
   })
+
+  // Win 3 — ordering tests: savedips fires immediately (doesn't wait for discover).
+  it('fires the savedips candidate immediately even when discover never resolves', async () => {
+    localStorage.setItem(
+      'locwarp.tunnel.savedips',
+      JSON.stringify([{ ip: '10.0.0.1', port: 49152, udid: 'a' }]),
+    )
+    const { api, stub } = makeApi()
+    // Discover hangs forever — the savedips fire must NOT wait on it.
+    stub.wifiTunnelDiscover.mockImplementation(() => new Promise(() => {}))
+    const { device, startWifiTunnel } = makeDevice()
+
+    renderHook(() => useWifiAutoConnect(true, api, device))
+    await act(async () => { await vi.advanceTimersByTimeAsync(1600) })
+
+    // savedips candidate fired despite discover being pending.
+    expect(startWifiTunnel).toHaveBeenCalledTimes(1)
+    expect(startWifiTunnel.mock.calls[0][0]).toBe('10.0.0.1')
+    expect(startWifiTunnel.mock.calls[0][2]).toBe('a')
+  })
+
+  it('adds a discover-only device that is not in savedips (concurrent discover)', async () => {
+    localStorage.setItem(
+      'locwarp.tunnel.savedips',
+      JSON.stringify([{ ip: '10.0.0.1', port: 49152, udid: 'a' }]),
+    )
+    const { api, stub } = makeApi()
+    // Discover surfaces a second, un-saved iPhone.
+    stub.wifiTunnelDiscover.mockResolvedValue({ devices: [{ ip: '10.0.0.9', port: 49152 }] })
+    const { device, startWifiTunnel } = makeDevice()
+
+    renderHook(() => useWifiAutoConnect(true, api, device))
+    await act(async () => { await vi.advanceTimersByTimeAsync(1600) })
+
+    const ipsTried = startWifiTunnel.mock.calls.map((c) => c[0])
+    expect(new Set(ipsTried)).toEqual(new Set(['10.0.0.1', '10.0.0.9']))
+  })
+
+  it('no-thrash guard: an already-connected device suppresses the savedips fire even after the reorder', async () => {
+    localStorage.setItem(
+      'locwarp.tunnel.savedips',
+      JSON.stringify([{ ip: '10.0.0.1', port: 49152, udid: 'a' }]),
+    )
+    const { api } = makeApi()
+    const startWifiTunnel = vi.fn(async () => ({
+      udid: 'u', name: 'n', ios_version: '17', connection_type: 'Network', is_connected: true,
+    })) as unknown as WifiAutoConnectDevice['startWifiTunnel']
+    const deviceEmpty: WifiAutoConnectDevice = { connectedDevices: [], startWifiTunnel }
+    const usb = { udid: 'x', name: 'n', ios_version: '17', connection_type: 'USB', is_connected: true }
+    const deviceConnected: WifiAutoConnectDevice = { connectedDevices: [usb], startWifiTunnel }
+
+    const { rerender } = renderHook(({ d }) => useWifiAutoConnect(true, api, d), {
+      initialProps: { d: deviceEmpty },
+    })
+    // USB device surfaces on a later render (new object) — guard reads the ref.
+    rerender({ d: deviceConnected })
+    await act(async () => { await vi.advanceTimersByTimeAsync(1600) })
+
+    // Even with savedips firing "immediately", the already-connected guard
+    // (read from connectedDevicesRef) runs FIRST and suppresses any fire.
+    expect(startWifiTunnel).not.toHaveBeenCalled()
+  })
 })
