@@ -93,7 +93,7 @@ vi.mock('./components/DeviceChipRow', () => {
   return {
     default: DeviceChipRowStub,
     DeviceChipRow: DeviceChipRowStub,
-    MAX_DEVICES: 2,
+    MAX_DEVICES: 3,
   }
 })
 
