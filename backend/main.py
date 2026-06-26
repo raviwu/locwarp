@@ -181,12 +181,16 @@ class AppState:
         # NOTE: the geo-enrichment reconciliation sweep (enrich_all) is NO
         # LONGER run here. The first resolve() inside enrich_all loads numpy +
         # timezonefinder + a 2.7MB cities5000.json (~530ms) — far too heavy to
-        # sit on the awaited boot critical path. It is spawned off-thread by
-        # the lifespan (see _spawn_bg(asyncio.to_thread(...enrich_all))) so the
-        # server serves immediately and enrichment completes concurrently.
-        # Safe: enrich_all mutates the store under _store_lock and is
-        # idempotent; its _save() fires the bookmarks_changed broadcast so a
-        # late geo fill renders without a reload.
+        # sit on the awaited boot critical path. The lifespan defers it (see
+        # _deferred_enrich): the heavy DATA LOAD is offloaded to a worker
+        # thread (it touches NO store), then the store-MUTATING enrich_all
+        # sweep runs back on the single-threaded event loop. Concurrency model:
+        # the store + its CRUD ops are unlocked and event-loop-only, so the
+        # sweep MUST stay on the loop (not a worker thread) to avoid racing a
+        # concurrent add/delete — _store_lock guards only enrich_all's trailing
+        # _save and does NOT serialize against the unlocked CRUD ops. enrich_all
+        # is idempotent and its _save() fires the bookmarks_changed broadcast so
+        # a late geo fill renders without a reload.
         self.route_manager = make_route_manager()
 
         # Rotating local backup: snapshots both managers' live state to
@@ -942,14 +946,37 @@ async def lifespan(application: FastAPI):
 
     # ── Deferred geo enrichment (Win 1) ──
     # Run the reconciliation sweep off the awaited critical path so uvicorn
-    # serves immediately. enrich_all is blocking (numpy + timezonefinder +
-    # 2.7MB JSON), so push it to a thread; the spawned task error-logs and
-    # discards on its own (_spawn_bg). The store itself is already loaded
-    # (above) so bookmarks/routes exist the instant the server is up — only
-    # the offline geo fields fill in a beat later, broadcast via the watcher's
-    # bookmarks_changed event.
+    # serves immediately. The heavy ~530ms cost is the ONE-TIME geo-DATA LOAD
+    # (numpy + timezonefinder + 2.7MB cities5000.json) triggered by the first
+    # resolve(); that load populates the resolver's module-level cache and
+    # touches NO store. So we offload ONLY that load to a worker thread, then
+    # run the store-MUTATING enrich_all sweep (fast, cached resolves) back on
+    # the single-threaded event loop.
+    #
+    # Why not to_thread(enrich_all): the BookmarkManager store + its CRUD ops
+    # (create/delete/update_bookmark) are unlocked — they rely on the
+    # single-threaded event-loop invariant. enrich_all iterates and mutates
+    # store.bookmarks in place (the trailing _save takes _store_lock, but the
+    # iteration does not, and _store_lock does NOT serialize against the
+    # unlocked CRUD ops anyway). Running the sweep on a to_thread WORKER while
+    # the app serves would race a concurrent add/delete (RuntimeError: list
+    # changed size during iteration, or a torn read). Keeping the sweep on the
+    # loop restores the single-threaded invariant → no race. The store is
+    # already loaded (above) so bookmarks/routes exist the instant the server
+    # is up; only the offline geo fields fill a beat later, broadcast via the
+    # watcher's bookmarks_changed event (enrich_all's _save).
     if app_state.bookmark_manager is not None:
-        _spawn_bg(asyncio.to_thread(app_state.bookmark_manager.enrich_all))
+        manager = app_state.bookmark_manager
+
+        async def _deferred_enrich() -> None:
+            # Warm the offline resolver off the loop (the slow data load,
+            # store-free), then sweep on the loop (single-threaded → safe).
+            from services import geo_offline
+
+            await asyncio.to_thread(geo_offline._ensure_loaded)
+            manager.enrich_all()
+
+        _spawn_bg(_deferred_enrich())
 
     # ── Startup ──
     logger.info("LocWarp starting — scanning for devices…")

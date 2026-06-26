@@ -52,13 +52,12 @@ async def test_lifespan_invokes_enrich_all_during_startup(monkeypatch):
     app_state.route_manager = None
 
     calls = {"n": 0}
-    real_to_thread = asyncio.to_thread
 
-    # Spy: count enrich_all invocations regardless of whether it's called
-    # inline (pre-change) or via asyncio.to_thread (post-change). We wrap
-    # to_thread so a deferred enrich is still observed, and also patch the
-    # bound method after load_state builds the manager. Since load_state
-    # rebuilds bookmark_manager, install the spy by wrapping the class method.
+    # Spy: count enrich_all invocations regardless of HOW startup defers it
+    # (inline pre-change, or via the _deferred_enrich async wrapper that warms
+    # the resolver off-thread then sweeps on the loop post-change). load_state
+    # rebuilds bookmark_manager, so install the spy by wrapping the class
+    # method — it survives the rebuild.
     from services.bookmarks import BookmarkManager
     real_enrich = BookmarkManager.enrich_all
 
