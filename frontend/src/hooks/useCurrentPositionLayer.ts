@@ -143,15 +143,28 @@ export function useCurrentPositionLayer(
     prevPositionRef.current = currentPosition;
   }, [currentPosition, userAvatarHtml]);
 
-  // Auto-pan the map to the current position whenever follow mode is on.
-  // Uses panTo with a short animation so rapid backend ticks (random walk
-  // can be ~10 Hz) blend into a smooth camera trail rather than jumpy
-  // snaps. Programmatic panTo does NOT fire dragstart, so the auto-disable
-  // wired at map init is safe.
+  // Auto-pan the map to the current position in follow mode, but ONLY when the
+  // marker has drifted out of a central deadzone (the central 50% of the
+  // viewport). Recentering on every tick restarted the 0.4s pan animation
+  // before it could settle — sim ticks arrive every 0.2-1.0s — so the tile
+  // layer never stopped pruning + re-requesting tiles, producing a torn /
+  // half-loaded band along the direction of travel (worsened by the OSM
+  // endpoint's rate limit). With the deadzone, most ticks leave the map still
+  // (tiles settle); the marker only reaches the box edge every few seconds, so
+  // each pan runs to completion uninterrupted and animate:true stays smooth.
+  // Programmatic panTo does NOT fire dragstart, so the auto-disable wired at
+  // map init is safe.
   useEffect(() => {
     if (!followMode || !currentPosition) return;
     const map = mapRef.current;
     if (!map) return;
+    const pt = map.latLngToContainerPoint([currentPosition.lat, currentPosition.lng]);
+    const size = map.getSize();
+    const offX = Math.abs(pt.x - size.x / 2);
+    const offY = Math.abs(pt.y - size.y / 2);
+    // Inside the central 50% box (within 25% of half-size from center on BOTH
+    // axes) → leave the map still so tiles can finish loading.
+    if (offX <= size.x * 0.25 && offY <= size.y * 0.25) return;
     map.panTo([currentPosition.lat, currentPosition.lng], {
       animate: true,
       duration: 0.4,
