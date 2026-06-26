@@ -57,7 +57,7 @@ async def test_tunnel_degraded_carries_attempt_max_and_next_delay():
     runner.target_ip = None
     runner.target_port = None
     pub = _CapPublisher()
-    svc = _make_service(tunnels={udid: runner}, publish=pub.publish, restart_backoff=(3.0, 6.0, 12.0))
+    svc = _make_service(tunnels={udid: runner}, publish=pub.publish, restart_backoff=(0.5, 2.0, 5.0, 10.0))
     await svc.run_watchdog(udid, runner)
     by_type = {e: d for e, d in pub.events}
     assert by_type["tunnel_degraded"] == {
@@ -65,8 +65,8 @@ async def test_tunnel_degraded_carries_attempt_max_and_next_delay():
         "reason": DeviceLostError.REASON_TUNNEL_DEAD,
         "last_error": "helper reports tunnel for X is gone",
         "attempt": 1,
-        "max_attempts": 3,
-        "next_delay_s": 3.0,
+        "max_attempts": 4,
+        "next_delay_s": 0.5,
     }
 
 
@@ -81,15 +81,15 @@ async def test_tunnel_degraded_clean_exit_still_carries_attempt_keys():
     runner.target_ip = None
     runner.target_port = None
     pub = _CapPublisher()
-    svc = _make_service(tunnels={udid: runner}, publish=pub.publish, restart_backoff=(3.0, 6.0, 12.0))
+    svc = _make_service(tunnels={udid: runner}, publish=pub.publish, restart_backoff=(0.5, 2.0, 5.0, 10.0))
     await svc.run_watchdog(udid, runner)
     by_type = {e: d for e, d in pub.events}
     assert by_type["tunnel_degraded"] == {
         "udid": udid,
         "reason": "task_exited",
         "attempt": 1,
-        "max_attempts": 3,
-        "next_delay_s": 3.0,
+        "max_attempts": 4,
+        "next_delay_s": 0.5,
     }
 
 
@@ -108,3 +108,28 @@ async def test_tunnel_degraded_empty_backoff_omits_attempt_keys():
     await svc.run_watchdog(udid, runner)
     by_type = {e: d for e, d in pub.events}
     assert by_type["tunnel_degraded"] == {"udid": udid, "reason": "task_exited"}
+
+
+async def test_first_degraded_emit_uses_new_fast_backoff():
+    """Regression-lock the Win-4 cadence: with the production backoff
+    (0.5, 2.0, 5.0, 10.0) the FIRST tunnel_degraded emit advertises a
+    near-instant first retry (0.5s) and 4 total attempts."""
+    udid = "UDID-DEG-FAST"
+
+    async def _dead_task():
+        raise DeviceLostError(
+            "WiFi tunnel gone",
+            reason=DeviceLostError.REASON_TUNNEL_DEAD,
+            last_error="helper reports tunnel for X is gone",
+        )
+
+    runner = MagicMock()
+    runner.task = asyncio.create_task(_dead_task())
+    runner.target_ip = None
+    runner.target_port = None
+    pub = _CapPublisher()
+    svc = _make_service(tunnels={udid: runner}, publish=pub.publish, restart_backoff=(0.5, 2.0, 5.0, 10.0))
+    await svc.run_watchdog(udid, runner)
+    by_type = {e: d for e, d in pub.events}
+    assert by_type["tunnel_degraded"]["next_delay_s"] == 0.5
+    assert by_type["tunnel_degraded"]["max_attempts"] == 4

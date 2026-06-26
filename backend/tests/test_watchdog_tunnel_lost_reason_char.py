@@ -64,8 +64,8 @@ async def test_watchdog_threads_device_lost_reason_into_payloads():
         "reason": DeviceLostError.REASON_TUNNEL_DEAD,
         "last_error": "helper reports tunnel for X is gone",
         "attempt": 1,
-        "max_attempts": 3,
-        "next_delay_s": 3.0,
+        "max_attempts": 4,
+        "next_delay_s": 0.5,
     }
     assert by_type["tunnel_lost"] == {
         "udid": udid,
@@ -106,7 +106,7 @@ async def test_watchdog_clean_exit_keeps_task_exited_shape():
         "udid": udid,
         "reason": "task_exited",
         "attempt": 1,
-        "max_attempts": 3,
-        "next_delay_s": 3.0,
+        "max_attempts": 4,
+        "next_delay_s": 0.5,
     }
     assert by_type["tunnel_lost"] == {"udid": udid, "reason": "task_exited"}

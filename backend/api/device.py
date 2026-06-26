@@ -732,12 +732,13 @@ async def _tear_down_tunnel(udid: str, *, caller: str) -> None:
             _tunnel_logger.exception("[%s] runner.stop failed for %s", caller, udid)
 
 
-# Restart backoff sequence (seconds). Three attempts cover most WiFi blips
-# (transient packet loss, brief screen-lock pause) without sitting on a dead
-# tunnel for an unbounded time. Total worst-case wait ~21s before final
-# teardown — within the user's tolerance for "auto-recovers" before they'd
-# look at the UI and notice.
-_TUNNEL_RESTART_BACKOFF: tuple[float, ...] = (3.0, 6.0, 12.0)
+# Restart backoff sequence (seconds). Four attempts: the first retry is
+# near-instant because most WiFi blips (a brief screen-lock pause, transient
+# packet loss) recover immediately — waiting a full 3s before the first retry
+# was a major contributor to the ~27s felt reconnect window. The later steps
+# (2s, 5s, 10s) cover deeper outages without sitting on a dead tunnel for an
+# unbounded time. Total worst-case wait ~17.5s before final teardown.
+_TUNNEL_RESTART_BACKOFF: tuple[float, ...] = (0.5, 2.0, 5.0, 10.0)
 
 
 async def _attempt_tunnel_restart(

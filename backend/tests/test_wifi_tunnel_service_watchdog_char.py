@@ -35,7 +35,7 @@ def _make_service(*, tunnels, publish):
         publish=publish,
         logger=MagicMock(),
         sim_state_disconnected=None,
-        restart_backoff=(3.0, 6.0, 12.0),
+        restart_backoff=(0.5, 2.0, 5.0, 10.0),
     )
 
 
@@ -61,8 +61,8 @@ async def test_run_watchdog_threads_device_lost_reason():
         "reason": DeviceLostError.REASON_TUNNEL_DEAD,
         "last_error": "helper reports tunnel for X is gone",
         "attempt": 1,
-        "max_attempts": 3,
-        "next_delay_s": 3.0,
+        "max_attempts": 4,
+        "next_delay_s": 0.5,
     }
     assert by_type["tunnel_lost"] == {
         "udid": udid,
@@ -87,7 +87,7 @@ async def test_run_watchdog_clean_exit_keeps_task_exited_shape():
         "udid": udid,
         "reason": "task_exited",
         "attempt": 1,
-        "max_attempts": 3,
-        "next_delay_s": 3.0,
+        "max_attempts": 4,
+        "next_delay_s": 0.5,
     }
     assert by_type["tunnel_lost"] == {"udid": udid, "reason": "task_exited"}
