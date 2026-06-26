@@ -189,8 +189,14 @@ class AppState:
         # sweep MUST stay on the loop (not a worker thread) to avoid racing a
         # concurrent add/delete — _store_lock guards only enrich_all's trailing
         # _save and does NOT serialize against the unlocked CRUD ops. enrich_all
-        # is idempotent and its _save() fires the bookmarks_changed broadcast so
-        # a late geo fill renders without a reload.
+        # is idempotent. NOTE: the enrich's own _save() does NOT push a
+        # bookmarks_changed WS event — _save records its own mtime and the file
+        # watcher suppresses that self-echo — so the late geo fields surface on
+        # the client's next bookmark fetch, not via a push. (Pre-deferral this
+        # ran before the watcher was wired, so it never broadcast either; the
+        # eventual rendered state is unchanged.) Optional follow-up: emit
+        # bookmarks_changed after the deferred enrich so geo fills without a
+        # next fetch.
         self.route_manager = make_route_manager()
 
         # Rotating local backup: snapshots both managers' live state to
