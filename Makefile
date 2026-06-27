@@ -1,7 +1,7 @@
 # LocWarp dev / build / install shortcuts.
 # Run `make help` for the list.
 
-.PHONY: help start dev kill install build build-install push push-build backup merge-bookmarks merge-routes restore-backup
+.PHONY: help start dev kill verify install build build-install push push-build backup merge-bookmarks merge-routes restore-backup
 
 # Backup JSON to fold into the live store. Each merge target has its own
 # default file; override either with FILE= on the command line:
@@ -16,6 +16,10 @@ start: ## Run start.sh (sudo dev launcher — iOS 17+ ready)
 	./start.sh
 
 dev: start ## Alias for start
+
+verify: ## Run the EXACT CI gate locally before pushing to main (backend + frontend + e2e)
+	cd backend && .venv/bin/python -m pytest -q --cov --cov-report=term-missing && .venv/bin/lint-imports
+	cd frontend && npx tsc --noEmit && npx vitest run --coverage && npx depcruise src --config .dependency-cruiser.cjs && npx playwright test
 
 kill: ## Kill all running LocWarp processes (app + backend + helper)
 	./scripts/kill-all.sh
