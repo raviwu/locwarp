@@ -8,7 +8,10 @@ enumerated metadata fixes and what the self-check actually probes.
 from __future__ import annotations
 
 import io
+import sys
 from pathlib import Path
+
+import pytest
 
 import self_check
 
@@ -49,6 +52,11 @@ def test_spec_actually_references_each_guarded_package():
         assert pkg in spec_text, f"{pkg} no longer referenced in locwarp-backend.spec"
 
 
+@pytest.mark.skipif(
+    sys.platform != "darwin",
+    reason="self-check validates the macOS DMG native chain; apple_compress wraps "
+    "macOS libcompression and cannot import on Linux/Windows CI",
+)
 def test_run_self_check_passes_in_dev_venv():
     out = io.StringIO()
     rc = self_check.run_self_check(out=out)
