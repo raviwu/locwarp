@@ -104,15 +104,13 @@ test('position_update moves the map marker; device_disconnected fires both effec
 
   // Effect A — simulation-state: the error banner from useSimulation is rendered
   // in App.tsx as an absolutely-positioned red div containing the error string.
-  // With lang=en it says "Device disconnected (USB unplugged…)";
-  // default (zh) says "裝置連線中斷(USB 拔除或 Tunnel 死亡),請重新插上 USB".
-  // Both contain "USB". The banner is an inline-styled div with background #e53935;
-  // we match it by looking for a div whose text content includes "USB" and sits
-  // inside the top-level app wrapper (not a button or span). We use .first() to
-  // tolerate multiple USB mentions on the page (USB button, Wi-Fi hint, etc.).
-  // locator('div').filter keeps us to div elements only.
+  // The disconnect banner copy (useSimulation.ts) was softened to a
+  // "trying to reconnect; replug USB" message. en: "Device disconnected —
+  // trying to reconnect; replug USB if it does not come back"; zh: "裝置連線
+  // 中斷 — 嘗試自動重連中,若未恢復請重新插上 USB". Both end with the distinctive
+  // "replug USB" / "重新插上 USB"; match on that so the assertion tracks the copy.
   await expect(
-    page.locator('div').filter({ hasText: /USB 拔除|USB unplugged/ }).first()
+    page.locator('div').filter({ hasText: /重新插上 USB|replug USB/ }).first()
   ).toBeVisible({ timeout: 5_000 })
 
   // Effect B — device-state: DeviceStatus renders with class 'device-disconnected'
