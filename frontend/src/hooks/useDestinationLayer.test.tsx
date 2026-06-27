@@ -27,21 +27,23 @@ const t = ((k: string) => k) as any
 function render(destination: Pos) {
   const map = {} // dest layer only touches the map via marker.addTo(map)
   const mapRef = { current: map } as any
-  return renderHook(
+  const view = renderHook(
     (props: { destination: Pos; t: any }) => useDestinationLayer(mapRef, props),
     { initialProps: { destination, t } },
   )
+  return { ...view, map }
 }
 
 beforeEach(() => { vi.clearAllMocks() })
 
 describe('useDestinationLayer — dest-marker lifecycle', () => {
   it('adds a .dest-marker marker when a destination is set', () => {
-    render({ lat: 35.685, lng: 139.67 })
+    const { map } = render({ lat: 35.685, lng: 139.67 })
     expect(markerMock).toHaveBeenCalledTimes(1)
     expect(divIconMock).toHaveBeenCalledWith(expect.objectContaining({ className: 'dest-marker' }))
     const marker = markerMock.mock.results[0].value
     expect(marker.addTo).toHaveBeenCalledTimes(1)
+    expect(marker.addTo).toHaveBeenCalledWith(map)
   })
 
   it('adds no marker when destination is null', () => {
@@ -54,5 +56,6 @@ describe('useDestinationLayer — dest-marker lifecycle', () => {
     const marker = markerMock.mock.results[0].value
     rerender({ destination: null, t })
     expect(marker.remove).toHaveBeenCalledTimes(1)
+    expect(markerMock).toHaveBeenCalledTimes(1) // only the initial render created a marker; clearing must not create another
   })
 })
