@@ -29,7 +29,12 @@ jobs:
         with:
           python-version: '3.11'
           cache: 'pip'
-          cache-dependency-path: backend/requirements*.txt
+          # Only the files the backend job actually installs — NOT
+          # requirements-build.txt (PyInstaller, used only by the release build),
+          # so a build-dep bump doesn't needlessly bust the backend test cache.
+          cache-dependency-path: |
+            backend/requirements.txt
+            backend/requirements-dev.txt
 
       - name: Install dependencies
         working-directory: backend
