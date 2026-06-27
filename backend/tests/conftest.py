@@ -11,6 +11,24 @@ if str(BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(BACKEND_ROOT))
 
 
+def pytest_collection_modifyitems(config, items):
+    """Auto-skip ``@pytest.mark.macos_only`` tests on non-macOS runners (e.g.
+    the Linux CI box), where the macOS-native deps they exercise cannot import
+    or run — libcompression via apple_compress, pymobiledevice3 / usbmuxd, SIP,
+    osascript. Marking a test ``macos_only`` is the single convention for this;
+    no per-test ``skipif(sys.platform != 'darwin')`` boilerplate. A visible
+    'skipped' on Linux beats a meaningless red, and the cheap Linux job stays.
+    """
+    if sys.platform == "darwin":
+        return
+    skip_macos = pytest.mark.skip(
+        reason="macos_only: native dep unavailable on non-macOS runner"
+    )
+    for item in items:
+        if "macos_only" in item.keywords:
+            item.add_marker(skip_macos)
+
+
 @pytest.fixture(scope="session", autouse=True)
 def _ensure_data_dir():
     """Belt-and-suspenders: guarantee DATA_DIR exists for tests that build

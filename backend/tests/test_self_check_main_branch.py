@@ -13,11 +13,7 @@ import pytest
 BACKEND_DIR = Path(__file__).resolve().parent.parent
 
 
-@pytest.mark.skipif(
-    sys.platform != "darwin",
-    reason="self-check validates the macOS DMG native chain; apple_compress wraps "
-    "macOS libcompression and cannot import on Linux/Windows CI",
-)
+@pytest.mark.macos_only
 def test_self_check_argv_exits_zero_in_dev_venv():
     """`python main.py --self-check` in the dev venv prints SELF-CHECK OK and
     exits 0 (the native chain is installed)."""
