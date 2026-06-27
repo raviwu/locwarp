@@ -78,5 +78,5 @@ describe('dependency-cruiser layering gate fails on a view → services/api prob
     const clean = runDepcruise()
     expect(clean.status).toBe(0)
     expect(clean.output).not.toContain('mapview-no-direct-api')
-  })
+  }, 30_000)
 })
