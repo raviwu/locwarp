@@ -1,6 +1,13 @@
 from pathlib import Path
 from typing import TypedDict
 
+# App version — the SINGLE source on the Python side. Kept in lock-step with
+# frontend/package.json (the canonical version electron-builder ships) by
+# tests/test_version_sync.py, which fails CI if the two drift. A plain constant
+# (no file read) so config.py stays import-pure AND the value is baked into the
+# PyInstaller bundle, where frontend/package.json is not on disk at runtime.
+VERSION = "0.3.0"
+
 # Paths
 DATA_DIR = Path.home() / ".locwarp"
 # NOTE: DATA_DIR is created at RUNTIME in the FastAPI lifespan (main.py),

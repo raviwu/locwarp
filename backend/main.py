@@ -1107,7 +1107,7 @@ async def lifespan(application: FastAPI):
 
 # ── FastAPI app ───────────────────────────────────────────
 
-app = FastAPI(title="LocWarp", version="0.1.0", description="iOS Virtual Location Simulator", lifespan=lifespan)
+app = FastAPI(title="LocWarp", version=config.VERSION, description="iOS Virtual Location Simulator", lifespan=lifespan)
 
 # ── Composition root ──────────────────────────────────────
 # Wire the thin Container onto the real app using app_state's singletons.
@@ -1223,7 +1223,7 @@ app.include_router(cloud_sync_router)
 async def root():
     return {
         "name": "LocWarp",
-        "version": "0.1.0",
+        "version": config.VERSION,
         "status": "running",
         "initial_position": app_state.get_initial_position(),
     }
