@@ -1,1 +1,4 @@
-pyinstaller>=6.0,<7.0
+# Pinned exactly: this repo has been bitten twice by PyInstaller copy_metadata
+# bundle gaps (h3 / apple_compress / prompt_toolkit). A floating range can
+# silently reintroduce that on a runner-side PyInstaller bump with no code change.
+pyinstaller==6.21.0

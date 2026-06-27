@@ -3,9 +3,15 @@ import { defineConfig, devices } from '@playwright/test'
 export default defineConfig({
   testDir: './e2e',
   timeout: 60_000,
+  // CI flake insurance: retry twice on CI (0 locally so a real local failure
+  // surfaces immediately); keep a trace from the first retry so a CI-only
+  // failure is debuggable from the uploaded HTML report artifact.
+  retries: process.env.CI ? 2 : 0,
+  reporter: process.env.CI ? [['html', { open: 'never' }], ['line']] : 'line',
   use: {
     baseURL: 'http://localhost:4173',
     headless: true,
+    trace: 'on-first-retry',
   },
   projects: [
     {
