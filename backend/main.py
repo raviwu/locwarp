@@ -873,6 +873,54 @@ def _spawn_bg(coro):
     return task
 
 
+async def _run_route_distance_sweep(route_manager) -> None:
+    """Backfill missing/stale route distances at startup and on external route
+    changes. A route is stale unless road_distance_status == 'ok' AND its stored
+    dist_fingerprint matches its current waypoints+profile. For each stale route:
+    fill straight inline (instant, one batch _save()), then run the deferred road
+    compute (which always settles to ok/unavailable + broadcasts). Re-attempting
+    'unavailable' routes here makes a transient outage self-heal on the next
+    restart / file change. Runs on the event loop (single-threaded → safe vs CRUD)."""
+    from datetime import datetime, timezone
+
+    from domain.route_distance import route_distance_fingerprint, straight_line_distance_m
+    from services.route_distance_service import compute_road_distance
+    from bootstrap.runtime import get_container
+
+    container = get_container()
+    route_service = container.route_service
+    publisher = container.event_publisher
+    now = datetime.now(timezone.utc).isoformat()
+    stale_ids: list[str] = []
+    changed_straight = False
+    for r in list(route_manager.store.routes):
+        fp = route_distance_fingerprint(r.waypoints, r.profile)
+        if r.road_distance_status == "ok" and r.dist_fingerprint == fp:
+            continue  # fresh exact value — trust the synced/computed result
+        if r.dist_fingerprint != fp:
+            # Path changed (legacy/synced/edited) — old road value is for the
+            # old path; reset to a fresh pending state.
+            r.straight_distance_m = straight_line_distance_m(r.waypoints)
+            r.road_distance_m = None
+            r.road_distance_status = "pending"
+            r.dist_fingerprint = fp
+            r.updated_at = now  # CRDT-merge-safe stamp
+            changed_straight = True
+        elif r.straight_distance_m is None:
+            r.straight_distance_m = straight_line_distance_m(r.waypoints)
+            r.updated_at = now
+            changed_straight = True
+        stale_ids.append(r.id)
+    if changed_straight:
+        route_manager._save()
+        await publisher.publish(("routes_changed", {"reason": "distance_backfill"}))
+    for rid in stale_ids:
+        await compute_road_distance(
+            rid, route_manager=route_manager, route_service=route_service, publisher=publisher,
+        )
+    logger.info("route-distance sweep processed %d stale route(s)", len(stale_ids))
+
+
 async def _startup_autoconnect() -> None:
     """Discover + auto-connect the first iOS device, off the boot critical
     path. Spawned by the lifespan via _spawn_bg (Win 2). Holds the exact
@@ -1013,6 +1061,13 @@ async def lifespan(application: FastAPI):
 
         _spawn_bg(_deferred_enrich())
 
+    # ── Deferred route-distance backfill ──
+    # Legacy routes and paths synced from an old client have no cached distances.
+    # Sweep them off the awaited critical path: straight fills inline, road via
+    # the deferred orchestrator (always settling ok/unavailable + broadcast).
+    if app_state.route_manager is not None:
+        _spawn_bg(_run_route_distance_sweep(app_state.route_manager))
+
     # ── Startup auto-connect (Win 2) ──
     # Discover + connect + create_engine moved OFF the awaited critical path:
     # a slow phone / Trust dialog / RSD tunnel handshake used to inject a
@@ -1049,6 +1104,19 @@ async def lifespan(application: FastAPI):
             _bc("routes_changed", {"reason": "external_update"}),
             loop,
         )
+        # A path synced in from a device that did not compute its distances is
+        # recomputed here. The sweep fingerprint-checks every route, so this is
+        # a near-no-op when nothing is stale (the common case).
+        if app_state.route_manager is not None:
+            _fut = asyncio.run_coroutine_threadsafe(
+                _run_route_distance_sweep(app_state.route_manager),
+                loop,
+            )
+            _fut.add_done_callback(
+                lambda f: f.exception() and logger.error(
+                    "route-distance watcher sweep failed: %s", f.exception()
+                )
+            )
 
     app_state.route_manager.start_watcher(_on_route_change)
 
