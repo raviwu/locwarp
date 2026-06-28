@@ -32,6 +32,7 @@ def _ws_origin_allowed(origin: str | None) -> bool:
 def _ws_client_is_loopback(ws: WebSocket) -> bool:
     host = ws.client.host if ws.client else None
     if not host:
+        # Deliberate fail-closed: unknown client origin (ws.client is None) → reject.
         return False
     if host == "localhost":
         return True

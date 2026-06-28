@@ -53,6 +53,8 @@ class FakeWS:
     def __init__(self, host: str, headers: dict | None = None) -> None:
         self.app = _App(_Container(_Registry()))
         self.client = _Addr(host)
+        # Keys MUST be lowercase "origin" — the real Starlette Headers object is
+        # case-insensitive, but this plain dict is not.
         self.headers = headers or {}
         self.accepted = False
         self.closed_code: int | None = None
@@ -108,3 +110,12 @@ async def test_loopback_ws_with_allowlisted_dev_origin_accepted():
     ws = FakeWS("127.0.0.1", headers={"origin": "http://localhost:5173"})
     await websocket_endpoint(ws)
     assert ws.accepted is True
+
+
+# --- IPv6 loopback -----------------------------------------------------------
+async def test_ipv6_loopback_ws_accepted():
+    # ::1 is the IPv6 loopback; ipaddress.ip_address("::1").is_loopback is True.
+    ws = FakeWS("::1")
+    await websocket_endpoint(ws)
+    assert ws.accepted is True
+    assert ws.closed_code is None
