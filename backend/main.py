@@ -22,6 +22,7 @@ from pathlib import Path
 import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 import config
 from config import API_HOST, API_PORT, DATA_DIR, SETTINGS_FILE, DEFAULT_LOCATION, CORS_ORIGINS, DEFAULT_CSP_MODE
@@ -1140,7 +1141,7 @@ CSP_MODE = os.getenv("LOCWARP_CSP_MODE", DEFAULT_CSP_MODE)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_cors_origins,
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -1193,6 +1194,45 @@ async def _csp_middleware(request, call_next):
         policy = _CSP_DEV
     response.headers["Content-Security-Policy"] = policy
     return response
+
+
+import ipaddress as _ipaddress
+
+
+def _is_loopback_host(host: str | None) -> bool:
+    """True iff host is in 127.0.0.0/8 or is ::1. Broadens phone_control's
+    exact-match notion to the full loopback block. uvicorn binds directly
+    (no reverse proxy) so request.client.host is trustworthy — there is no
+    X-Forwarded-For spoofing surface to honour."""
+    if not host:
+        return False
+    if host == "localhost":
+        return True
+    try:
+        return _ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
+# Paths reachable from the LAN (a real phone over WiFi). Everything else on
+# the main API is loopback-only. The /api/phone/* router enforces its own
+# PIN/token gate; /phone serves the phone page; both are intentionally LAN-open.
+def _is_lan_allowed_path(path: str) -> bool:
+    return path.startswith("/api/phone") or path == "/phone"
+
+
+@app.middleware("http")
+async def _lan_gate_middleware(request, call_next):
+    """Fail-closed LAN gate: only loopback callers may reach the main API.
+    Any FUTURE endpoint is auto-protected unless explicitly allowlisted —
+    this is what makes the 'forgot to gate a new route' class of bug
+    impossible. The phone surface (/api/phone*, /phone) stays LAN-reachable
+    and keeps its own token / _is_localhost gate (defense in depth)."""
+    client = request.client
+    host = client.host if client else None
+    if not _is_loopback_host(host) and not _is_lan_allowed_path(request.url.path):
+        return JSONResponse(status_code=403, content={"detail": {"code": "lan_forbidden"}})
+    return await call_next(request)
 
 
 # Register routers
