@@ -117,3 +117,41 @@ describe('RouteList keyboard a11y (U22)', () => {
     expect(screen.getByRole('menuitem', { name: /generic\.delete/ })).toBeTruthy();
   });
 });
+
+describe('RouteList distance badges', () => {
+  function routeWith(over: Partial<SavedRoute>) {
+    return makeRoute({
+      id: 'r1', name: 'Route 1',
+      waypoints: [{ lat: 25, lng: 121 }, { lat: 26, lng: 122 }],
+      profile: 'walking', category_id: 'default',
+      ...over,
+    });
+  }
+
+  it('shows the exact 沿路 value when status is ok', () => {
+    render(<RouteList {...(makeProps({ routes: [routeWith({
+      straight_distance_m: 10000, road_distance_m: 12000, road_distance_status: 'ok',
+    })] }) as any)} />);
+    expect(screen.getByText(/直線 10\.00 km/)).toBeInTheDocument();
+    expect(screen.getByText(/沿路 12\.00 km/)).toBeInTheDocument();
+    expect(screen.queryByText(/計算中/)).toBeNull();
+    expect(screen.queryByText(/≈/)).toBeNull();
+  });
+
+  it('shows a ≈ estimate (never 計算中) while road is pending', () => {
+    render(<RouteList {...(makeProps({ routes: [routeWith({
+      straight_distance_m: 10000, road_distance_m: null, road_distance_status: 'pending',
+    })] }) as any)} />);
+    // walking factor 1.3 -> 13.00 km
+    expect(screen.getByText(/沿路 ≈ 13\.00 km/)).toBeInTheDocument();
+    expect(screen.queryByText(/計算中/)).toBeNull();
+  });
+
+  it('shows a ≈ estimate when road is unavailable', () => {
+    render(<RouteList {...(makeProps({ routes: [routeWith({
+      straight_distance_m: 10000, road_distance_m: null, road_distance_status: 'unavailable',
+    })] }) as any)} />);
+    expect(screen.getByText(/沿路 ≈ 13\.00 km/)).toBeInTheDocument();
+    expect(screen.queryByText(/計算中/)).toBeNull();
+  });
+});

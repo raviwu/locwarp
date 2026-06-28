@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { isSubmitEnter } from '../utils/keyboard';
+import { roadEstimateM } from '../utils/roadEstimate';
 import { createPortal } from 'react-dom';
 import { useT } from '../i18n';
 
@@ -22,6 +23,12 @@ export interface SavedRoute {
   // the backend activates timed replay instead of constant-speed playback.
   // Absent for hand-drawn or legacy routes (pre-GPX import).
   timestamps?: number[];
+  // Cached distance preview (backend-populated). Road exact value present only
+  // when road_distance_status === 'ok'; otherwise the UI shows a ≈ estimate.
+  straight_distance_m?: number | null;
+  road_distance_m?: number | null;
+  road_distance_status?: 'pending' | 'ok' | 'unavailable';
+  dist_fingerprint?: string;
 }
 
 interface RouteListProps {
@@ -45,6 +52,11 @@ interface RouteListProps {
 
   routesExportAllUrl?: string;
   onRoutesImportAll?: (file: File) => Promise<void> | void;
+}
+
+// Meters -> "X.XX km".
+function formatKm(meters: number): string {
+  return `${(meters / 1000).toFixed(2)} km`;
 }
 
 const COLOR_PALETTE = [
@@ -1122,6 +1134,14 @@ const RouteList: React.FC<RouteListProps> = ({
             <span style={{ fontSize: 10, opacity: 0.5, fontFamily: 'monospace' }}>
               {route.waypoints.length} {t('route.points_unit')}
               {route.profile ? ` · ${route.profile}` : ''}
+              {route.straight_distance_m != null
+                ? ` · 直線 ${formatKm(route.straight_distance_m)}`
+                : ''}
+              {route.straight_distance_m != null
+                ? (route.road_distance_m != null && route.road_distance_status === 'ok'
+                    ? ` · 沿路 ${formatKm(route.road_distance_m)}`
+                    : ` · 沿路 ≈ ${formatKm(roadEstimateM(route.straight_distance_m, route.profile))}`)
+                : ''}
             </span>
           </div>
         )}
