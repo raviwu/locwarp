@@ -198,6 +198,25 @@ const App: React.FC = () => {
   const onRoutesChanged = useCallback(() => { void routes.refresh(); showToast(t('cloud_sync.toast_routes_synced')) }, [routes.refresh, showToast, t])
   useExternalChangeSubscriptions(router, useMemo(() => ({ onBookmarks: onBookmarksChanged, onRoutes: onRoutesChanged }), [onBookmarksChanged, onRoutesChanged]))
 
+  // WS reconnect catch-up: a routes_changed / bookmarks_changed broadcast that
+  // fired while the socket was down is lost (no server replay). On a
+  // disconnected→connected transition, re-fetch so a distance computed during
+  // the outage is not stuck behind a missed routes_changed. Skips the initial
+  // connect (the mount-time load already fetched).
+  const wasConnectedRef = useRef(false);
+  useEffect(() => {
+    if (connected && wasConnectedRef.current === false) {
+      // first connect — just record it, the mount load already ran
+      wasConnectedRef.current = true;
+      return;
+    }
+    if (connected && wasConnectedRef.current) {
+      onRoutesChanged();
+      onBookmarksChanged();
+    }
+    if (!connected) wasConnectedRef.current = true;
+  }, [connected, onRoutesChanged, onBookmarksChanged]);
+
   const [wpGenRadius, setWpGenRadius] = useState(300)
   const [wpGenCount, setWpGenCount] = useState(5)
 

@@ -146,3 +146,20 @@ describe('useRoutes', () => {
     await expect(result.current.importAll(file)).rejects.toThrow(/missing routes array/)
   })
 })
+
+describe('useRoutes refresh resilience', () => {
+  it('retries getSavedRoutes once on a transient failure, then sets routes', async () => {
+    const rs = [{ id: 'a', name: 'A', waypoints: [] }]
+    const getSavedRoutes = vi.fn()
+      .mockResolvedValueOnce([])            // initial mount load
+      .mockRejectedValueOnce(new Error('net'))  // first refresh attempt fails
+      .mockResolvedValueOnce(rs)            // retry succeeds
+    const api = {
+      getSavedRoutes,
+      listRouteCategories: vi.fn().mockResolvedValue([]),
+    } as any
+    const { result } = renderHook(() => useRoutes(api))
+    await act(async () => { await result.current.refresh() })
+    await waitFor(() => expect(result.current.savedRoutes).toEqual(rs))
+  })
+})

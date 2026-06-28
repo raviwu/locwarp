@@ -26,11 +26,17 @@ export function useRoutes(api: ApiGateway) {
   }, [api])
 
   const refreshSavedRoutes = useCallback(async () => {
-    try {
-      const rs = await api.getSavedRoutes()
-      if (!mountedRef.current) return
-      setSavedRoutes(rs)
-    } catch { /* swallow */ }
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const rs = await api.getSavedRoutes()
+        if (mountedRef.current) setSavedRoutes(rs)
+        return
+      } catch {
+        if (attempt === 0) await new Promise((r) => setTimeout(r, 400))
+      }
+    }
+    // both attempts failed — leave the last good state; a later
+    // routes_changed or the reconnect catch-up will refresh again.
   }, [api])
 
   // Keep the cloud-sync busy overlay visible until route data has been
