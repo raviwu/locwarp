@@ -1016,14 +1016,15 @@ const App: React.FC = () => {
   )
 
   const savedRoutesForPanel = useMemo(
+    // Spread the source route so ALL backend fields (incl. the cached
+    // distance preview: straight_distance_m / road_distance_m /
+    // road_distance_status) reach RouteList — a prior field whitelist here
+    // silently dropped them, so the 直線/沿路 badges never rendered. Only
+    // normalize the few fields the panel needs defaulted.
     () => savedRoutes.map((r: any) => ({
-      id: r.id,
-      name: r.name,
+      ...r,
       waypoints: r.waypoints ?? [],
-      profile: r.profile,
       category_id: r.category_id || 'default',
-      created_at: r.created_at,
-      updated_at: r.updated_at,
       // Thread GPX timestamps through to the panel so RouteList exposes them
       // and handleRouteLoad can pass them into the loop request.
       timestamps: Array.isArray(r.timestamps) && r.timestamps.length > 0
