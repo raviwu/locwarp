@@ -56,3 +56,5 @@ def test_overpass_ua_carries_current_version_and_fork_repo():
 
 def test_nominatim_ua_carries_current_version():
     assert f"LocWarp/{config.VERSION}" in config.NOMINATIM_USER_AGENT
+    assert "raviwu/locwarp" in config.NOMINATIM_USER_AGENT
+    assert "keezxc1223" not in config.NOMINATIM_USER_AGENT
