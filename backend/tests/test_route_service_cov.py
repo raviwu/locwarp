@@ -59,8 +59,8 @@ class _FakeClient:
     async def __aexit__(self, *exc):
         return False
 
-    async def get(self, url):
-        _FakeClient.last = {"method": "GET", "url": url}
+    async def get(self, url, **kwargs):
+        _FakeClient.last = {"method": "GET", "url": url, **kwargs}
         return _resolve(url)
 
     async def post(self, url, json=None):
@@ -621,7 +621,7 @@ async def test_get_route_end_to_end_osrm(patch_client):
 async def test_get_route_unknown_engine_normalised_to_default(patch_client):
     _set(_FakeResponse(_OSRM_OK))
     svc = RouteService()
-    # engine="bogus" → normalised to default (osrm) → GET to OSRM base.
+    # engine="bogus" → normalised to default (osrm_fossgis) → GET to FOSSGIS base.
     await svc.get_route(1.0, 2.0, 3.0, 4.0, engine="bogus")
     assert _FakeClient.last["method"] == "GET"
-    assert _FakeClient.last["url"].startswith(config.OSRM_BASE_URL)
+    assert _FakeClient.last["url"].startswith(config.OSRM_FOSSGIS_BASE_URL)

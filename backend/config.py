@@ -122,10 +122,20 @@ ROUTE_ENGINES_ALLOWED = (
     ROUTE_ENGINE_VALHALLA,
     ROUTE_ENGINE_BROUTER,
 )
-DEFAULT_ROUTE_ENGINE = ROUTE_ENGINE_OSRM
+# Default to the FOSSGIS-hosted OSRM (production-oriented, fair-use policy)
+# rather than the public OSRM *demo* server (no SLA, 1 req/s, withdrawable) —
+# the demo server's flakiness was the physical trigger for the old "計算中"
+# stuck bug.
+DEFAULT_ROUTE_ENGINE = ROUTE_ENGINE_OSRM_FOSSGIS
 OSRM_FOSSGIS_BASE_URL = "https://routing.openstreetmap.de"
 VALHALLA_BASE_URL = "https://valhalla1.openstreetmap.de"
 BROUTER_BASE_URL = "https://brouter.de"
+
+# Deferred road-distance compute tunables (consumed by services.route_distance_service
+# + the main.py startup sweep).
+ROAD_MAX_WAYPOINTS = 25            # decimate longer routes before routing
+ROAD_COMPUTE_TIMEOUT_S = 30.0      # outer bound on one get_multi_route attempt
+ROAD_RETRY_BACKOFF_S = (2.0, 8.0)  # backoff between attempts; total attempts = len+1
 
 # Nominatim
 NOMINATIM_BASE_URL = "https://nominatim.openstreetmap.org"

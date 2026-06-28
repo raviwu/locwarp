@@ -162,6 +162,14 @@ def _normalise_engine(engine: str | None) -> str:
     return DEFAULT_ROUTE_ENGINE
 
 
+def _osrm_headers(engine: str) -> dict:
+    """Identifying header for the FOSSGIS OSRM endpoint per its app usage
+    guidance. The no-SLA demo server gets no header."""
+    if engine == ROUTE_ENGINE_OSRM_FOSSGIS:
+        return {"X-Client-Id": "LocWarp"}
+    return {}
+
+
 class RouteService:
     """Async wrapper around the supported routing engines."""
 
@@ -277,7 +285,7 @@ class RouteService:
         logger.debug("OSRM request (%s): %s", engine, url)
 
         async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
-            resp = await client.get(url)
+            resp = await client.get(url, headers=_osrm_headers(engine))
             resp.raise_for_status()
             data = resp.json()
         if data.get("code") != "Ok":
