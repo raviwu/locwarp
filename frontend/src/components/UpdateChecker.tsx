@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
 import pkg from '../../package.json';
+import { REPO_SLUG } from '../contract/repo';
 
 const CURRENT = (pkg as { version: string }).version;
-const REPO = 'raviwu/locwarp';
+const REPO = REPO_SLUG;
 const API_URL = `https://api.github.com/repos/${REPO}/releases/latest`;
 
 function parseVer(s: string): number[] {

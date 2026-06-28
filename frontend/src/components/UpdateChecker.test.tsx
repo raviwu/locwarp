@@ -103,4 +103,21 @@ describe('useUpdateCheck', () => {
     await waitFor(() => expect(fetch).toHaveBeenCalledTimes(1))
     expect(screen.getByTestId('latest')).toHaveTextContent('NONE')
   })
+
+  it('routes the release check through the raviwu fork repo slug', async () => {
+    const fetchMock = mockFetchOnce({ tag_name: 'v9.9.9' })
+    vi.stubGlobal('fetch', fetchMock)
+    render(<Probe />)
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
+    // The hook must hit the raviwu fork's releases API (DMG home), not upstream.
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://api.github.com/repos/raviwu/locwarp/releases/latest',
+      expect.anything(),
+    )
+    // The generic-fallback URL (no html_url) must also be the raviwu fork.
+    expect(screen.getByTestId('url')).toHaveTextContent(
+      'https://github.com/raviwu/locwarp/releases/latest',
+    )
+  })
 })
