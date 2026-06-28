@@ -41,7 +41,7 @@ TB1i7pEcifAeh8oDLLZFqiRVrpUaZmmDAn
 >
 > - Stable operation is only guaranteed in **the developer's own test environment** (currently iPhone 16 Pro Max / iOS 26.4.1 + Windows 11 Pro);
 > - **Stability on other devices, iOS patch revisions, network environments or system configurations is not guaranteed**;
-> - If you run into issues, please open an [Issue](https://github.com/keezxc1223/locwarp/issues) with full environment details and logs so the problem can be reproduced and addressed;
+> - If you run into issues, please open an [Issue](https://github.com/raviwu/locwarp/issues) with full environment details and logs so the problem can be reproduced and addressed;
 > - The project makes no commitment to perpetual maintenance, and accepts no liability for consequences arising from its use.
 
 > ### System Requirements
@@ -62,7 +62,7 @@ TB1i7pEcifAeh8oDLLZFqiRVrpUaZmmDAn
 >
 > **Note**: The table above aggregates developer-tested results and a handful of community reports. It **does not guarantee that every device on the same iOS version, network environment, or system configuration will work**. iOS virtual location stability depends on the exact iOS patch revision, pymobiledevice3's support for that revision, whether the Developer Disk Image mounts successfully, and the Windows host's driver / VPN / firewall / AV stack. "Reported" therefore means **at least one user succeeded in their specific environment**, it is not a universal compatibility claim.
 >
-> iOS 16+ versions not listed are not confirmed incompatible; they simply have not been reported yet. Please evaluate the risk before use. If you encounter issues, spot bugs, or confirm a version works, please open an [Issue](https://github.com/keezxc1223/locwarp/issues) so we can build up compatibility data.
+> iOS 16+ versions not listed are not confirmed incompatible; they simply have not been reported yet. Please evaluate the risk before use. If you encounter issues, spot bugs, or confirm a version works, please open an [Issue](https://github.com/raviwu/locwarp/issues) so we can build up compatibility data.
 
 <p align="center">
   <img src="frontend/build/icon.png" width="128" alt="LocWarp">
@@ -72,8 +72,11 @@ TB1i7pEcifAeh8oDLLZFqiRVrpUaZmmDAn
   <a href="#prerequisites">
     <img alt="User Guide" src="https://img.shields.io/badge/User_Guide-2d3748?style=for-the-badge&logo=readthedocs&logoColor=white">
   </a>
+  <a href="https://github.com/raviwu/locwarp/releases">
+    <img alt="Download (macOS)" src="https://img.shields.io/badge/Download_macOS-4285f4?style=for-the-badge&logo=apple&logoColor=white">
+  </a>
   <a href="https://github.com/keezxc1223/locwarp/releases">
-    <img alt="Download" src="https://img.shields.io/badge/Download-4285f4?style=for-the-badge&logo=github&logoColor=white">
+    <img alt="Download (Windows)" src="https://img.shields.io/badge/Download_Windows-0078d4?style=for-the-badge&logo=windows&logoColor=white">
   </a>
 </p>
 
@@ -279,7 +282,7 @@ Operate LocWarp from your phone without walking back to the computer. The "**Pho
 | [NLSC (Taiwan)](https://maps.nlsc.gov.tw/) | frontend tile | Taiwan official basemap (government open data) | No |
 | [GSI (Japan)](https://www.gsi.go.jp/) | frontend tile | Japan Geospatial Information Authority basemap | No |
 | OpenStreetMap raster | frontend tile | Default OSM layer | No |
-| [GitHub Releases](https://github.com/keezxc1223/locwarp/releases) | frontend | Startup version check (plain HTTP, no telemetry) | No |
+| [GitHub Releases](https://github.com/raviwu/locwarp/releases) | frontend | Startup version check (plain HTTP, no telemetry) | No |
 
 ### Packaging
 
@@ -318,7 +321,9 @@ Operate LocWarp from your phone without walking back to the computer. The "**Pho
 
 ## Prerequisites
 
-**[Download the installer](https://github.com/keezxc1223/locwarp/releases)**
+**[Download macOS installer (.dmg)](https://github.com/raviwu/locwarp/releases)** · **[Download Windows installer (.exe)](https://github.com/keezxc1223/locwarp/releases)**
+
+> The macOS build is maintained and released from this fork (raviwu/locwarp); for the Windows build, download from upstream keezxc1223/locwarp.
 
 End users must complete the following four steps before use:
 

@@ -41,7 +41,7 @@ TB1i7pEcifAeh8oDLLZFqiRVrpUaZmmDAn
 >
 > - 本專案僅保證**於開發者本人測試環境**(目前為 iPhone 16 Pro Max / iOS 26.4.1 + Windows 11 專業版)下運作正常;
 > - **不保證於其他裝置、iOS 修補版本、網路環境、系統配置下皆能穩定使用**;
-> - 若遇到問題,歡迎至 [Issues](https://github.com/keezxc1223/locwarp/issues) 提交完整環境資訊與日誌,以協助定位與改善;
+> - 若遇到問題,歡迎至 [Issues](https://github.com/raviwu/locwarp/issues) 提交完整環境資訊與日誌,以協助定位與改善;
 > - 本專案不保證永續維護,亦不承擔因使用本工具所生之任何責任。
 
 > ### 系統需求
@@ -62,7 +62,7 @@ TB1i7pEcifAeh8oDLLZFqiRVrpUaZmmDAn
 >
 > **說明**:上表僅彙整開發者實測與少數社群回饋的結果,**並不保證於所有相同版本的裝置、網路環境或系統組合下皆能正常運作**。iOS 虛擬定位的穩定性高度依賴 iOS 修補版本、pymobiledevice3 對該版本的支援程度、Developer Disk Image 是否成功掛載,以及 Windows 端的驅動、VPN、防火牆、AV 配置。因此「回報可用」僅代表**至少一位使用者在其特定環境下成功運作**,不等同於通用相容性聲明。
 >
-> 未列於上表的 iOS 16+ 版本並非確定不相容,僅表示尚未收到回報。使用前請自行評估風險,若遇到問題、發現 Bug 或確認某版本可用,歡迎至 [Issues](https://github.com/keezxc1223/locwarp/issues) 提出以協助累積相容性資料。
+> 未列於上表的 iOS 16+ 版本並非確定不相容,僅表示尚未收到回報。使用前請自行評估風險,若遇到問題、發現 Bug 或確認某版本可用,歡迎至 [Issues](https://github.com/raviwu/locwarp/issues) 提出以協助累積相容性資料。
 
 <p align="center">
   <img src="frontend/build/icon.png" width="128" alt="LocWarp">
@@ -72,8 +72,11 @@ TB1i7pEcifAeh8oDLLZFqiRVrpUaZmmDAn
   <a href="#使用者端需求">
     <img alt="使用者端說明" src="https://img.shields.io/badge/使用者端說明-2d3748?style=for-the-badge&logo=readthedocs&logoColor=white">
   </a>
+  <a href="https://github.com/raviwu/locwarp/releases">
+    <img alt="下載 (macOS)" src="https://img.shields.io/badge/下載_macOS-4285f4?style=for-the-badge&logo=apple&logoColor=white">
+  </a>
   <a href="https://github.com/keezxc1223/locwarp/releases">
-    <img alt="下載安裝檔" src="https://img.shields.io/badge/下載安裝檔-4285f4?style=for-the-badge&logo=github&logoColor=white">
+    <img alt="下載 (Windows)" src="https://img.shields.io/badge/下載_Windows-0078d4?style=for-the-badge&logo=windows&logoColor=white">
   </a>
 </p>
 
@@ -280,7 +283,7 @@ TB1i7pEcifAeh8oDLLZFqiRVrpUaZmmDAn
 | [NLSC 國土測繪中心](https://maps.nlsc.gov.tw/) | frontend tile | 台灣電子地圖(政府公開資料) | 否 |
 | [GSI 国土地理院](https://www.gsi.go.jp/) | frontend tile | 日本地理院地圖 | 否 |
 | OpenStreetMap raster | frontend tile | 標準 OSM 圖層(主要) | 否 |
-| [GitHub Releases](https://github.com/keezxc1223/locwarp/releases) | frontend | 啟動時檢查新版本(純 HTTP,無遙測) | 否 |
+| [GitHub Releases](https://github.com/raviwu/locwarp/releases) | frontend | 啟動時檢查新版本(純 HTTP,無遙測) | 否 |
 
 ### 打包工具
 
@@ -388,7 +391,9 @@ build-installer.bat
 
 ## 使用者端需求
 
-**[下載安裝檔](https://github.com/keezxc1223/locwarp/releases)**
+**[下載 macOS 安裝檔 (.dmg)](https://github.com/raviwu/locwarp/releases)** · **[下載 Windows 安裝檔 (.exe)](https://github.com/keezxc1223/locwarp/releases)**
+
+> macOS 版本由本 fork (`raviwu/locwarp`) 維護與發佈;Windows 版本請至上游 `keezxc1223/locwarp` 下載。
 
 使用安裝檔的使用者需要以下四項前置:
 
