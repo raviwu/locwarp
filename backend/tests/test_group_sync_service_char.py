@@ -152,6 +152,7 @@ async def test_dynamic_primary_teleports_then_attaches_follower_mirror():
     await asyncio.sleep(0.6)
 
 
+@pytest.mark.timeout(10)
 async def test_follower_stops_when_primary_changes():
     reg = _FakeRegistry()
     reg._primary_udid = "P"
@@ -169,6 +170,7 @@ async def test_follower_stops_when_primary_changes():
     assert task.done()
 
 
+@pytest.mark.timeout(10)
 async def test_follower_stops_when_stop_event_set():
     reg = _FakeRegistry()
     reg._primary_udid = "P"

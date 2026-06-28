@@ -49,6 +49,7 @@ class _Dev:
         self.name = name
 
 
+@pytest.mark.timeout(10)
 async def test_autoconnect_is_spawned_not_awaited(monkeypatch):
     _stub_helper(monkeypatch)
     app_state.bookmark_manager = None
@@ -89,6 +90,7 @@ async def test_autoconnect_is_spawned_not_awaited(monkeypatch):
         assert calls["engine"] == 1, "engine must still be created for the device"
 
 
+@pytest.mark.timeout(10)
 async def test_autoconnect_failure_does_not_crash_startup(monkeypatch):
     _stub_helper(monkeypatch)
     app_state.bookmark_manager = None

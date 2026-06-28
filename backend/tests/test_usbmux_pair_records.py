@@ -305,6 +305,7 @@ async def test_acquire_pair_lock_different_udids_return_distinct_locks():
     assert lock_a is not lock_b
 
 
+@pytest.mark.timeout(10)
 @pytest.mark.asyncio
 async def test_pair_lock_serializes_concurrent_acquires_for_same_udid():
     """When two coroutines hold the same udid's lock, the second waits."""
