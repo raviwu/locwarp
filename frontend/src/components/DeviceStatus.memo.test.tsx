@@ -46,22 +46,24 @@ describe('DeviceStatus is React.memo (D3)', () => {
     }
     ;(DeviceStatus as any).type = SpiedInner
 
-    function Parent({ tick }: { tick: number }) {
-      // `tick` forces Parent to re-render but is NOT forwarded to DeviceStatus.
-      return <DeviceStatus {...props} />
+    try {
+      function Parent({ tick }: { tick: number }) {
+        // `tick` forces Parent to re-render but is NOT forwarded to DeviceStatus.
+        return <DeviceStatus {...props} />
+      }
+
+      const { rerender } = render(<Parent tick={0} />)
+      const afterMount = renderCount
+      expect(afterMount).toBeGreaterThan(0) // mounted once
+
+      // Re-render the parent with the SAME props object passed to DeviceStatus.
+      rerender(<Parent tick={1} />)
+
+      // memo should bail out → inner spy not called again.
+      expect(renderCount).toBe(afterMount)
+    } finally {
+      // Restore the original inner function.
+      ;(DeviceStatus as any).type = originalInner
     }
-
-    const { rerender } = render(<Parent tick={0} />)
-    const afterMount = renderCount
-    expect(afterMount).toBeGreaterThan(0) // mounted once
-
-    // Re-render the parent with the SAME props object passed to DeviceStatus.
-    rerender(<Parent tick={1} />)
-
-    // memo should bail out → inner spy not called again.
-    expect(renderCount).toBe(afterMount)
-
-    // Restore the original inner function.
-    ;(DeviceStatus as any).type = originalInner
   })
 })

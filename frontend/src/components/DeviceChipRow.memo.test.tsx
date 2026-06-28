@@ -34,18 +34,20 @@ describe('DeviceChipRow is React.memo (D3)', () => {
     }
     ;(DeviceChipRow as any).type = SpiedInner
 
-    function Parent({ tick }: { tick: number }) {
-      return <DeviceChipRow {...props} />
+    try {
+      function Parent({ tick }: { tick: number }) {
+        return <DeviceChipRow {...props} />
+      }
+
+      const { rerender } = render(<Parent tick={0} />)
+      const afterMount = renderCount
+      expect(afterMount).toBeGreaterThan(0)
+
+      rerender(<Parent tick={1} />)
+      expect(renderCount).toBe(afterMount)
+    } finally {
+      // Restore the original inner function.
+      ;(DeviceChipRow as any).type = originalInner
     }
-
-    const { rerender } = render(<Parent tick={0} />)
-    const afterMount = renderCount
-    expect(afterMount).toBeGreaterThan(0)
-
-    rerender(<Parent tick={1} />)
-    expect(renderCount).toBe(afterMount)
-
-    // Restore the original inner function.
-    ;(DeviceChipRow as any).type = originalInner
   })
 })
