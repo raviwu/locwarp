@@ -399,9 +399,11 @@ async function createWindow() {
       try {
         const u = new URL(details.url)
         if (OSM_HOSTS.includes(u.hostname)) {
+          // app.getVersion() reads the packaged app version from package.json at
+          // runtime, keeping the UA in sync without manual string maintenance.
           details.requestHeaders['User-Agent'] =
-            'LocWarp/0.1.49 (+https://github.com/keezxc1223/locwarp)'
-          details.requestHeaders['Referer'] = 'https://github.com/keezxc1223/locwarp'
+            `LocWarp/${app.getVersion()} (+https://github.com/raviwu/locwarp)`
+          details.requestHeaders['Referer'] = 'https://github.com/raviwu/locwarp'
         }
       } catch {}
       cb({ requestHeaders: details.requestHeaders })

@@ -1223,6 +1223,8 @@ def _is_loopback_host(host: str | None) -> bool:
 # the main API is loopback-only. The /api/phone/* router enforces its own
 # PIN/token gate; /phone serves the phone page; both are intentionally LAN-open.
 def _is_lan_allowed_path(path: str) -> bool:
+    # "/api/phone" prefix is safe: the phone router uses absolute "/api/phone/..."
+    # paths exclusively — no "/api/phoneX" route exists in this codebase.
     return path.startswith("/api/phone") or path == "/phone"
 
 
