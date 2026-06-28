@@ -376,36 +376,54 @@ class DeviceManager:
                 continue
 
             try:
-                all_values = lockdown.all_values
-                # If device is already connected, report the active connection type
-                active_conn = self._connections.get(raw.serial)
-                if active_conn:
-                    conn_type = active_conn.connection_type
-                device_name = all_values.get("DeviceName", "Unknown")
-                _remember_device_name(raw.serial, device_name)
-                info = DeviceInfo(
-                    udid=raw.serial,
-                    name=device_name,
-                    ios_version=all_values.get("ProductVersion", "0.0"),
-                    connection_type=conn_type,
-                )
-                info.is_connected = raw.serial in self._connections
-                # Query Developer Mode status (iOS 16+). Tolerate failure —
-                # None means "unknown", frontend will hide the reveal button.
                 try:
-                    ver = _parse_ios_version(info.ios_version)
-                    if ver >= (16, 0):
-                        info.developer_mode_enabled = await lockdown.get_developer_mode_status()
-                except Exception:
-                    logger.debug("get_developer_mode_status failed for %s", raw.serial, exc_info=True)
-                devices.append(info)
-                logger.debug("Discovered device %s (%s) running iOS %s via %s (connected=%s)",
-                             info.name, info.udid, info.ios_version, conn_type, info.is_connected)
-            except Exception as exc:
-                # Lockdown opened but a later property/method blew up — still
-                # surface the device so the user knows it's there.
-                # Best-effort close so we don't leak the usbmuxd socket every poll
-                # cycle. Some lockdown variants expose async close(); some don't.
+                    all_values = lockdown.all_values
+                    # If device is already connected, report the active connection type
+                    active_conn = self._connections.get(raw.serial)
+                    if active_conn:
+                        conn_type = active_conn.connection_type
+                    device_name = all_values.get("DeviceName", "Unknown")
+                    _remember_device_name(raw.serial, device_name)
+                    info = DeviceInfo(
+                        udid=raw.serial,
+                        name=device_name,
+                        ios_version=all_values.get("ProductVersion", "0.0"),
+                        connection_type=conn_type,
+                    )
+                    info.is_connected = raw.serial in self._connections
+                    # Query Developer Mode status (iOS 16+). Tolerate failure —
+                    # None means "unknown", frontend will hide the reveal button.
+                    try:
+                        ver = _parse_ios_version(info.ios_version)
+                        if ver >= (16, 0):
+                            info.developer_mode_enabled = await lockdown.get_developer_mode_status()
+                    except Exception:
+                        logger.debug("get_developer_mode_status failed for %s", raw.serial, exc_info=True)
+                    devices.append(info)
+                    logger.debug("Discovered device %s (%s) running iOS %s via %s (connected=%s)",
+                                 info.name, info.udid, info.ios_version, conn_type, info.is_connected)
+                except Exception as exc:
+                    # Lockdown opened but a later property/method blew up — still
+                    # surface the device so the user knows it's there. The
+                    # usbmuxd socket is closed by the finally below (covers this
+                    # branch and the success path alike).
+                    pair_status, pair_error = _classify_pair_error(exc)
+                    cached_name = _load_device_name_cache().get(raw.serial, "iPhone")
+                    devices.append(DeviceInfo(
+                        udid=raw.serial,
+                        name=cached_name,
+                        ios_version="0.0",
+                        connection_type=conn_type,
+                        is_connected=False,
+                        pair_status=pair_status,
+                        pair_error=pair_error,
+                    ))
+                    logger.exception("Failed to query device %s after lockdown opened", raw.serial)
+            finally:
+                # Always release the per-device usbmuxd socket — discovery runs
+                # on every UI refresh / watchdog tick, so a leak here exhausts
+                # usbmuxd and the iPhone "disappears" until restart. Best-effort:
+                # some lockdown variants expose async close(); some don't.
                 try:
                     close_coro = getattr(lockdown, "close", None)
                     if close_coro is not None:
@@ -414,18 +432,6 @@ class DeviceManager:
                             await result
                 except Exception:
                     logger.debug("close failed on lockdown for %s", raw.serial, exc_info=True)
-                pair_status, pair_error = _classify_pair_error(exc)
-                cached_name = _load_device_name_cache().get(raw.serial, "iPhone")
-                devices.append(DeviceInfo(
-                    udid=raw.serial,
-                    name=cached_name,
-                    ios_version="0.0",
-                    connection_type=conn_type,
-                    is_connected=False,
-                    pair_status=pair_status,
-                    pair_error=pair_error,
-                ))
-                logger.exception("Failed to query device %s after lockdown opened", raw.serial)
 
         # Surface devices that are in our connection table but did not get
         # added from usbmuxd above. Happens for the dual-device A-WiFi +
