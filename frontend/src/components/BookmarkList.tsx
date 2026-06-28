@@ -12,6 +12,7 @@ import { useServices } from '../contexts/ServicesContext';
 import { useBookmarkUiState } from '../hooks/useBookmarkUiState';
 import { useBookmarkSelection } from '../hooks/useBookmarkSelection';
 import { sortBookmarks, sortCategoryEntries, type SortMode } from '../utils/bookmarkSort';
+import { availableCountries, filterByCountry } from '../utils/bookmarkCountries';
 import { makeResolveColor } from '../utils/categoryColor';
 import {
   getCategoryStatus,
@@ -243,6 +244,11 @@ const BookmarkList: React.FC<BookmarkListProps> = ({
     try { localStorage.setItem('locwarp.bookmark_sort', m); } catch { /* ignore */ }
   };
 
+  // Country filter. '' = all countries. Deliberately NOT persisted — resets to
+  // all on every mount (sort + fly-GPS toggles persist; this does not). The
+  // dropdown only renders when >= 2 countries are available.
+  const [countryFilter, setCountryFilter] = useState('');
+
   // The context menu's three interlocking guard mechanisms (dismissal
   // listeners, close-reset, reverse-geocode stale-guard) moved into
   // BookmarkContextMenu — they must travel together, see that component.
@@ -292,13 +298,25 @@ const BookmarkList: React.FC<BookmarkListProps> = ({
     setContextMenu({ bm, x: e.clientX, y: e.clientY });
   };
 
+  // Country-filter derivations (pure logic in utils/bookmarkCountries).
+  // countryOptions drives the dropdown; effectiveCountry guards a selection
+  // whose bookmarks were all removed (falls back to all, no extra render);
+  // countryFiltered is the single narrowed set BOTH the search path and the
+  // category grouping consume.
+  const countryOptions = availableCountries(bookmarks, lang, t('bm.country_unknown'));
+  const effectiveCountry =
+    countryFilter && countryOptions.some((o) => o.code === countryFilter)
+      ? countryFilter
+      : '';
+  const countryFiltered = filterByCountry(bookmarks, effectiveCountry);
+
   const bookmarksByCategory = categories.reduce<Record<string, Bookmark[]>>((acc, cat) => {
-    acc[cat] = bookmarks.filter((bm) => bm.category === cat);
+    acc[cat] = countryFiltered.filter((bm) => bm.category === cat);
     return acc;
   }, {});
 
   // Include uncategorized
-  const uncategorized = bookmarks.filter((bm) => !categories.includes(bm.category));
+  const uncategorized = countryFiltered.filter((bm) => !categories.includes(bm.category));
   if (uncategorized.length > 0) {
     bookmarksByCategory['Uncategorized'] = uncategorized;
   }
@@ -581,6 +599,34 @@ const BookmarkList: React.FC<BookmarkListProps> = ({
         </select>
       </div>
 
+      {/* Country filter — narrows the whole dataset (search + grouping) to one
+          country. Text-only options (no flag emoji: Windows native <select>
+          renders regional-indicator emoji as bare letters, which is why the app
+          uses flagcdn images elsewhere). Hidden when fewer than 2 countries are
+          available, since the filter would be a no-op. */}
+      {countryOptions.length >= 2 && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 8, fontSize: 11, color: '#bbb' }}>
+          <span style={{ opacity: 0.7 }}>{t('bm.country_label')}</span>
+          <select
+            aria-label={t('bm.country_label')}
+            value={effectiveCountry}
+            onChange={(e) => setCountryFilter(e.target.value)}
+            style={{
+              flex: 1, background: '#1e1e22', color: '#e0e0e0',
+              border: '1px solid rgba(255,255,255,0.12)', borderRadius: 4,
+              padding: '3px 6px', fontSize: 11,
+            }}
+          >
+            <option value="" style={{ background: '#1e1e22', color: '#e0e0e0' }}>{t('bm.country_all')}</option>
+            {countryOptions.map((c) => (
+              <option key={c.code} value={c.code} style={{ background: '#1e1e22', color: '#e0e0e0' }}>
+                {`${c.name} (${c.count})`}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+
       {/* Add bookmark dialog */}
       <AddBookmarkDialog
         open={showAddDialog}
@@ -631,7 +677,7 @@ const BookmarkList: React.FC<BookmarkListProps> = ({
       {/* Search mode: flat filtered list, no category grouping */}
       {search.trim() !== '' && (() => {
         const q = search.trim().toLowerCase();
-        const matches = sortBookmarks(bookmarks.filter((bm) => {
+        const matches = sortBookmarks(countryFiltered.filter((bm) => {
           const name = (bm.name ?? '').toLowerCase();
           const coord = `${bm.lat.toFixed(5)}, ${bm.lng.toFixed(5)}`;
           return name.includes(q) || coord.includes(q);
@@ -672,7 +718,9 @@ const BookmarkList: React.FC<BookmarkListProps> = ({
 
       {/* Bookmark groups — only when NOT searching */}
       {search.trim() === '' && sortCategoryEntries(
-        Object.entries(bookmarksByCategory).filter(([cat]) => !hidden.has(cat)),
+        Object.entries(bookmarksByCategory).filter(
+          ([cat, bms]) => !hidden.has(cat) && (effectiveCountry === '' || bms.length > 0),
+        ),
         sortMode,
       )
         .map(([cat, bms]) => {

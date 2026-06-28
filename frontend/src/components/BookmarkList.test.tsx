@@ -472,3 +472,98 @@ describe('BookmarkList left-click teleport gating + feedback (U16/U17)', () => {
     expect(onShowToast).toHaveBeenCalledWith('bm.click_no_device');
   });
 });
+
+describe('BookmarkList country filter', () => {
+  // Self-contained wrapper so we can rerender with new props (the shared
+  // renderWithServices does not expose the wrapper for rerender).
+  function wrapped(props: any) {
+    const api = {
+      getBookmarkUiState: (...a: any[]) => getBookmarkUiState(...a),
+      setBookmarkUiState: (...a: any[]) => setBookmarkUiState(...a),
+      reverseGeocode: (...a: any[]) => reverseGeocode(...a),
+    } as any;
+    return (
+      <ServicesProvider value={{ api, ws: createWsRouter(), sendMessage: vi.fn(), connected: true }}>
+        <BookmarkList {...props} />
+      </ServicesProvider>
+    );
+  }
+
+  // jp x3 (Tokyo, Osaka in Trips; Kyoto in Work), tw x1 (Taipei in Trips).
+  const GEO = [
+    { id: 'b1', name: 'Tokyo',  lat: 35, lng: 139, category: 'Trips', country_code: 'jp' },
+    { id: 'b2', name: 'Osaka',  lat: 34, lng: 135, category: 'Trips', country_code: 'jp' },
+    { id: 'b3', name: 'Kyoto',  lat: 35, lng: 135, category: 'Work',  country_code: 'jp' },
+    { id: 'b4', name: 'Taipei', lat: 25, lng: 121, category: 'Trips', country_code: 'tw' },
+  ];
+  const CATS = ['Trips', 'Work'];
+
+  // Visible category header labels (mirrors the existing isCategoryExpanded
+  // helper: each .bookmark-group's first <span> is the category name).
+  function visibleCategories(): string[] {
+    return Array.from(document.querySelectorAll('.bookmark-group'))
+      .map((g) => g.querySelector('span')?.textContent ?? '');
+  }
+
+  it('renders an All + per-country dropdown when >= 2 countries exist', async () => {
+    render(wrapped(makeProps({ bookmarks: GEO, categories: CATS })));
+    await screen.findByText('Tokyo');
+    const select = screen.getByLabelText('bm.country_label') as HTMLSelectElement;
+    const opts = Array.from(select.options);
+    // Value order is deterministic (Japan/Taiwan or JP/TW both sort j < t);
+    // assert values + counts rather than ICU display names to stay robust.
+    expect(opts.map((o) => o.value)).toEqual(['', 'jp', 'tw']);
+    expect(opts[0].textContent).toBe('bm.country_all');
+    expect(opts.find((o) => o.value === 'jp')!.textContent).toMatch(/\(3\)$/);
+    expect(opts.find((o) => o.value === 'tw')!.textContent).toMatch(/\(1\)$/);
+  });
+
+  it('does NOT render the dropdown when fewer than 2 countries exist', async () => {
+    const oneCountry = GEO.filter((b) => b.country_code === 'jp');
+    render(wrapped(makeProps({ bookmarks: oneCountry, categories: CATS })));
+    await screen.findByText('Tokyo');
+    expect(screen.queryByLabelText('bm.country_label')).toBeNull();
+  });
+
+  it('narrows the grouped view to the selected country and hides empty groups', async () => {
+    render(wrapped(makeProps({ bookmarks: GEO, categories: CATS })));
+    await screen.findByText('Tokyo');
+    expect(visibleCategories().sort()).toEqual(['Trips', 'Work']);
+
+    const select = screen.getByLabelText('bm.country_label');
+    fireEvent.change(select, { target: { value: 'tw' } });
+
+    // tw has only Taipei (Trips). Work has no tw bookmark => hidden.
+    expect(screen.getByText('Taipei')).toBeInTheDocument();
+    expect(screen.queryByText('Tokyo')).toBeNull();
+    expect(visibleCategories()).toEqual(['Trips']);
+  });
+
+  it('narrows search results to the selected country', async () => {
+    render(wrapped(makeProps({ bookmarks: GEO, categories: CATS })));
+    await screen.findByText('Tokyo');
+
+    fireEvent.change(screen.getByLabelText('bm.country_label'), { target: { value: 'tw' } });
+    fireEvent.change(screen.getByPlaceholderText('bm.search_placeholder'), { target: { value: 'a' } });
+
+    // 'a' matches Osaka (jp) and Taipei (tw); the country filter narrows the
+    // search base to tw, so only Taipei survives.
+    expect(screen.getByText('Taipei')).toBeInTheDocument();
+    expect(screen.queryByText('Osaka')).toBeNull();
+  });
+
+  it('falls back to All when the selected country no longer exists', async () => {
+    const { rerender } = render(wrapped(makeProps({ bookmarks: GEO, categories: CATS })));
+    await screen.findByText('Tokyo');
+    fireEvent.change(screen.getByLabelText('bm.country_label'), { target: { value: 'tw' } });
+    expect(screen.queryByText('Tokyo')).toBeNull();
+
+    // tw bookmark removed -> only jp left. Stale 'tw' filter must fall back to
+    // All (effectiveCountry === ''), so every jp bookmark is visible again.
+    const jpOnly = GEO.filter((b) => b.country_code === 'jp');
+    rerender(wrapped(makeProps({ bookmarks: jpOnly, categories: CATS })));
+    await screen.findByText('Tokyo');
+    expect(screen.getByText('Osaka')).toBeInTheDocument();
+    expect(screen.getByText('Kyoto')).toBeInTheDocument();
+  });
+});
