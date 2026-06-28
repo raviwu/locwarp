@@ -218,6 +218,15 @@ class SavedRoute(BaseModel):
     # on import; honored by the engine's timing-aware interpolation. Additive
     # / backward-compatible: pre-existing routes.json files load with [].
     timestamps: list[float] = []
+    # Cached distance preview (additive; legacy routes.json loads with the
+    # defaults). straight = inline haversine sum; road = exact routed total
+    # (None until status == 'ok'); status replaces an overloaded None so
+    # "pending" and "unavailable" are distinguishable; fingerprint = staleness
+    # signal (hash of waypoints + profile).
+    straight_distance_m: float | None = None
+    road_distance_m: float | None = None
+    road_distance_status: str = "pending"  # 'pending' | 'ok' | 'unavailable'
+    dist_fingerprint: str = ""
 
 
 class RouteMoveRequest(BaseModel):
