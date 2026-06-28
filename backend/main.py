@@ -991,8 +991,10 @@ async def lifespan(application: FastAPI):
     # changed size during iteration, or a torn read). Keeping the sweep on the
     # loop restores the single-threaded invariant → no race. The store is
     # already loaded (above) so bookmarks/routes exist the instant the server
-    # is up; only the offline geo fields fill a beat later, broadcast via the
-    # watcher's bookmarks_changed event (enrich_all's _save).
+    # is up; only the offline geo fields fill a beat later. The file watcher
+    # CANNOT surface that fill: enrich_all's _save records its own mtime, so
+    # _watcher_tick suppresses the self-write. So _deferred_enrich itself
+    # broadcasts bookmarks_changed when the sweep actually changed something.
     if app_state.bookmark_manager is not None:
         manager = app_state.bookmark_manager
 
@@ -1002,7 +1004,12 @@ async def lifespan(application: FastAPI):
             from services import geo_offline
 
             await asyncio.to_thread(geo_offline._ensure_loaded)
-            manager.enrich_all()
+            changed = manager.enrich_all()
+            if changed:
+                # The watcher won't fire (self-write mtime-suppressed), so
+                # push the refresh ourselves — fill UI only on a real change.
+                from api.websocket import broadcast
+                await broadcast("bookmarks_changed", {"reason": "enrich"})
 
         _spawn_bg(_deferred_enrich())
 
