@@ -536,8 +536,23 @@ class DeviceManager:
         conn.connection_type = connection_type
         conn.name = device_name
 
+        # Atomically claim the udid: pop any stale/concurrent same-udid
+        # connection and install the fresh one under the lock, so two
+        # concurrent connect(udid) (HTTP /connect + usbmux watchdog + startup
+        # autoconnect + full_reconnect) can't both pass the membership check
+        # and then clobber each other — the loser's tunnel would leak. Mirror
+        # connect_wifi_tunnel: tear the displaced connection down AFTER
+        # releasing the lock via the lock-free _teardown_connection helper
+        # (self._lock is non-reentrant; disconnect() would re-take it and
+        # self-deadlock). For the legacy iOS-16 path _teardown_connection is a
+        # no-op (rsd is None; the helper-tunnel close is gated on iOS 17+), so
+        # the shared legacy lockdown/usbmux_lockdown object is not double-closed.
         async with self._lock:
+            displaced = self._connections.pop(udid, None)
             self._connections[udid] = conn
+
+        if displaced is not None:
+            await self._teardown_connection(udid, displaced)
 
         logger.info("Connected to %s (iOS %s) via %s", udid, ios_version_str, connection_type)
 
