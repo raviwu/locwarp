@@ -206,8 +206,11 @@ DEFAULT_LOCATION = {"lat": 25.0375, "lng": 121.5637}
 
 # Server — API_HOST must stay 0.0.0.0 (LAN bind). phone.html is served to a
 # real phone over WiFi; narrowing to 127.0.0.1 would silently break it.
-# LAN exposure is closed by the phone-control PIN/token gate (api/phone_control.py)
-# and the CORS allowlist (CORS_ORIGINS below), not by loopback bind.
+# Main-API LAN exposure is closed at the app layer, NOT by the bind: a
+# fail-closed loopback middleware (main.py _lan_gate_middleware) rejects any
+# non-loopback caller, and the /ws/status WebSocket has a loopback + Origin
+# guard (api/websocket.py). The ONLY LAN-reachable surface is /api/phone/* +
+# /phone, gated by its own PIN/token (api/phone_control.py).
 API_HOST = "0.0.0.0"
 API_PORT = 8777
 

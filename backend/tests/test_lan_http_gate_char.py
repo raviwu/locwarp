@@ -103,3 +103,19 @@ def test_ipv6_loopback_reaches_root():
     r = _ipv6_loopback_client().get("/")
     assert r.status_code == 200
     assert r.json()["name"] == "LocWarp"
+
+
+def test_config_comment_no_longer_claims_cors_closes_lan():
+    """A4: the old comment falsely claimed the main API LAN surface was closed
+    by the phone PIN gate + CORS allowlist. After A1/A2 the real model is the
+    loopback gate. Lock that the stale 'CORS allowlist' assertion is gone and
+    the loopback model is documented."""
+    from pathlib import Path
+    src = Path(__file__).resolve().parent.parent / "config.py"
+    text = src.read_text(encoding="utf-8")
+    block = text[text.index("API_HOST = "):]  # the API_HOST region's comment
+    # The false assertion (CORS allowlist closes the main-API LAN exposure)
+    # must no longer appear in the API_HOST comment block.
+    head = text[:text.index("API_HOST = ")]
+    assert "loopback" in head.lower()
+    assert "not by loopback bind" not in head
