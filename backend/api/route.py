@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -5,7 +6,13 @@ from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from pydantic import BaseModel
 
-from api.deps import get_route_manager, get_route_service, get_gpx_service
+from api.deps import (
+    get_event_publisher,
+    get_gpx_service,
+    get_route_manager,
+    get_route_service,
+)
+from domain.route_distance import route_distance_fingerprint, straight_line_distance_m
 from models.schemas import (
     Coordinate,
     RouteCategory,
@@ -13,10 +20,47 @@ from models.schemas import (
     RoutePlanRequest,
     SavedRoute,
 )
+from services.route_distance_service import compute_road_distance
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/route", tags=["route"])
+
+# Strong refs so a fire-and-forget road-distance compute is not GC'd
+# mid-flight (asyncio keeps only weak refs). Mirrors api/location.py:_spawn.
+_bg_tasks: set = set()
+
+
+def _spawn(coro):
+    task = asyncio.create_task(coro)
+    _bg_tasks.add(task)
+
+    def _on_done(t):
+        _bg_tasks.discard(t)
+        if t.cancelled():
+            return
+        exc = t.exception()
+        if exc is not None:
+            logger.exception("route bg task crashed: %s", exc, exc_info=exc)
+
+    task.add_done_callback(_on_done)
+    return task
+
+
+def _stamp_distance_fields(route: SavedRoute) -> None:
+    """Fill straight_distance_m + dist_fingerprint, reset road to pending, BEFORE
+    the store mutation so the single _save() persists the correct values with no
+    intermediate stale-distance window."""
+    route.straight_distance_m = straight_line_distance_m(route.waypoints)
+    route.dist_fingerprint = route_distance_fingerprint(route.waypoints, route.profile)
+    route.road_distance_m = None
+    route.road_distance_status = "pending"
+
+
+def _spawn_road_compute(saved: SavedRoute, rm, route_service, publisher) -> None:
+    _spawn(compute_road_distance(
+        saved.id, route_manager=rm, route_service=route_service, publisher=publisher,
+    ))
 
 
 @router.post("/plan")
@@ -35,21 +79,27 @@ async def list_saved(rm=Depends(get_route_manager)):
 
 
 @router.post("/saved", response_model=SavedRoute)
-async def save_route(route: SavedRoute, rm=Depends(get_route_manager)):
-    return rm.create_route(route)
+async def save_route(route: SavedRoute, rm=Depends(get_route_manager),
+                     route_service=Depends(get_route_service),
+                     publisher=Depends(get_event_publisher)):
+    _stamp_distance_fields(route)
+    saved = rm.create_route(route)
+    _spawn_road_compute(saved, rm, route_service, publisher)
+    return saved
 
 
 @router.put("/saved/{route_id}", response_model=SavedRoute)
-async def replace_saved(route_id: str, route: SavedRoute, rm=Depends(get_route_manager)):
-    """Overwrite an existing saved route's payload.
-
-    Backend half of the "save and overwrite same-named route" UX. Keeps
-    the original id and created_at; updates name, waypoints, profile,
-    and category, and stamps updated_at.
-    """
+async def replace_saved(route_id: str, route: SavedRoute, rm=Depends(get_route_manager),
+                        route_service=Depends(get_route_service),
+                        publisher=Depends(get_event_publisher)):
+    """Overwrite an existing saved route's payload. The path changed, so the
+    straight distance is recomputed inline and the road distance is recomputed
+    deferred."""
+    _stamp_distance_fields(route)
     updated = rm.replace_route(route_id, route)
     if updated is None:
         raise HTTPException(status_code=404, detail="Route not found")
+    _spawn_road_compute(updated, rm, route_service, publisher)
     return updated
 
 
@@ -98,13 +148,25 @@ class _RouteImportBody(BaseModel):
 
 
 @router.post("/saved/import")
-async def import_all_saved_routes(body: _RouteImportBody, rm=Depends(get_route_manager)):
+async def import_all_saved_routes(body: _RouteImportBody, rm=Depends(get_route_manager),
+                                  route_service=Depends(get_route_service),
+                                  publisher=Depends(get_event_publisher)):
     import json as _json
+    # Stamp straight + fingerprint + pending on each incoming route so the
+    # imported records persist correct values; the store still applies its own
+    # id/name-collision rules.
+    for r in body.routes:
+        _stamp_distance_fields(r)
     payload = _json.dumps({
         "routes": [r.model_dump(mode="json") for r in body.routes],
         "categories": [c.model_dump(mode="json") for c in body.categories],
     })
     imported = rm.import_json(payload)
+    # Spawn a road compute for every route that still needs one (the freshly
+    # imported pending routes, plus any older pending/failed ones — self-heal).
+    for r in rm.list_routes():
+        if r.road_distance_status != "ok":
+            _spawn_road_compute(r, rm, route_service, publisher)
     return {"imported": imported}
 
 
@@ -140,7 +202,10 @@ async def delete_route_category(cat_id: str, rm=Depends(get_route_manager)):
 # ── GPX ───────────────────────────────────────────────────
 
 @router.post("/gpx/import")
-async def import_gpx(file: UploadFile = File(...), rm=Depends(get_route_manager), gpx_service=Depends(get_gpx_service)):
+async def import_gpx(file: UploadFile = File(...), rm=Depends(get_route_manager),
+                     gpx_service=Depends(get_gpx_service),
+                     route_service=Depends(get_route_service),
+                     publisher=Depends(get_event_publisher)):
     content = await file.read()
     text = content.decode("utf-8")
     coords, offsets = gpx_service.parse_gpx_timed(text)
@@ -152,7 +217,9 @@ async def import_gpx(file: UploadFile = File(...), rm=Depends(get_route_manager)
         profile="walking",
         timestamps=offsets,
     )
+    _stamp_distance_fields(route)
     saved = rm.create_route(route)
+    _spawn_road_compute(saved, rm, route_service, publisher)
     return {"status": "imported", "id": saved.id, "points": len(coords)}
 
 
