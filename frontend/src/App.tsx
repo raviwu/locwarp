@@ -203,18 +203,15 @@ const App: React.FC = () => {
   // disconnected→connected transition, re-fetch so a distance computed during
   // the outage is not stuck behind a missed routes_changed. Skips the initial
   // connect (the mount-time load already fetched).
-  const wasConnectedRef = useRef(false);
+  const everConnectedRef = useRef(false);
   useEffect(() => {
-    if (connected && wasConnectedRef.current === false) {
-      // first connect — just record it, the mount load already ran
-      wasConnectedRef.current = true;
-      return;
-    }
-    if (connected && wasConnectedRef.current) {
+    if (!connected) return;
+    if (everConnectedRef.current) {
+      // genuine reconnect — replay a possibly-missed routes_changed/bookmarks_changed
       onRoutesChanged();
       onBookmarksChanged();
     }
-    if (!connected) wasConnectedRef.current = true;
+    everConnectedRef.current = true;
   }, [connected, onRoutesChanged, onBookmarksChanged]);
 
   const [wpGenRadius, setWpGenRadius] = useState(300)

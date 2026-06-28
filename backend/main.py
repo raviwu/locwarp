@@ -912,6 +912,8 @@ async def _run_route_distance_sweep(route_manager) -> None:
             changed_straight = True
         stale_ids.append(r.id)
     if changed_straight:
+        # No await between the loop mutations above and _save() — single event
+        # loop thread; no interleave with CRUD (RouteManager has no lock by design).
         route_manager._save()
         await publisher.publish(("routes_changed", {"reason": "distance_backfill"}))
     for rid in stale_ids:

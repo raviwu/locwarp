@@ -292,6 +292,11 @@ class RouteManager:
         Keeps id and created_at; updates name, waypoints, profile,
         category_id, and stamps updated_at. This is the backend half of
         the "save and overwrite same-named route" UX.
+
+        The four distance fields (straight_distance_m, road_distance_m,
+        road_distance_status, dist_fingerprint) are also copied from
+        incoming — the API layer stamps them via _stamp_distance_fields
+        before calling this method.
         """
         existing = self._find_route(route_id)
         if existing is None:
@@ -302,6 +307,11 @@ class RouteManager:
         existing.waypoints = incoming.waypoints
         existing.profile = incoming.profile
         existing.category_id = incoming.category_id
+        # Distance fields are pre-stamped by the API layer before this call.
+        existing.straight_distance_m = incoming.straight_distance_m
+        existing.road_distance_m = incoming.road_distance_m
+        existing.road_distance_status = incoming.road_distance_status
+        existing.dist_fingerprint = incoming.dist_fingerprint
         existing.updated_at = _now_iso()
         self._save()
         return existing
