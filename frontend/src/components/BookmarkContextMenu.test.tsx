@@ -172,6 +172,27 @@ describe('BookmarkContextMenu', () => {
     expect(onClose).toHaveBeenCalledTimes(1);
     confirmSpy.mockRestore();
   });
+
+  // D4 guard — the "Add as Waypoint" action already exists end-to-end; these
+  // tests lock in the bookmark-popover path (the MapContextMenu path was
+  // already covered in MapContextMenu.test.tsx).
+  it('fires onAddWaypoint(lat,lng) and closes when in route mode', () => {
+    const onAddWaypoint = vi.fn();
+    const onClose = vi.fn();
+    render(
+      <BookmarkContextMenu
+        {...makeProps({ showWaypointOption: true, onAddWaypoint, onClose })}
+      />,
+    );
+    fireEvent.click(screen.getByText('map.add_waypoint'));
+    expect(onAddWaypoint).toHaveBeenCalledWith(bm.lat, bm.lng);
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('hides the add-waypoint action when not in route mode', () => {
+    render(<BookmarkContextMenu {...makeProps({ showWaypointOption: false })} />);
+    expect(screen.queryByText('map.add_waypoint')).not.toBeInTheDocument();
+  });
 });
 
 describe('BookmarkContextMenu delete confirmation (U13)', () => {
