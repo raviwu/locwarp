@@ -13,7 +13,7 @@ from itertools import permutations
 
 import httpx
 
-from config import OSRM_BASE_URL
+from config import OSRM_BASE_URL, VERSION
 from domain.errors import NearbyPoiError
 from models.schemas import (
     Coordinate,
@@ -138,8 +138,9 @@ def _haversine_m(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
 _OVERPASS_HEADERS = {
     # Overpass enforces User-Agent identification; some mirrors return 406
     # to anonymous clients (the python-httpx default UA gets caught up in
-    # bot filters). Mirror what other OSM clients send.
-    "User-Agent": "LocWarp/0.2.77 (https://github.com/keezxc1223/locwarp)",
+    # bot filters). Mirror what other OSM clients send. Built from
+    # config.VERSION so it tracks the shipped build (test_version_sync guards it).
+    "User-Agent": f"LocWarp/{VERSION} (https://github.com/raviwu/locwarp)",
     "Accept": "application/json",
 }
 

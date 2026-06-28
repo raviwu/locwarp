@@ -129,7 +129,7 @@ BROUTER_BASE_URL = "https://brouter.de"
 
 # Nominatim
 NOMINATIM_BASE_URL = "https://nominatim.openstreetmap.org"
-NOMINATIM_USER_AGENT = "LocWarp/0.1"
+NOMINATIM_USER_AGENT = f"LocWarp/{VERSION} (https://github.com/raviwu/locwarp)"
 
 
 class SpeedProfile(TypedDict):
