@@ -11,6 +11,7 @@ if "--tunnel-helper" in sys.argv:
     raise SystemExit(_tunnel_helper_run())
 
 import asyncio
+import ipaddress
 import json
 import logging
 import os
@@ -1196,9 +1197,6 @@ async def _csp_middleware(request, call_next):
     return response
 
 
-import ipaddress as _ipaddress
-
-
 def _is_loopback_host(host: str | None) -> bool:
     """True iff host is in 127.0.0.0/8 or is ::1. Broadens phone_control's
     exact-match notion to the full loopback block. uvicorn binds directly
@@ -1209,7 +1207,7 @@ def _is_loopback_host(host: str | None) -> bool:
     if host == "localhost":
         return True
     try:
-        return _ipaddress.ip_address(host).is_loopback
+        return ipaddress.ip_address(host).is_loopback
     except ValueError:
         return False
 

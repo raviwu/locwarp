@@ -22,6 +22,16 @@ def _loopback_client():
     return TestClient(main.app, client=("127.0.0.1", 50000))
 
 
+def _no_client():
+    # Explicit None client to test fail-closed when no client info is present.
+    return TestClient(main.app, client=None)
+
+
+def _ipv6_loopback_client():
+    # IPv6 loopback address (::1) should also be treated as loopback.
+    return TestClient(main.app, client=("::1", 50000))
+
+
 # --- non-loopback is rejected fail-closed ---------------------------------
 def test_lan_peer_blocked_on_mutating_route():
     r = _lan_client().post("/api/location/teleport", json={"lat": 1.0, "lng": 2.0})
@@ -77,3 +87,19 @@ def test_lan_peer_reaches_phone_page():
 def test_lan_peer_reaches_phone_reach_probe():
     r = _lan_client().get("/api/phone/_reach")
     assert r.status_code == 200
+
+
+# --- client=None is fail-closed ------------------------------------------------
+def test_no_client_info_blocked_on_root():
+    """Fail-closed: a request with no client info is rejected with 403."""
+    r = _no_client().get("/")
+    assert r.status_code == 403
+    assert r.json()["detail"]["code"] == "lan_forbidden"
+
+
+# --- IPv6 loopback is treated as loopback ----------------------------------
+def test_ipv6_loopback_reaches_root():
+    """IPv6 loopback (::1) should be treated as loopback and reach the main API."""
+    r = _ipv6_loopback_client().get("/")
+    assert r.status_code == 200
+    assert r.json()["name"] == "LocWarp"
