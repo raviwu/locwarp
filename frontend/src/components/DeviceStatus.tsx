@@ -1067,4 +1067,4 @@ const DeviceStatus: React.FC<DeviceStatusProps> = ({
   );
 };
 
-export default DeviceStatus;
+export default React.memo(DeviceStatus);

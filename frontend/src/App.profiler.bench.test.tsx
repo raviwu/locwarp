@@ -73,7 +73,7 @@ vi.mock('./components/StatusBar', () => {
   return { default: StatusBarStub }
 })
 
-// DeviceStatus — NOT memoized in production.
+// DeviceStatus — memoized in production (D3); stub here is unmemoized to count App-driven commits.
 vi.mock('./components/DeviceStatus', () => {
   const DeviceStatusStub = function DeviceStatusStub(_props: any) {
     renderCounts.deviceStatus++
@@ -361,7 +361,7 @@ describe('App per-tick Profiler bench (position_update commit cost)', () => {
     console.log(`    MapView       : ${staticRenderCountsPerComponent.map}   (memo'd — expect 0)`)
     console.log(`    EtaBar        : ${staticRenderCountsPerComponent.etaBar}   (NOT memo'd — will commit)`)
     console.log(`    StatusBar     : ${staticRenderCountsPerComponent.statusBar}   (NOT memo'd — will commit)`)
-    console.log(`    DeviceStatus  : ${staticRenderCountsPerComponent.deviceStatus}   (NOT memo'd — will commit)`)
+    console.log(`    DeviceStatus  : ${staticRenderCountsPerComponent.deviceStatus}   (memo'd in prod; stub unmemoized here)`)
     console.log(`    DeviceChipRow : ${staticRenderCountsPerComponent.deviceChipRow}   (check)`)
 
     console.log(`\n[WASTED RENDER SUMMARY]`)

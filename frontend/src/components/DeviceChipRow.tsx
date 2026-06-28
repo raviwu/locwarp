@@ -1,3 +1,4 @@
+import React from 'react'
 import { DeviceChip, type DeviceLetter } from './DeviceChip'
 import { useT } from '../i18n'
 import type { DeviceInfo } from '../hooks/useDevice'
@@ -18,7 +19,7 @@ interface Props {
   onEnableDev?: (udid: string) => void
 }
 
-export function DeviceChipRow({ devices, trustRequired = [], runtimes, onAdd, onDisconnect, onForget, onRestoreOne, onReTrust, onEnableDev }: Props) {
+export const DeviceChipRow = React.memo(function DeviceChipRow({ devices, trustRequired = [], runtimes, onAdd, onDisconnect, onForget, onRestoreOne, onReTrust, onEnableDev }: Props) {
   const t = useT()
   const atMax = (devices.length + trustRequired.length) >= MAX_DEVICES
 
@@ -82,4 +83,4 @@ export function DeviceChipRow({ devices, trustRequired = [], runtimes, onAdd, on
       )}
     </div>
   )
-}
+})
