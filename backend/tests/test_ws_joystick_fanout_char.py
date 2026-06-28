@@ -65,6 +65,11 @@ class _App:
         self.state.container = container
 
 
+class _Addr:
+    def __init__(self, host: str) -> None:
+        self.host = host
+
+
 class FakeWebSocket:
     """Feeds a scripted list of inbound text frames, then disconnects."""
 
@@ -72,6 +77,10 @@ class FakeWebSocket:
         self.app = app
         self._messages = list(messages)
         self.accepted = False
+        # Guard compatibility: the WS loopback+Origin guard reads these before
+        # accept(); provide loopback defaults so the guard passes through.
+        self.client = _Addr("127.0.0.1")
+        self.headers: dict = {}
 
     async def accept(self) -> None:
         self.accepted = True
