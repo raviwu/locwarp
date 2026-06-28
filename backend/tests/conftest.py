@@ -89,6 +89,26 @@ def _isolate_real_data_paths(tmp_path, monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _testclient_defaults_to_loopback(monkeypatch):
+    """The A1 HTTP gate rejects non-loopback callers. Starlette's TestClient
+    defaults its transport client tuple to ('testclient', 50000) — a
+    NON-loopback host that the gate would 403. Redirect that default to
+    127.0.0.1 so the existing ~54 TestClient(main.app) suites keep exercising
+    the loopback (legitimate-caller) path. Tests that want to simulate a LAN
+    peer pass an explicit client=(...) which is preserved verbatim.
+    """
+    import starlette.testclient as _st
+
+    _orig_init = _st.TestClient.__init__
+
+    def _patched_init(self, *args, **kwargs):
+        kwargs.setdefault("client", ("127.0.0.1", 50000))
+        return _orig_init(self, *args, **kwargs)
+
+    monkeypatch.setattr(_st.TestClient, "__init__", _patched_init)
+
+
+@pytest.fixture(autouse=True)
 def _reset_wifi_tunnel_globals():
     """Reset core.wifi_tunnel module-level injection seams after each test.
 
