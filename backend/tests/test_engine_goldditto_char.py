@@ -111,3 +111,30 @@ async def test_goldditto_cycle_emit_order():
     assert emitted[0][1] == {"state": "teleporting"}
     assert emitted[4][1]["phase"] == "teleported"
     assert emitted[7][1]["phase"] == "restored"
+
+
+async def test_goldditto_cycle_clear_failure_emits_restore_failed_and_raises():
+    """H4 fix: if the device clear() fails during restore, the cycle must NOT
+    lie 'restored'. It emits goldditto_cycle(restore_failed), emits no bare
+    'restored', and re-raises so the API returns non-2xx. This only works
+    because the cycle calls restore(raise_on_clear_failure=True)."""
+    eng, loc, emitted = make_engine()
+
+    async def boom_clear():
+        raise RuntimeError("dvt channel dropped during clear")
+    loc.clear = boom_clear
+
+    with pytest.raises(RuntimeError, match="dvt channel dropped"):
+        await eng.goldditto_cycle(
+            target="A",
+            lat_a=10.0, lng_a=20.0,
+            lat_b=30.0, lng_b=40.0,
+            wait_seconds=0.001,
+        )
+
+    gold_phases = [d["phase"] for (t, d) in emitted if t == "goldditto_cycle"]
+    assert "teleported" in gold_phases
+    assert "restore_failed" in gold_phases
+    assert "restored" not in gold_phases
+    # RestoreHandler must NOT have emitted the bare 'restored' event either.
+    assert "restored" not in [t for (t, _d) in emitted]

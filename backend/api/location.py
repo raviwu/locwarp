@@ -333,27 +333,53 @@ async def restore(udid: str | None = None, registry=Depends(get_engine_registry)
 
 @router.post("/goldditto/cycle")
 async def goldditto_cycle(req: GoldDittoCycleRequest, registry=Depends(get_engine_registry)):
-    """拉金盆 cycle: teleport → asyncio.sleep(wait) → restore, atomic."""
-    engine = await _engine(req.udid, registry)
-    try:
-        result = await engine.goldditto_cycle(
+    """拉金盆 cycle: teleport → asyncio.sleep(wait) → restore, atomic.
+
+    Wrapped in _try_with_recovery_retry (mirroring /teleport and /restore) so a
+    stale/dead tunnel on the first push self-heals via full_reconnect + retry
+    once, instead of returning a hard 503 while a plain /teleport in the same
+    state would recover. Trade-off: a DeviceLostError raised *during* the wait/
+    restore re-runs the whole cycle (re-teleport + re-wait) on the retry — that
+    only happens on a recoverable device loss and is preferable to leaving the
+    phone stuck at the target. The engine re-resolves inside the closure because
+    full_reconnect rebuilds it.
+    """
+    # Resolve first (may lazily set _primary_udid), THEN capture action_udid so
+    # device_lost cleanup targets the actual resolved device — mirrors /restore.
+    await _engine(req.udid, registry)
+    action_udid = req.udid or registry.get_primary_udid()
+
+    async def _do_cycle():
+        eng = await _engine(action_udid, registry)
+        return await eng.goldditto_cycle(
             target=req.target,
             lat_a=req.lat_a, lng_a=req.lng_a,
             lat_b=req.lat_b, lng_b=req.lng_b,
             wait_seconds=req.wait_seconds,
         )
+
+    try:
+        result = await _try_with_recovery_retry(action_udid, _do_cycle, registry)
     except GoldDittoLockedError:
         raise HTTPException(
             status_code=409,
             detail={"code": "cycle_in_progress",
                     "message": "拉金盆 cycle already in progress, wait for it to finish"},
         )
+    except HTTPException:
+        raise
     except DeviceLostError as e:
-        action_udid = req.udid or registry.get_primary_udid()
         raise (await _handle_device_lost(e, action_udid, registry))
     except Exception as e:
         import logging, traceback
         logging.getLogger("locwarp").error("Gold Ditto cycle failed:\n%s", traceback.format_exc())
+        # A nested DeviceLostError (re-raised from the engine retry loop) should
+        # still trigger device_lost cleanup, matching /teleport's handling.
+        cause = e
+        while cause is not None:
+            if isinstance(cause, DeviceLostError):
+                raise (await _handle_device_lost(cause, action_udid, registry))
+            cause = cause.__cause__
         raise HTTPException(status_code=500, detail=str(e))
     return {"status": "completed", **result}
 

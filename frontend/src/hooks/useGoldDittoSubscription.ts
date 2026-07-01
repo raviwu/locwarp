@@ -21,6 +21,18 @@ export function useGoldDittoSubscription(
       countdownRef.current = { timer: null, endAt: 0 }
     }
 
+    // Format remaining seconds. Short waits show a smooth one-decimal seconds
+    // value ("5.0s"); long waits (>= 60s, now possible up to 3600s) show mm:ss
+    // so the toast stays readable instead of "1799.8s".
+    const fmtRemaining = (secs: number): string => {
+      if (secs >= 60) {
+        const m = Math.floor(secs / 60)
+        const s = Math.floor(secs % 60)
+        return `${m}:${String(s).padStart(2, '0')}`
+      }
+      return `${secs.toFixed(1)}s`
+    }
+
     const offGold = ws.subscribe('goldditto_cycle', (e) => {
       const phase = String(e.phase ?? '')
       if (phase === 'teleported') {
@@ -34,14 +46,18 @@ export function useGoldDittoSubscription(
         const waitS = Number.isFinite(parsed) && parsed > 0 ? parsed : 3.0
         const endAt = Date.now() + waitS * 1000
         clearCountdown()
+        // Adaptive tick: keep the smooth 200ms countdown for short waits, but
+        // throttle to 1s for long waits (up to 60min) so we don't fire ~9000
+        // toasts over a 30-min pull.
+        const tickMs = waitS >= 30 ? 1000 : 200
         const timer = setInterval(() => {
           const remaining = Math.max(0, (countdownRef.current.endAt - Date.now()) / 1000)
           if (remaining <= 0) {
             clearCountdown()
             return
           }
-          cbs.showToast(cbs.t('goldditto.toast.waiting', { remaining: remaining.toFixed(1) }))
-        }, 200)
+          cbs.showToast(cbs.t('goldditto.toast.waiting', { remaining: fmtRemaining(remaining) }))
+        }, tickMs)
         countdownRef.current = { timer, endAt }
       } else if (phase === 'restored') {
         clearCountdown()

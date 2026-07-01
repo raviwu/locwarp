@@ -148,7 +148,10 @@ export const GoldDittoPanel: React.FC<Props> = ({
   const waitSeconds = useMemo(() => {
     const v = parseFloat(waitText)
     if (Number.isNaN(v)) return null
-    return Math.min(10, Math.max(0.5, v))
+    // Ceiling 3600s (60min): a far teleport in Pokémon GO needs the wait to
+    // cover the distance cooldown or every catch silently flees. Matches the
+    // backend schema bound (models/schemas.py GoldDittoCycleRequest).
+    return Math.min(3600, Math.max(0.5, v))
   }, [waitText])
 
   const noDevice = connectedUdids.length === 0
@@ -285,12 +288,12 @@ export const GoldDittoPanel: React.FC<Props> = ({
       </label>
 
       <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-        <span style={{ fontSize: 12, color: '#9ca3af' }}>{t('goldditto.wait_label')} (0.5–10.0)</span>
+        <span style={{ fontSize: 12, color: '#9ca3af' }}>{t('goldditto.wait_label')} (0.5–3600s)</span>
         <input
           type="number"
           step="0.1"
           min="0.5"
-          max="10"
+          max="3600"
           value={waitText}
           onChange={(e) => setWaitText(e.target.value)}
           style={{

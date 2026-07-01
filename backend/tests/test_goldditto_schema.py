@@ -39,7 +39,16 @@ def test_wait_seconds_rejects_below_min():
 
 def test_wait_seconds_rejects_above_max():
     with pytest.raises(ValidationError):
-        GoldDittoCycleRequest(**_base_payload(wait_seconds=10.5))
+        GoldDittoCycleRequest(**_base_payload(wait_seconds=3600.1))
+
+
+def test_wait_seconds_accepts_values_up_to_new_ceiling():
+    # Ceiling raised from 10.0 to 3600.0 (60min) so far teleports can satisfy
+    # the Pokémon GO distance cooldown. Values that used to be rejected (>10)
+    # now parse, up to and including the boundary.
+    for v in (10.5, 60.0, 1800.0, 3600.0):
+        req = GoldDittoCycleRequest(**_base_payload(wait_seconds=v))
+        assert req.wait_seconds == v
 
 
 def test_lat_out_of_range_rejected():

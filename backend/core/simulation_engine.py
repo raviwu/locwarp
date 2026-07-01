@@ -416,9 +416,9 @@ class SimulationEngine:
         await self._emit("state_change", {"state": self.state.value})
         logger.info("Simulation resumed to %s", self.state.value)
 
-    async def restore(self) -> None:
+    async def restore(self, raise_on_clear_failure: bool = False) -> None:
         """Stop everything and clear the simulated location."""
-        await self._restore_handler.restore()
+        await self._restore_handler.restore(raise_on_clear_failure=raise_on_clear_failure)
 
     async def goldditto_cycle(
         self,

@@ -403,4 +403,10 @@ class GoldDittoCycleRequest(BaseModel):
     lng_a: float = Field(..., ge=-180.0, le=180.0)
     lat_b: float = Field(..., ge=-90.0, le=90.0)
     lng_b: float = Field(..., ge=-180.0, le=180.0)
-    wait_seconds: float = Field(..., ge=0.5, le=10.0)
+    # Upper bound 3600s (60min): a Gold Ditto pull is a GPS round-trip, and in
+    # Pokémon GO any catchable action arms a distance-based cooldown (up to ~90min
+    # for cross-continent hops). The wait must be >= that cooldown or every catch
+    # silently flees (soft-ban) with no app error. 3600s covers ~500km — nearly
+    # all realistic hotspot farming. Longer round-trips can still be done manually
+    # via teleport (Confirm) + manual restore, which has no time limit.
+    wait_seconds: float = Field(..., ge=0.5, le=3600.0)

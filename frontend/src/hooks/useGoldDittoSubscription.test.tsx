@@ -46,6 +46,34 @@ describe('useGoldDittoSubscription', () => {
     expect(showToast.mock.calls.length).toBe(callCountAfterExpiry)
   })
 
+  it('long wait (>= 30s) throttles the countdown to 1s ticks and formats mm:ss', () => {
+    const ws = createWsRouter()
+    const showToast = vi.fn()
+    const t = vi.fn((key: string, vars?: Record<string, string | number>) => {
+      if (vars) return `${key}:${JSON.stringify(vars)}`
+      return key
+    })
+    localStorage.setItem('goldditto.wait_seconds', '120')
+
+    renderHook(() => useGoldDittoSubscription(ws, { t: t as any, showToast }))
+
+    act(() => {
+      ws.dispatch({ type: 'goldditto_cycle', phase: 'teleported', target: 'A' })
+    })
+    expect(showToast).toHaveBeenCalledTimes(1) // teleported toast only
+
+    // At 200ms there is NO tick yet — long waits tick every 1000ms, not 200ms.
+    act(() => { vi.advanceTimersByTime(200) })
+    expect(showToast).toHaveBeenCalledTimes(1)
+
+    // At 1000ms the first countdown tick fires, formatted as mm:ss.
+    act(() => { vi.advanceTimersByTime(800) })
+    expect(showToast).toHaveBeenCalledTimes(2)
+    const waitingCall = t.mock.calls.find((c) => c[0] === 'goldditto.toast.waiting')
+    expect(waitingCall).toBeTruthy()
+    expect(String((waitingCall![1] as any).remaining)).toMatch(/^\d+:\d{2}$/)
+  })
+
   it('restored phase clears countdown and shows restored toast', () => {
     const ws = createWsRouter()
     const showToast = vi.fn()

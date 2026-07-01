@@ -164,7 +164,7 @@ export const STRINGS = {
   'goldditto.confirm': { zh: 'Confirm Location', en: 'Confirm Location' },
   'goldditto.first_try': { zh: '1st try', en: '1st try' },
   'goldditto.toast.teleported': { zh: '拉金盆: 已瞬移到 {target}', en: 'Gold Ditto: teleported to {target}' },
-  'goldditto.toast.waiting': { zh: '拉金盆: 等待 {remaining}s ⋯ 即將還原', en: 'Gold Ditto: waiting {remaining}s ⋯' },
+  'goldditto.toast.waiting': { zh: '拉金盆: 等待 {remaining} ⋯ 即將還原', en: 'Gold Ditto: waiting {remaining} ⋯' },
   'goldditto.toast.restored': { zh: '拉金盆: 還原完成,可以開始拉花苞 ✨', en: 'Gold Ditto: restored, pull away ✨' },
   'goldditto.toast.restore_failed': { zh: '⚠ 已瞬移但還原失敗,請手動按一鍵還原', en: '⚠ Teleported but restore failed — please tap 一鍵還原 manually' },
   'goldditto.error.no_device': { zh: '請先連接 iPhone', en: 'Connect an iPhone first' },

@@ -107,18 +107,33 @@ describe('GoldDittoPanel', () => {
     })
   })
 
-  it('clamps wait_seconds above 10 down to 10 in the onCycle args', () => {
+  it('clamps wait_seconds above the 3600 ceiling down to 3600 in the onCycle args', () => {
     const props = baseProps()
     render(<GoldDittoPanel {...props} />)
     const inputs = screen.getAllByPlaceholderText('lat, lng')
     fireEvent.change(inputs[0], { target: { value: '1, 2' } })
     fireEvent.change(inputs[1], { target: { value: '3, 4' } })
-    fireEvent.change(screen.getByRole('spinbutton'), { target: { value: '99' } })
+    fireEvent.change(screen.getByRole('spinbutton'), { target: { value: '9999' } })
 
     fireEvent.click(screen.getByText(/goldditto\.first_try/))
     expect(props.onCycle).toHaveBeenCalledWith(
       'B',
-      expect.objectContaining({ wait_seconds: 10 }),
+      expect.objectContaining({ wait_seconds: 3600 }),
+    )
+  })
+
+  it('passes a large in-range wait (e.g. 900s) through unclamped', () => {
+    const props = baseProps()
+    render(<GoldDittoPanel {...props} />)
+    const inputs = screen.getAllByPlaceholderText('lat, lng')
+    fireEvent.change(inputs[0], { target: { value: '1, 2' } })
+    fireEvent.change(inputs[1], { target: { value: '3, 4' } })
+    fireEvent.change(screen.getByRole('spinbutton'), { target: { value: '900' } })
+
+    fireEvent.click(screen.getByText(/goldditto\.first_try/))
+    expect(props.onCycle).toHaveBeenCalledWith(
+      'B',
+      expect.objectContaining({ wait_seconds: 900 }),
     )
   })
 

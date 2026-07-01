@@ -31,9 +31,11 @@ class FakeEngine:
         self.current_position = Coordinate(lat=lat, lng=lng)
         return self.current_position
 
-    async def restore(self) -> None:
+    async def restore(self, raise_on_clear_failure: bool = False) -> None:
         self.restore_calls += 1
         # Real engine keeps current_position after restore; mirror that.
+        # raise_on_clear_failure is accepted (the cycle now passes True) but the
+        # fake never fails a clear, so it's a no-op here.
 
     async def _emit(self, event_type: str, data: dict) -> None:
         self.emitted.append((event_type, data))
@@ -152,7 +154,7 @@ async def test_restore_failure_emits_phase_event_and_propagates(handler, engine)
     2. NOT emit a `restored` event,
     3. re-raise so the API layer returns 4xx / 5xx.
     """
-    async def fail_restore():
+    async def fail_restore(raise_on_clear_failure: bool = False):
         raise RuntimeError("device unplugged during restore")
     engine.restore = fail_restore
 

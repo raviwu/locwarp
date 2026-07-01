@@ -88,7 +88,11 @@ class GoldDittoHandler:
             await asyncio.sleep(wait_seconds)
 
             try:
-                await self.engine.restore()
+                # strict: a failed device clear() must RAISE (not be swallowed)
+                # so this except fires and the user sees the restore_failed
+                # banner instead of a false "restored" while the phone is left
+                # simulated at the target.
+                await self.engine.restore(raise_on_clear_failure=True)
             except Exception as e:
                 # Device is left simulated. Spec §8 row 5 wants the user to
                 # see a red banner / persistent toast and manually retry the
