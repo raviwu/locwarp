@@ -322,12 +322,22 @@ async def restore(udid: str | None = None, registry=Depends(get_engine_registry)
 
     async def _do_restore():
         eng = await _engine(action_udid, registry)
-        await eng.restore()
+        await eng.restore(raise_on_clear_failure=True)
 
     try:
         await _try_with_recovery_retry(action_udid, _do_restore, registry)
     except DeviceLostError as e:
         raise (await _handle_device_lost(e, action_udid, registry))
+    except HTTPException:
+        raise
+    except Exception as e:
+        # A non-device-lost clear() failure (e.g. instrument RuntimeError):
+        # do NOT lie "restored". Surface it so the UI shows restore_failed
+        # instead of a green success while the phone may still be simulated.
+        raise HTTPException(
+            status_code=503,
+            detail={"code": "restore_failed", "message": str(e)},
+        )
     return {"status": "restored"}
 
 
@@ -399,7 +409,18 @@ async def stop_simulation(udid: str | None = None, registry=Depends(get_engine_r
     """Legacy endpoint: stop + restore. Kept for backwards compatibility,
     prefer /stop (movement only) or /restore (clear location)."""
     engine = await _engine(udid, registry)
-    await engine.restore()
+    action_udid = udid or registry.get_primary_udid()
+    try:
+        await engine.restore(raise_on_clear_failure=True)
+    except DeviceLostError as e:
+        raise (await _handle_device_lost(e, action_udid, registry))
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=503,
+            detail={"code": "restore_failed", "message": str(e)},
+        )
     return {"status": "stopped"}
 
 
