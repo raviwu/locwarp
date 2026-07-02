@@ -17,7 +17,6 @@ import logging
 import os
 from datetime import datetime
 from contextlib import asynccontextmanager
-from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 import uvicorn
@@ -80,15 +79,8 @@ _handlers: list[logging.Handler] = [logging.StreamHandler()]
 if _want_file_handler and _log_dir is not None:
     try:
         _log_dir.mkdir(parents=True, exist_ok=True)
-        _file_handler = RotatingFileHandler(
-            _log_dir / "backend.log",
-            maxBytes=2 * 1024 * 1024,  # 2 MB
-            backupCount=3,
-            encoding="utf-8",
-        )
-        _file_handler.setFormatter(logging.Formatter(_log_fmt))
-        _file_handler.setLevel(logging.INFO)
-        _handlers.append(_file_handler)
+        from log_config import build_file_log_handler
+        _handlers.append(build_file_log_handler(_log_dir, _log_fmt))
     except Exception:
         pass
 logging.basicConfig(level=logging.INFO, format=_log_fmt, handlers=_handlers, force=True)
