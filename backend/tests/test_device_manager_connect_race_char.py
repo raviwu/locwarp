@@ -1,19 +1,19 @@
-"""Characterization: DeviceManager.connect() must atomically claim the udid.
+"""Characterization: DeviceManager.connect() must coalesce concurrent same-udid
+connects instead of each opening its own helper tunnel.
 
-Two concurrent connect(udid) coroutines both pass the membership check under
-self._lock (neither has installed yet), both run the heavy autopair+tunnel with
-NO lock held, then both reinstall. On the buggy code the reinstall is a bare
-``self._connections[udid] = conn`` (no pop-displaced) so the second write
-silently clobbers the first WITHOUT tearing it down -> an orphaned helper-owned
-utun tunnel that leaks until restart.
+Two concurrent connect(udid) coroutines for the SAME device both used to pass
+the membership check under self._lock (neither has installed yet) and both ran
+the heavy autopair+tunnel build. In the real world that means two overlapping
+auto-connect triggers (startup discover + usbmux watchdog + full_reconnect)
+each open a helper-owned USB tunnel for the same device, and the second build
+collides with the first -> helper error -32003 "tunnel already exists".
 
-This test drives the REAL claim/teardown path (it stubs only the heavy I/O:
-list_devices, autopair, _connect_tunnel) and asserts (a) exactly one connection
-survives and (b) the displaced connection's _teardown_connection ran. It mirrors
-test_device_manager_wifi_tunnel_race_char's stubbing approach: source-module
-globals via monkeypatch, instance method override for the heavy connect, and a
-controllable barrier so both coroutines are guaranteed past the membership check
-before either reinstalls.
+The fix serializes connect(udid) behind a per-UDID asyncio.Lock
+(DeviceManager._connect_locks): the loser blocks on the lock while the winner
+builds, then re-checks membership and returns without building a second
+tunnel. This test drives the REAL connect() path (it stubs only the heavy
+I/O: list_devices, autopair, _connect_tunnel) and asserts the tunnel build
+(_connect_tunnel) runs exactly once for two overlapping connect(udid) calls.
 """
 from __future__ import annotations
 
@@ -44,66 +44,53 @@ class _Raw:
 
 
 @pytest.mark.asyncio
-async def test_connect_same_udid_concurrent_claims_atomically(monkeypatch):
-    monkeypatch.setattr(dm_mod, "list_devices", lambda: _async_value([_Raw("UDID-USB")]))
+@pytest.mark.timeout(10)
+async def test_connect_same_udid_coalesces_no_duplicate_tunnel(monkeypatch):
+    """Two overlapping connect(udid) for the SAME device must build the helper
+    tunnel exactly once. Without the per-UDID latch the second call passes the
+    membership check while the first is still building and opens a second
+    tunnel (real-world: helper error -32003 'tunnel already exists')."""
+    monkeypatch.setattr(dm_mod, "list_devices",
+                        lambda: _async_value([_Raw("UDID-USB")]))
     monkeypatch.setattr(dm_mod, "_remember_device_name", lambda *a, **k: None)
 
-    # autopair_with_recovery is lazily imported INSIDE connect() from its source
-    # module, so patch it on services.usbmux_pair_records (not on dm_mod).
     async def _fake_autopair(udid, autopair=True):
         return _StubLockdown(), False
-
     monkeypatch.setattr(pair_mod, "autopair_with_recovery", _fake_autopair)
 
     mgr = DeviceManager()
-
-    # Barrier: hold both coroutines inside the heavy connect (after the
-    # membership check, before reinstall) until both have arrived. This
-    # deterministically reproduces the interleave; without it the two awaits
-    # could serialize and the second would see the first already installed.
-    both_inside = asyncio.Event()
-    arrived = 0
-    torn_down: list[_ActiveConnection] = []
+    build_count = 0
+    build_started = asyncio.Semaphore(0)   # released each time a build begins
+    release_first = asyncio.Event()        # holds the first build "in flight"
 
     async def _fake_connect_tunnel(self, udid, lockdown, ios_version):
-        nonlocal arrived
-        conn = _ActiveConnection(
-            udid=udid,
-            lockdown=lockdown,
-            ios_version=ios_version,
-            rsd=lockdown,  # so a real teardown has an rsd to close
-        )
-        arrived += 1
-        if arrived >= 2:
-            both_inside.set()
-        await both_inside.wait()
-        return conn
+        nonlocal build_count
+        build_count += 1
+        build_started.release()
+        await release_first.wait()
+        return _ActiveConnection(udid=udid, lockdown=lockdown,
+                                 ios_version=ios_version, rsd=lockdown)
+    monkeypatch.setattr(DeviceManager, "_connect_tunnel",
+                        _fake_connect_tunnel, raising=True)
 
-    real_teardown = mgr._teardown_connection
+    t1 = asyncio.create_task(mgr.connect("UDID-USB"))
+    await build_started.acquire()          # first build is in flight
 
-    async def _spy_teardown(udid, conn):
-        torn_down.append(conn)
-        await real_teardown(udid, conn)
+    t2 = asyncio.create_task(mgr.connect("UDID-USB"))
+    # Give t2 ample opportunity to (wrongly) start a SECOND build.
+    try:
+        await asyncio.wait_for(build_started.acquire(), timeout=0.5)
+        second_build_started = True
+    except asyncio.TimeoutError:
+        second_build_started = False
 
-    monkeypatch.setattr(
-        DeviceManager, "_connect_tunnel", _fake_connect_tunnel, raising=True
-    )
-    mgr._teardown_connection = _spy_teardown  # type: ignore[assignment]
+    assert second_build_started is False   # RED without latch, GREEN with it
 
-    await asyncio.gather(mgr.connect("UDID-USB"), mgr.connect("UDID-USB"))
+    release_first.set()
+    await asyncio.gather(t1, t2)
 
-    # Exactly one live connection remains for the udid.
+    assert build_count == 1
     assert list(mgr._connections.keys()) == ["UDID-USB"]
-    survivor = mgr._connections["UDID-USB"]
-
-    # The displaced connection was torn down (not silently clobbered/leaked).
-    assert len(torn_down) == 1, (
-        "exactly one of the two concurrent connects must be displaced and "
-        "torn down; bare reinstall leaks the loser's tunnel"
-    )
-    assert torn_down[0] is not survivor
-    # The displaced connection's rsd was actually closed by the real teardown.
-    assert torn_down[0].rsd.closed is True
 
 
 def _async_value(value):

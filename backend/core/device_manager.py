@@ -293,6 +293,11 @@ class DeviceManager:
             {u for u in raw_sticky if isinstance(u, str)}
             if isinstance(raw_sticky, list) else set()
         )
+        # Per-UDID connect latch: serializes overlapping connect(udid) so
+        # concurrent auto-connect triggers (startup discover + usbmux watchdog +
+        # full_reconnect) coalesce instead of each opening a second helper tunnel
+        # (which collide with helper error -32003 "tunnel already exists").
+        self._connect_locks: dict[str, asyncio.Lock] = {}
 
     def mark_user_denied(self, udid: str) -> None:
         """Add *udid* to the sticky no-auto-re-pair set and persist."""
@@ -480,11 +485,18 @@ class DeviceManager:
         * **iOS 17+** -- TCP tunnel via the elevated helper + RSD.
         * **iOS 16.x** -- plain lockdown over usbmux + legacy location service.
         """
-        async with self._lock:
-            if udid in self._connections:
-                logger.info("Device %s is already connected", udid)
-                return
+        # setdefault has no await between get and set, so it is atomic on the
+        # single-threaded loop — two concurrent callers get the SAME Lock.
+        connect_lock = self._connect_locks.setdefault(udid, asyncio.Lock())
+        async with connect_lock:
+            async with self._lock:
+                if udid in self._connections:
+                    logger.info("Device %s is already connected", udid)
+                    return
+            return await self._connect_locked(udid)
 
+    async def _connect_locked(self, udid: str) -> None:
+        """Body of connect(), run under the per-UDID connect latch."""
         # Detect connection type from usbmux device list.
         connection_type = "USB"
         try:
