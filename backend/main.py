@@ -741,13 +741,25 @@ async def _usbmux_presence_watchdog():
             # USB-typed `connected` set used for disappearance — otherwise a
             # device stored as non-USB (or under different casing) is re-flagged
             # 'new' every poll and connect() no-ops forever (busy-loop).
-            from services.device_presence import compute_usb_reconnect_targets
+            from services.device_presence import (
+                compute_usb_promotion_targets,
+                compute_usb_reconnect_targets,
+            )
             new_udids = compute_usb_reconnect_targets(
                 connected_udids=dm._connections.keys(),
                 present_usb_serials=present_usb_original.values(),
                 max_devices=MAX_DEVICES,
             )
-            if not new_udids:
+            # A device connected via Network (WiFi Sync / saved-IP auto-
+            # connect) is never re-evaluated once connected — connect() is a
+            # no-op for any UDID already in _connections. This re-asserts
+            # connect()'s own "prefer USB if shown as both" preference for a
+            # device that connected over WiFi before USB became available.
+            promotable = compute_usb_promotion_targets(
+                connections={u: c.connection_type for u, c in dm._connections.items()},
+                present_usb_serials=present_usb_original.values(),
+            )
+            if not new_udids and not promotable:
                 continue
 
             # Reset backoff for any UDID that just disappeared from usbmux —
@@ -825,6 +837,49 @@ async def _usbmux_presence_watchdog():
                         "Auto-connect for %s failed (attempt %d, will retry in %.0fs): likely Trust pending / no admin / firewall",
                         udid, fail_count + 1, next_cooldown,
                         exc_info=log_with_trace,
+                    )
+
+            # --- Promotion (Network -> USB when USB becomes available) ---
+            for udid in promotable:
+                fail_count = reconnect_failure_count.get(udid, 0)
+                cooldown = min(
+                    reconnect_cooldown_base * (2 ** fail_count),
+                    reconnect_cooldown_max,
+                )
+                last = last_reconnect_attempt.get(udid, 0.0)
+                if now - last < cooldown:
+                    continue
+                last_reconnect_attempt[udid] = now
+                logger.info(
+                    "usbmux watchdog: promoting %s from Network to USB (fail_count=%d, cooldown=%.0fs)",
+                    udid, fail_count, cooldown,
+                )
+                try:
+                    await dm.disconnect(udid)
+                    await dm.connect(udid)
+                    try:
+                        devs = await dm.discover_devices()
+                        info = next((d for d in devs if d.udid == udid), None)
+                        await broadcast("device_connected", {
+                            "udid": udid,
+                            "name": info.name if info else "",
+                            "ios_version": info.ios_version if info else "",
+                            "connection_type": info.connection_type if info else "USB",
+                        })
+                    except Exception:
+                        logger.exception("watchdog: broadcast (promoted) failed")
+                    logger.info("Promotion to USB succeeded for %s", udid)
+                    reconnect_failure_count.pop(udid, None)
+                except Exception:
+                    reconnect_failure_count[udid] = fail_count + 1
+                    next_cooldown = min(
+                        reconnect_cooldown_base * (2 ** (fail_count + 1)),
+                        reconnect_cooldown_max,
+                    )
+                    logger.warning(
+                        "Promotion to USB for %s failed (attempt %d, will retry in %.0fs)",
+                        udid, fail_count + 1, next_cooldown,
+                        exc_info=fail_count < 3,
                     )
         except asyncio.CancelledError:
             raise
