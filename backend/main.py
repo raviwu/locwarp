@@ -745,13 +745,18 @@ async def _usbmux_presence_watchdog():
             # device cap. The user environment is assumed to only ever have
             # their own iPhones plugged in.
             MAX_DEVICES = 3
-            new_udids_lc = present_usb - connected
-            if not new_udids_lc or len(connected) >= MAX_DEVICES:
+            # Dedup against ALL connected devices (any transport), not just the
+            # USB-typed `connected` set used for disappearance — otherwise a
+            # device stored as non-USB (or under different casing) is re-flagged
+            # 'new' every poll and connect() no-ops forever (busy-loop).
+            from services.device_presence import compute_usb_reconnect_targets
+            new_udids = compute_usb_reconnect_targets(
+                connected_udids=dm._connections.keys(),
+                present_usb_serials=present_usb_original.values(),
+                max_devices=MAX_DEVICES,
+            )
+            if not new_udids:
                 continue
-            # Map back to the original-case serials from list_devices so
-            # downstream dm.connect() sees the format pymobiledevice3
-            # itself expects.
-            new_udids = [present_usb_original[lc] for lc in new_udids_lc]
 
             # Reset backoff for any UDID that just disappeared from usbmux —
             # the next time it shows up (re-plug) we want to try immediately,
@@ -800,7 +805,6 @@ async def _usbmux_presence_watchdog():
                     except Exception:
                         logger.exception("watchdog: broadcast (connected) failed")
                     logger.info("Auto-connect succeeded for %s", udid)
-                    last_reconnect_attempt.pop(udid, None)
                     reconnect_failure_count.pop(udid, None)
 
                     # Auto-sync the new device to the primary device: if the
