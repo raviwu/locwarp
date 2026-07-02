@@ -183,33 +183,71 @@ both" logic already does the right thing once a fresh `connect()` is forced;
 this fix doesn't touch `connect()`'s semantics or the connect-latch
 machinery the sibling USB-reconnect plan (`c00b6b6`) just hardened.
 
-## Accepted tradeoff: brief GPS flicker during the switch
+## Superseded: the original lazy-self-heal reasoning below
+
+**Status update (post-implementation):** the final whole-branch review found
+that the lazy-self-heal reasoning originally written here does not hold for
+a route actively running *during* the promotion — the multi-second window
+where `_connections[udid]` is empty (between `disconnect()` and `connect()`
+completing autopair + tunnel + RSD) has no wait/retry on the reader side, so
+a route push landing in that window raised `DeviceLostError` immediately and
+aborted the route. The shipped implementation replaces the lazy self-heal
+below with a **proactive park-then-resume** sequence, mirroring the existing
+WiFi-tunnel-restart watchdog pattern (`services/wifi_tunnel_service.py`) and
+the reference success path (`infra/device/tunnel_restart.py`):
+
+1. Before tearing anything down: capture `old_eng.capture_resumable_snapshot()`
+   and park the engine (`state = DISCONNECTED`, `_stop_event.set()`,
+   `_pause_event.set()`, cancel `_active_task`) so its task cannot attempt a
+   push during the empty-connection window.
+2. Tear down the WiFi tunnel explicitly via `api.device._tear_down_tunnel`
+   (see "Fixed: WiFi tunnel leak" below) *before* `dm.disconnect()`.
+3. `dm.disconnect(udid)` then `dm.connect(udid)`, as originally designed.
+4. Rebuild the engine with `create_engine_for_device(udid, force=True)` —
+   the old engine's cached `location_service` pointed at the now-closed
+   connection, so (unlike the original reasoning) it **is** recreated here,
+   matching `attempt_tunnel_restart`'s reference behavior.
+5. If a snapshot was captured, `resume_from_snapshot` on the new engine.
+
+**Known residual characteristic** (accepted, not fixed): a device that is
+*idle* (teleported to a position but not running a dynamic route/loop, so
+`capture_resumable_snapshot()` returns `None`) loses `current_position` on
+promotion, since step 4 unconditionally rebuilds the engine. This is
+identical to the pre-existing `attempt_tunnel_restart` reference path's
+behavior (also unconditional `force=True`), not a new gap this feature
+introduces — a subsequent navigate/loop after an idle promotion would need
+the user to re-teleport first, same as any other reconnect scenario.
+
+## Fixed: WiFi tunnel leak
+
+`DeviceManager.disconnect()` → `_teardown_connection()` explicitly skips
+closing WiFi tunnels (only USB helper tunnels) — so a live `TunnelRunner` +
+its per-tunnel watchdog task, registered for a saved-IP auto-connected
+device, would leak on every promotion. An orphaned watchdog could later
+"recover" the dead tunnel and silently demote the device back to WiFi.
+Fixed by calling `api.device._tear_down_tunnel(udid, caller=...)` — which
+cancels the watchdog and stops the runner, popping both from the shared
+`_tunnels`/`_tunnel_watchdogs` registry — before `dm.disconnect()`. It's an
+idempotent no-op for a device that was never registered there (e.g. a
+native usbmuxd "WiFi Sync" connection that never went through LocWarp's own
+`connect_wifi_tunnel` flow).
+
+### Original reasoning (superseded, kept for history)
 
 `DeviceManager.disconnect()` → `_teardown_connection()` calls
 `conn.location_service.clear()`, which restores real GPS on the device
 before the connection is torn down. This means a promotion briefly reverts
 the phone's Find My / Maps position to its real location.
 
-Traced why this self-heals rather than abandoning the simulation: the
-`SimulationEngine` object (`app_state.simulation_engines[udid]`) is **never
-recreated** by this flow — `create_engine_for_device`'s default
-`force=False` path is idempotent and isn't even called by the promotion
-loop. The engine's *next* scheduled position push (its own movement-loop
-tick, independent of the reconnect) discovers the old DVT session is dead,
-which triggers `DvtLocationService._reconnect()` →
-`DeviceManager.get_fresh_dvt_provider()` (`device_manager.py:1226-1341`) —
-this re-fetches `self._connections[udid]` (now the fresh USB connection,
-just installed by our `connect()` call) and opens a new `DvtProvider`
-against it. The engine resumes pushing its own in-memory current
-position/route progress on the new transport, typically well under a
-second later.
-
-This is the *same* self-heal path already exercised by every other
-reconnect scenario (cable blip, DVT session death, the sibling USB-reconnect
-plan's recovery flow) — not a new failure mode this feature introduces. A
-brief flicker is an accepted, pre-existing characteristic of any transport
-teardown+rebuild in this codebase, not something this design needs to
-solve.
+The original design argued this self-heals rather than abandoning the
+simulation because the `SimulationEngine` object is never recreated and its
+next scheduled position push discovers the dead DVT session and self-heals
+via `get_fresh_dvt_provider`. That reasoning holds for a *degraded* session
+(DVT dead but the connection object still exists) but not for a fully
+*absent* connection (`conn is None`, which `get_fresh_dvt_provider` treats
+as an immediate, non-retryable `DeviceLostError`) — exactly the case a
+voluntary disconnect+reconnect creates. See "Superseded" above for the
+mechanism that actually shipped.
 
 ## Testing
 
