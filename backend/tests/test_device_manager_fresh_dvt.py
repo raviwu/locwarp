@@ -91,6 +91,21 @@ async def test_permanent_failure_raises_devicelost(monkeypatch):
 
     monkeypatch.setattr("core.device_manager.DvtProvider", _FakeDvt)
 
+    # W1: same fragility as test_retry_then_success_no_nameerror — the first
+    # DvtProvider-open failure now also escalates to full_reconnect. This
+    # test's _FakeConn is not a real _ActiveConnection, so the REAL
+    # full_reconnect would pop the connection (via disconnect()) then fail to
+    # re-add it (connect() against a fake UDID raises DeviceNotFoundError),
+    # leaving self._connections empty. Without stubbing this out, the test
+    # only "passes" by the fake clock below coincidentally crossing the
+    # deadline before the loop's next iteration would see the popped
+    # connection and raise DeviceLostError(REASON_USB_GONE) instead of the
+    # asserted REASON_LOCKDOWN_DEAD. Stub it so this test robustly exercises
+    # deadline exhaustion on a LIVE connection, as intended.
+    async def _fake_full_reconnect(_udid):
+        return False
+    monkeypatch.setattr(dm, "full_reconnect", _fake_full_reconnect)
+
     # FakeClock: a controlled, monotonically increasing time source. Each call
     # advances 0.4s so the deadline (now + timeout) is crossed deterministically.
     base = time.monotonic()
