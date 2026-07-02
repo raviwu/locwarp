@@ -56,6 +56,17 @@ async def test_retry_then_success_no_nameerror(monkeypatch):
 
     monkeypatch.setattr("core.device_manager.DvtProvider", _FakeDvt)
 
+    # W1: the first DvtProvider-open failure now also escalates to
+    # full_reconnect (see get_fresh_dvt_provider). This test's _FakeConn is
+    # not a real _ActiveConnection, so the REAL full_reconnect would blow up
+    # trying to actually disconnect/reconnect a fake USB device — stub it out
+    # so this test stays focused on its original regression: a transient
+    # open failure that succeeds on the very next retry, without needing a
+    # full reconnect.
+    async def _fake_full_reconnect(_udid):
+        return False
+    monkeypatch.setattr(dm, "full_reconnect", _fake_full_reconnect)
+
     # Make the inter-retry sleep instant so the test does not wait 0.5s.
     async def _instant_sleep(_):
         return None
@@ -103,3 +114,46 @@ async def test_permanent_failure_raises_devicelost(monkeypatch):
     assert ei.value.reason == DeviceLostError.REASON_LOCKDOWN_DEAD
     # The cause chain carries the underlying OSError ("from exc").
     assert isinstance(ei.value.__cause__, OSError)
+
+
+class _StubLockdownFR:
+    def __init__(self):
+        self.all_values = {"ProductVersion": "26.5", "DeviceName": "Renee"}
+
+
+@pytest.mark.asyncio
+@pytest.mark.timeout(10)
+async def test_get_fresh_dvt_usb_escalates_to_full_reconnect(monkeypatch):
+    """On USB, when the cached lockdown is dead (DvtProvider.__aenter__ keeps
+    failing), get_fresh_dvt_provider must escalate to full_reconnect (which
+    rebuilds tunnel+RSD+DvtProvider) and return the freshly-opened provider —
+    instead of spinning on the orphaned lockdown until the deadline and
+    raising DeviceLostError."""
+    from core.device_manager import DeviceManager, _ActiveConnection
+
+    _FakeDvt.instances = []
+    _FakeDvt.fail_remaining = 10_000  # every open on the STALE lockdown fails
+    monkeypatch.setattr("core.device_manager.DvtProvider", _FakeDvt)
+
+    dm = DeviceManager()
+    conn = _ActiveConnection(
+        udid="UDID-USB",
+        lockdown=_StubLockdownFR(),
+        ios_version="26.5",
+        connection_type="USB",
+    )
+    dm._connections["UDID-USB"] = conn
+
+    healthy = object()  # what connect()/_create_dvt_location_service would install
+    reconnect_calls = []
+
+    async def _fake_full_reconnect(udid):
+        reconnect_calls.append(udid)
+        conn.dvt_provider = healthy
+        return True
+    monkeypatch.setattr(dm, "full_reconnect", _fake_full_reconnect)
+
+    provider = await dm.get_fresh_dvt_provider("UDID-USB", timeout=1.0)
+
+    assert reconnect_calls == ["UDID-USB"]   # escalated exactly once
+    assert provider is healthy               # returned the rebuilt provider

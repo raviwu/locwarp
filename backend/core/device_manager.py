@@ -1243,6 +1243,7 @@ class DeviceManager:
         import time
         deadline = time.monotonic() + timeout
         last_exc: Exception | None = None
+        usb_reconnect_tried = False   # W1: escalate a dead USB lockdown once
 
         while True:
             async with self._lock:
@@ -1276,6 +1277,34 @@ class DeviceManager:
                 await new_dvt.__aenter__()
             except Exception as exc:
                 last_exc = exc
+                # W1: for USB, retrying the SAME cached lockdown is futile once
+                # the RemoteXPC tunnel has died — the RSD/lockdown rides that
+                # tunnel. Escalate once to full_reconnect (teardown + reconnect
+                # rebuilds tunnel + RSD + DvtProvider) and hand back the fresh
+                # provider. WiFi keeps its existing tunnel-restart-wait branch
+                # above. No recursion: connect() opens its DvtProvider directly.
+                if conn.connection_type != "Network" and not usb_reconnect_tried:
+                    usb_reconnect_tried = True
+                    logger.info(
+                        "get_fresh_dvt_provider: USB lockdown dead for %s (%s); "
+                        "escalating to full_reconnect", udid, exc,
+                    )
+                    try:
+                        if await self.full_reconnect(udid):
+                            async with self._lock:
+                                fresh = self._connections.get(udid)
+                            if fresh is not None and fresh.dvt_provider is not None:
+                                logger.info(
+                                    "DVT provider re-acquired via full_reconnect for %s",
+                                    udid,
+                                )
+                                return fresh.dvt_provider
+                    except Exception:
+                        logger.exception(
+                            "get_fresh_dvt_provider: USB full_reconnect failed for %s",
+                            udid,
+                        )
+                    # fall through to the normal deadline/backoff below
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
                     logger.warning(
