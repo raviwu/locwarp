@@ -1289,22 +1289,30 @@ class DeviceManager:
                         "get_fresh_dvt_provider: USB lockdown dead for %s (%s); "
                         "escalating to full_reconnect", udid, exc,
                     )
+                    # Detach location_service before escalating: full_reconnect's
+                    # USB path tears down THIS EXACT connection via disconnect(),
+                    # which would otherwise call conn.location_service.clear() —
+                    # re-entering the very DvtLocationService._reconnect() call
+                    # that (via the bound dvt_factory) got us here, deadlocking
+                    # on its non-reentrant _reconnect_lock. Safe to null: disconnect()
+                    # unconditionally discards this _ActiveConnection regardless of
+                    # full_reconnect's outcome, so the field is thrown away either way.
+                    conn.location_service = None
                     try:
-                        if await self.full_reconnect(udid):
-                            async with self._lock:
-                                fresh = self._connections.get(udid)
-                            if fresh is not None and fresh.dvt_provider is not None:
-                                logger.info(
-                                    "DVT provider re-acquired via full_reconnect for %s",
-                                    udid,
-                                )
-                                return fresh.dvt_provider
+                        if not await self.full_reconnect(udid):
+                            logger.warning(
+                                "get_fresh_dvt_provider: USB full_reconnect failed for %s",
+                                udid,
+                            )
                     except Exception:
                         logger.exception(
                             "get_fresh_dvt_provider: USB full_reconnect failed for %s",
                             udid,
                         )
-                    # fall through to the normal deadline/backoff below
+                    # fall through to the normal deadline/backoff below; the next
+                    # loop iteration re-fetches conn (now the rebuilt connection)
+                    # and retries DvtProvider(conn.lockdown), succeeding via the
+                    # pre-existing normal-path return below.
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
                     logger.warning(
