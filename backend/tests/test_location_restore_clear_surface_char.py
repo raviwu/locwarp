@@ -9,8 +9,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from fastapi.testclient import TestClient
 
-pytestmark = pytest.mark.asyncio
-
 
 @pytest.fixture
 def client():
