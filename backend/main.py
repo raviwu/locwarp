@@ -854,9 +854,58 @@ async def _usbmux_presence_watchdog():
                     "usbmux watchdog: promoting %s from Network to USB (fail_count=%d, cooldown=%.0fs)",
                     udid, fail_count, cooldown,
                 )
+                # Capture + park any in-flight simulation BEFORE tearing down
+                # the connection, mirroring the WiFi-tunnel-restart watchdog
+                # (services/wifi_tunnel_service.py) — without this, the
+                # engine's own task keeps trying to push positions through
+                # the dying/gone connection during the multi-second
+                # disconnect->connect gap and gives up on the route.
+                from models.schemas import SimulationState as _SS
+                snapshot: dict | None = None
+                old_eng = app_state.simulation_engines.get(udid)
+                if old_eng is not None:
+                    try:
+                        snapshot = old_eng.capture_resumable_snapshot()
+                    except Exception:
+                        logger.exception("promotion: capture_resumable_snapshot failed for %s", udid)
+                    try:
+                        old_eng.state = _SS.DISCONNECTED
+                        try:
+                            await old_eng._emit("state_change", {"state": old_eng.state.value})
+                        except Exception:
+                            logger.debug("promotion: disconnected state_change emit failed", exc_info=True)
+                        old_eng._stop_event.set()
+                        old_eng._pause_event.set()
+                        active = getattr(old_eng, "_active_task", None)
+                        if active is not None and not active.done():
+                            active.cancel()
+                    except Exception:
+                        logger.exception("promotion: failed to park engine for %s", udid)
                 try:
+                    # Stop any WiFi tunnel watchdog/runner tracking this udid
+                    # BEFORE tearing down the connection — dm.disconnect()
+                    # only closes USB helper tunnels, so a live WiFi
+                    # TunnelRunner would otherwise leak, and its orphaned
+                    # watchdog could later "recover" the dead tunnel and
+                    # silently demote the device back to WiFi.
+                    from api.device import _tear_down_tunnel
+                    await _tear_down_tunnel(udid, caller="usb_promotion")
                     await dm.disconnect(udid)
                     await dm.connect(udid)
+                    # Rebuild the engine bound to the fresh USB location
+                    # service — mirrors attempt_tunnel_restart's force=True
+                    # rebuild (infra/device/tunnel_restart.py), since the old
+                    # engine's cached location_service pointed at the now-
+                    # closed connection.
+                    await app_state.create_engine_for_device(udid, force=True)
+                    if snapshot is not None:
+                        new_eng = app_state.simulation_engines.get(udid)
+                        if new_eng is not None:
+                            logger.info(
+                                "Resuming sim from snapshot after USB promotion for %s (kind=%s)",
+                                udid, snapshot.get("kind"),
+                            )
+                            asyncio.create_task(new_eng.resume_from_snapshot(snapshot))
                     try:
                         devs = await dm.discover_devices()
                         info = next((d for d in devs if d.udid == udid), None)
