@@ -186,8 +186,16 @@ class SimulationEngine:
             await self._active_task
         except asyncio.CancelledError:
             logger.info("%s cancelled", label)
-        except Exception:
-            logger.exception("%s failed unexpectedly", label)
+        except Exception as exc:
+            # A missing-precondition guard (e.g. "no current position. Teleport
+            # first." when a run is started before any teleport) is expected
+            # user error, not a crash — log it cleanly without a traceback so it
+            # stops reading as "failed unexpectedly" in the log. Genuine crashes
+            # keep the ERROR + traceback.
+            if "no current position" in str(exc):
+                logger.warning("%s not started: %s", label, exc)
+            else:
+                logger.exception("%s failed unexpectedly", label)
         finally:
             self._active_task = None
             # Force state back to IDLE if a handler crashed / was cancelled

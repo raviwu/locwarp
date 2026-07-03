@@ -109,6 +109,12 @@ def _tunnel_restart_collaborators() -> dict:
     }
 
 
+# TTL for a stashed single-device resume snapshot. A USB re-plug typically
+# completes in tens of seconds (43s in the 2026-07-03 log); 90s comfortably
+# covers a Trust re-prompt without auto-resuming a run the user has abandoned.
+RESUME_TTL_S = 90.0
+
+
 class AppState:
     """Central application state — shared across API endpoints."""
 
@@ -126,6 +132,12 @@ class AppState:
         # been refactored.
         self.simulation_engines: dict = {}
         self._primary_udid: str | None = None
+        # Single-device auto-resume: when the SOLE connected device drops
+        # mid-sim (no follower to promote), the watchdog stashes its resumable
+        # snapshot here keyed by udid; create_engine_for_device consumes it on
+        # reconnect so the multi-stop/nav continues from the captured segment.
+        # (dict[udid] -> (snapshot, monotonic_ts)).
+        self._pending_resume: dict[str, tuple[dict, float]] = {}
         self.cooldown_timer = CooldownTimer()
         # Guards create_engine_for_device's check->await->assign and the
         # watchdog pop/promote so two concurrent connects for the same udid
@@ -498,6 +510,13 @@ class AppState:
 
             logger.info("Simulation engine created for device %s (no initial location pushed)", udid)
 
+            # Single-device auto-resume: if this device dropped as the sole
+            # connected leader mid-sim, the watchdog stashed a resume snapshot —
+            # continue the multi-stop/nav from the captured segment instead of
+            # leaving a position-less engine (which fails a manual restart with
+            # "no current position. Teleport first.").
+            await self._maybe_auto_resume(udid, engine)
+
     async def remove_engine(self, udid: str) -> None:
         """Drop the engine for *udid* and promote a new primary if needed.
 
@@ -511,6 +530,40 @@ class AppState:
             self.simulation_engines.pop(udid, None)
             if self._primary_udid == udid:
                 self._primary_udid = next(iter(self.simulation_engines.keys()), None)
+
+    def stash_pending_resume(self, udid: str, snapshot: dict) -> None:
+        """Hold a resumable sim snapshot for a device that dropped as the SOLE
+        connected leader, so its multi-stop/nav auto-resumes on reconnect. This
+        is the single-device analogue of the multi-device follower promotion."""
+        import time
+        self._pending_resume[udid] = (snapshot, time.monotonic())
+
+    def take_pending_resume(self, udid: str) -> dict | None:
+        """Pop a non-expired resume snapshot for *udid*, else None. Expired
+        entries (older than RESUME_TTL_S) are dropped."""
+        import time
+        entry = self._pending_resume.pop(udid, None)
+        if entry is None:
+            return None
+        snapshot, ts = entry
+        if time.monotonic() - ts > RESUME_TTL_S:
+            logger.info(
+                "pending resume for %s expired (> %.0fs); discarding", udid, RESUME_TTL_S,
+            )
+            return None
+        return snapshot
+
+    async def _maybe_auto_resume(self, udid: str, engine) -> None:
+        """If a fresh resume snapshot was stashed for *udid* (single-device drop),
+        continue its sim on the freshly-rebuilt engine from the captured segment."""
+        snap = self.take_pending_resume(udid)
+        if snap is None:
+            return
+        logger.info(
+            "auto-resuming %s from stashed snapshot (kind=%s, segment=%d)",
+            udid, snap.get("kind"), snap.get("segment_index", 0),
+        )
+        asyncio.create_task(engine.resume_from_snapshot(snap))
 
 
 app_state = AppState()
@@ -616,6 +669,9 @@ async def _usbmux_presence_watchdog():
                 # snapshot BEFORE we cancel its task so we can hand the
                 # in-flight sim off to whichever follower we promote.
                 leader_lost = app_state._primary_udid in lost_now
+                # Capture the leader udid BEFORE the pop/promote loop clears
+                # _primary_udid — needed to key a single-device resume stash.
+                lost_leader_udid = app_state._primary_udid if leader_lost else None
                 handoff_snapshot: dict | None = None
                 if leader_lost:
                     leader_eng = app_state.simulation_engines.get(app_state._primary_udid)
@@ -717,6 +773,16 @@ async def _usbmux_presence_watchdog():
                             asyncio.create_task(
                                 _gs._follow_primary_positions(other_udid, new_leader)
                             )
+                elif leader_lost and handoff_snapshot and not new_leader and lost_leader_udid:
+                    # Single connected device dropped mid-sim — no follower to
+                    # promote. Stash the snapshot so create_engine_for_device
+                    # auto-resumes the run when this device re-plugs (within the
+                    # TTL), instead of discarding a perfectly good resume point.
+                    app_state.stash_pending_resume(lost_leader_udid, handoff_snapshot)
+                    logger.info(
+                        "watchdog: no successor for lost leader %s; stashed resume "
+                        "snapshot for auto-resume on reconnect", lost_leader_udid,
+                    )
 
                 try:
                     await broadcast("device_disconnected", {
