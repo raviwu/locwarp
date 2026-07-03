@@ -21,6 +21,15 @@ from pymobiledevice3.services.simulate_location import DtSimulateLocation
 
 logger = logging.getLogger(__name__)
 
+# Upper bound on a single DVT setLocation / clear DTX round-trip. The
+# ``simulateLocationWithLatitude:longitude:`` selector uses expects_reply=True,
+# so a dead-but-not-yet-detected channel (e.g. USB physically unplugged
+# mid-push) hangs on ``_wait_for_reply`` indefinitely — the phone freezes and
+# nothing surfaces until the usbmux presence watchdog (~3s) cancels the task.
+# Bounding the push turns that silent dark window into a prompt reconnect /
+# DeviceLostError. 5s is well above a healthy round-trip (sub-second in logs).
+DVT_SET_TIMEOUT_S = 5.0
+
 
 class DeviceLostError(RuntimeError):
     """Raised when a location service determines the underlying device
@@ -192,7 +201,7 @@ class DvtLocationService(LocationService):
         """Simulate the device location using the DVT instrument channel."""
         try:
             sim = await self._ensure_instrument()
-            await sim.set(lat, lng)
+            await asyncio.wait_for(sim.set(lat, lng), timeout=DVT_SET_TIMEOUT_S)
             self._active = True
             logger.info("DVT location set to (%.6f, %.6f)", lat, lng)
         except (ConnectionTerminatedError, OSError, EOFError, BrokenPipeError,
@@ -201,7 +210,7 @@ class DvtLocationService(LocationService):
                            type(exc).__name__, exc)
             await self._reconnect()
             sim = await self._ensure_instrument()
-            await sim.set(lat, lng)
+            await asyncio.wait_for(sim.set(lat, lng), timeout=DVT_SET_TIMEOUT_S)
             self._active = True
             logger.info("DVT location set to (%.6f, %.6f) after reconnect", lat, lng)
         except Exception:
@@ -215,7 +224,7 @@ class DvtLocationService(LocationService):
             return
         try:
             sim = await self._ensure_instrument()
-            await sim.clear()
+            await asyncio.wait_for(sim.clear(), timeout=DVT_SET_TIMEOUT_S)
             self._active = False
             logger.info("DVT simulated location cleared")
         except (ConnectionTerminatedError, OSError, EOFError, BrokenPipeError,
@@ -224,7 +233,7 @@ class DvtLocationService(LocationService):
                            type(exc).__name__, exc)
             await self._reconnect()
             sim = await self._ensure_instrument()
-            await sim.clear()
+            await asyncio.wait_for(sim.clear(), timeout=DVT_SET_TIMEOUT_S)
             self._active = False
             logger.info("DVT simulated location cleared after reconnect")
         except Exception:
