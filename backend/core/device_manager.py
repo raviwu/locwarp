@@ -64,6 +64,14 @@ class UnsupportedIosVersionError(RuntimeError):
 
 logger = logging.getLogger(__name__)
 
+# Upper bound on the RSD (RemoteServiceDiscovery) TCP connect over a
+# helper-owned tunnel. A stale/superseded tunnel address (e.g. one left behind
+# by a -32003 self-heal, or a redundant connect that lost the race) accepts the
+# connect at the socket layer but never completes the handshake — without a
+# bound this hangs ~75s on the OS TCP default. 15s is comfortably above a
+# healthy RSD connect (~0.1s in logs) yet fails fast on a dead address.
+RSD_CONNECT_TIMEOUT_S = 15.0
+
 # Closed set of coarse connect-progress phases. Using a Literal at every emit
 # site prevents a typo'd phase string from silently shipping (the domain
 # model's ConnectProgressEvent.phase is a plain str). Order of a successful
@@ -603,7 +611,9 @@ class DeviceManager:
             )
 
             rsd = RemoteServiceDiscoveryService((info["rsd_address"], info["rsd_port"]))
-            await rsd.connect()
+            # Bound the RSD connect: a stale/dead tunnel address accepts the
+            # socket connect but never handshakes, hanging ~75s otherwise.
+            await asyncio.wait_for(rsd.connect(), timeout=RSD_CONNECT_TIMEOUT_S)
             logger.info("RSD connected for %s", udid)
 
             return _ActiveConnection(
@@ -617,7 +627,24 @@ class DeviceManager:
                 rsd=rsd,
                 usbmux_lockdown=lockdown,
             )
-        except Exception:
+        except (asyncio.TimeoutError, ConnectionError, OSError, EOFError) as exc:
+            # Transport-level failure to the tunnel address — almost always a
+            # stale/superseded tunnel (dead RemoteXPC transport), NOT a
+            # privilege problem. Report it accurately and chain the real cause
+            # so the log/UI stops telling the user to run as administrator.
+            logger.warning(
+                "RSD connect to tunnel failed for %s (iOS %s): %s: %s — likely a "
+                "stale tunnel; will reconnect.",
+                udid, ios_version, type(exc).__name__, exc,
+            )
+            raise RuntimeError(
+                f"裝置通道連線逾時 (iOS {ios_version})，可能是殘留的舊 tunnel，"
+                f"正在重新連線… (stale tunnel; reconnecting)"
+            ) from exc
+        except Exception as exc:
+            # Anything else (helper RPC error, missing helper, genuine
+            # privilege/config issue) — keep the actionable admin hint, but
+            # chain the true cause instead of swallowing it.
             logger.exception(
                 "TCP tunnel failed for %s (iOS %s). "
                 "Ensure the tunnel helper is running with elevated privileges.",
@@ -626,7 +653,7 @@ class DeviceManager:
             raise RuntimeError(
                 f"無法建立裝置通道 (iOS {ios_version})。"
                 f"請以系統管理員身份執行 LocWarp。"
-            )
+            ) from exc
 
     # iOS < 17 path removed in v0.1.49 — see UnsupportedIosVersionError.
 
@@ -1014,7 +1041,9 @@ class DeviceManager:
             await self._emit_connect_progress("rsd_attempt", attempt=attempt, max=10)
             rsd = RemoteServiceDiscoveryService((rsd_address, rsd_port))
             try:
-                await rsd.connect()
+                # Bound each attempt: a dead tunnel address would otherwise hang
+                # this attempt (~75s OS default) and stall the whole retry loop.
+                await _asyncio.wait_for(rsd.connect(), timeout=RSD_CONNECT_TIMEOUT_S)
                 last_exc = None
                 break
             except Exception as exc:
