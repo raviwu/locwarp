@@ -812,10 +812,15 @@ class DeviceManager:
                 pass
             return
 
-        logger.warning(
-            "Personalized DDI is NOT mounted on %s. LocWarp will not "
-            "auto-mount; please mount DDI for this iPhone first, then "
-            "reconnect.", conn.udid,
+        # iOS 17+ (RemoteXPC) reports the personalized-DDI signature as
+        # not-present even when DVT LocationSimulation works fine — the check
+        # is a uniform false-negative on these devices and gates nothing
+        # (only surfaced via api/system.py status). Log at INFO without the
+        # "please mount DDI first" hint so it does not send the user chasing a
+        # non-problem while debugging real interruptions.
+        logger.info(
+            "Personalized DDI signature not detected on %s (expected on iOS 17+); "
+            "DVT LocationSimulation still used.", conn.udid,
         )
         conn.ddi_mounted = False
         try:

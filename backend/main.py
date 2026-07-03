@@ -532,11 +532,11 @@ async def _auto_sync_new_device_to_primary(new_udid: str) -> None:
 
 
 async def _usbmux_presence_watchdog():
-    """Poll usbmuxd every 2 s for both directions:
+    """Poll usbmuxd every 1 s for both directions:
 
     * **Disappearance** — a UDID present in DeviceManager._connections that
-      drops off the usbmux list for 2 consecutive polls is treated as USB
-      unplug: disconnect, clear simulation_engine, broadcast device_disconnected.
+      drops off the usbmux list for 3 consecutive misses (~3 s) is treated as
+      USB unplug: disconnect, clear simulation_engine, broadcast device_disconnected.
     * **Appearance** — a USB device showing up while we have no active
       connection triggers an auto-connect + engine rebuild, broadcasting
       device_connected when it succeeds. Failed attempts are throttled

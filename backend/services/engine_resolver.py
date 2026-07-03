@@ -82,8 +82,16 @@ class EngineResolver:
             if rebuilt is not None:
                 _log.info("Engine rebuild succeeded on attempt 1")
                 return rebuilt
-        except Exception:
-            _log.exception("Engine rebuild (attempt 1) failed for %s", target_udid)
+        except Exception as exc:
+            # Attempt-1 commonly loses a startup race with auto-connect (the
+            # device isn't in _connections yet → "not connected. Call connect()
+            # first."). That is an EXPECTED ladder branch that attempt-2's hard
+            # reset recovers, not a crash — log at INFO without a traceback so it
+            # stops reading as an error in the log.
+            _log.info(
+                "Engine rebuild attempt 1 miss for %s (%s); escalating to hard reset",
+                target_udid, exc,
+            )
 
         # Attempt 2: hard reset — disconnect + reconnect + rebuild
         _log.info("attempt 2 (hard reset) for %s", target_udid)
