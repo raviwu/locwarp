@@ -212,10 +212,11 @@ export function useSimActions(args: UseSimActionsArgs) {
     // current sim/device — behaviorally identical to keying on [sim, device, …].
   }, [])
 
-  // `opts.record` exists for the Recent popover's re-fly: a route_stop row is
-  // already in history, and pushing a manual 'navigate' for it would mint a
-  // duplicate row the backend cannot dedupe (manual and route entries live in
-  // separate classes). Resolves true when at least one device actually moved.
+  // Mirrors handleTeleport's contract so onRecentReFly can dispatch to either
+  // through one ternary. `opts.record` is the same suppress-the-history-push
+  // seam, though nothing passes it here today: a route_stop row always re-flies
+  // through handleTeleport, because its kind can never be 'navigate'. Resolves
+  // true when at least one device accepted the navigation.
   const handleNavigate = useCallback(async (
     latIn: number,
     lngIn: number,
