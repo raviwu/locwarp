@@ -1144,11 +1144,19 @@ const App: React.FC = () => {
   }, [bm.categories])
 
   // MapView stable handlers
-  const onRecentReFly = useCallback((entry: any) => {
+  const onRecentReFly = useCallback(async (entry: any) => {
     const isNavigate = entry.kind === 'navigate' || entry.kind === 'coord_navigate'
-    if (isNavigate) handleNavigate(entry.lat, entry.lng)
-    else handleTeleport(entry.lat, entry.lng)
-  }, [handleNavigate, handleTeleport])
+    // A route stop already has its own history row; re-flying it must not mint
+    // a duplicate manual 'teleport' entry alongside it.
+    const isRouteStop = entry.kind === 'route_stop'
+    const ok = isNavigate
+      ? await handleNavigate(entry.lat, entry.lng)
+      : await handleTeleport(entry.lat, entry.lng, 'menu', { record: !isRouteStop })
+    // Any fly-to stops a running simulation server-side (core/teleport.py's
+    // engine.stop()). That was always true, but route stops now surface mid-run,
+    // so say it out loud instead of killing the route silently.
+    if (ok && isRunning) showToast(t('toast.sim_stopped_by_refly'))
+  }, [handleNavigate, handleTeleport, isRunning, showToast, t])
 
   const onOpenLibrary = useCallback(() => setOpenLibraryToken((tok) => tok + 1), [])
 

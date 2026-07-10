@@ -563,6 +563,7 @@ export const STRINGS = {
   'toast.teleport_failed': { zh: '瞬移失敗', en: 'Teleport failed' },
   'toast.teleport_undo_hint': { zh: '已傳送 — 按 ⌘Z / Ctrl+Z 復原', en: 'Teleported — press ⌘Z / Ctrl+Z to undo' },
   'toast.navigate_failed': { zh: '導航失敗', en: 'Navigate failed' },
+  'toast.sim_stopped_by_refly': { zh: '已中斷進行中的模擬', en: 'Interrupted the running simulation' },
   'toast.route_optimized': { zh: '路線已最佳化', en: 'Route optimized' },
   // Settings panel opened from the bottom status bar.
   'status.settings': { zh: '設定', en: 'Settings' },

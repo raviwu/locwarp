@@ -155,7 +155,16 @@ export function useSimActions(args: UseSimActionsArgs) {
     }
   }, [])
 
-  const handleTeleport = useCallback(async (latIn: number, lngIn: number, source: 'menu' | 'coord' = 'menu') => {
+  // `opts.record` exists for the Recent popover's re-fly: a route_stop row is
+  // already in history, and pushing a manual 'teleport' for it would mint a
+  // duplicate row the backend cannot dedupe (manual and route entries live in
+  // separate classes). Resolves true when at least one device actually moved.
+  const handleTeleport = useCallback(async (
+    latIn: number,
+    lngIn: number,
+    source: 'menu' | 'coord' = 'menu',
+    opts: { record?: boolean } = {},
+  ): Promise<boolean> => {
     const sim = simRef.current
     const device = deviceRef.current
     const showToast = showToastRef.current
@@ -179,6 +188,8 @@ export function useSimActions(args: UseSimActionsArgs) {
       // optimistic position (dual pre-sync wants both phones co-located).
       if (outcome.ok.length === 0 && outcome.failed.length > 0) {
         sim.setCurrentPosition(prevPos ?? null)
+        showToast(toastForFanout(t, t('mode.teleport'), outcome, device.connectedDevices))
+        return false
       }
       showToast(toastForFanout(t, t('mode.teleport'), outcome, device.connectedDevices))
     } else {
@@ -189,16 +200,24 @@ export function useSimActions(args: UseSimActionsArgs) {
         }
       } catch {
         showToast(t('toast.teleport_failed'))
-        return
+        return false
       }
     }
-    void pushRecent(lat, lng, source === 'coord' ? 'coord_teleport' : 'teleport')
+    if (opts.record !== false) {
+      void pushRecent(lat, lng, source === 'coord' ? 'coord_teleport' : 'teleport')
+    }
+    return true
     // [] deps: every value is read from a ref that holds the latest render's
     // value, so this handler has ONE stable identity yet always acts on the
     // current sim/device — behaviorally identical to keying on [sim, device, …].
   }, [])
 
-  const handleNavigate = useCallback(async (latIn: number, lngIn: number, source: 'menu' | 'coord' = 'menu') => {
+  const handleNavigate = useCallback(async (
+    latIn: number,
+    lngIn: number,
+    source: 'menu' | 'coord' = 'menu',
+    opts: { record?: boolean } = {},
+  ): Promise<boolean> => {
     const sim = simRef.current
     const device = deviceRef.current
     const showToast = showToastRef.current
@@ -216,10 +235,13 @@ export function useSimActions(args: UseSimActionsArgs) {
         await sim.navigate(lat, lng)
       } catch {
         showToast(t('toast.navigate_failed'))
-        return
+        return false
       }
     }
-    void pushRecent(lat, lng, source === 'coord' ? 'coord_navigate' : 'navigate')
+    if (opts.record !== false) {
+      void pushRecent(lat, lng, source === 'coord' ? 'coord_navigate' : 'navigate')
+    }
+    return true
     // [] deps via refs (see handleTeleport).
   }, [])
 
