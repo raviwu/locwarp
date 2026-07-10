@@ -298,4 +298,12 @@ describe('RecentPlacesPopover', () => {
     expect(getByText('×3')).toBeTruthy();
     expect(queryByText('×1')).toBeNull();
   });
+
+  it('renders no visit-count chip for a manual row (no visit_count field at all)', () => {
+    const { container, queryByText } = render(
+      <RecentPlacesPopover {...makeProps({ recentPlaces: [teleportEntry()] })} />,
+    );
+    openPopover(container);
+    expect(queryByText(/^×\d+$/)).toBeNull();
+  });
 });

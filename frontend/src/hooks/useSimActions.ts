@@ -212,6 +212,10 @@ export function useSimActions(args: UseSimActionsArgs) {
     // current sim/device — behaviorally identical to keying on [sim, device, …].
   }, [])
 
+  // `opts.record` exists for the Recent popover's re-fly: a route_stop row is
+  // already in history, and pushing a manual 'navigate' for it would mint a
+  // duplicate row the backend cannot dedupe (manual and route entries live in
+  // separate classes). Resolves true when at least one device actually moved.
   const handleNavigate = useCallback(async (
     latIn: number,
     lngIn: number,
@@ -229,6 +233,15 @@ export function useSimActions(args: UseSimActionsArgs) {
     const udids = device.connectedDevices.map((d) => d.udid)
     if (udids.length >= 2) {
       const outcome = await sim.navigateAll(udids, lat, lng)
+      // Total failure: no device is navigating. Don't claim it flew, don't
+      // record a destination nothing reached, and don't let a caller's
+      // "interrupted the simulation" toast bury the fan-out failure. Mirrors
+      // handleTeleport, minus the position revert — navigate never moves the
+      // marker optimistically, so there is nothing to undo.
+      if (outcome.ok.length === 0 && outcome.failed.length > 0) {
+        showToast(toastForFanout(t, t('mode.navigate'), outcome, device.connectedDevices))
+        return false
+      }
       showToast(toastForFanout(t, t('mode.navigate'), outcome, device.connectedDevices))
     } else {
       try {

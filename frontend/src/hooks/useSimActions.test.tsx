@@ -291,6 +291,27 @@ describe('useSimActions — re-fly record opt-out + success boolean', () => {
       await act(async () => { ok = await result.current.handleNavigate(25.0, 121.0) })
       expect(ok).toBe(true)
     })
+
+    it('dual device, total failure: resolves false and skips pushRecent', async () => {
+      const failed = { ok: [], failed: [{ udid: 'A', reason: 'x' }, { udid: 'B', reason: 'y' }] }
+      const sim = makeSim({ navigateAll: vi.fn(async () => failed) })
+      const { result, pushRecent, showToast } = setup({ udids: ['A', 'B'], sim })
+      let ok: boolean | undefined
+      await act(async () => { ok = await result.current.handleNavigate(25.0, 121.0) })
+      expect(ok).toBe(false)
+      expect(pushRecent).not.toHaveBeenCalled()
+      expect(showToast).toHaveBeenCalledWith('Navigate failed on all devices')
+    })
+
+    it('dual device, partial success: resolves true', async () => {
+      const partial = { ok: [{ udid: 'A', value: {} }], failed: [{ udid: 'B', reason: 'x' }] }
+      const sim = makeSim({ navigateAll: vi.fn(async () => partial) })
+      const { result, pushRecent } = setup({ udids: ['A', 'B'], sim })
+      let ok: boolean | undefined
+      await act(async () => { ok = await result.current.handleNavigate(25.0, 121.0) })
+      expect(ok).toBe(true)
+      expect(pushRecent).toHaveBeenCalledWith(25.0, 121.0, 'navigate')
+    })
   })
 })
 

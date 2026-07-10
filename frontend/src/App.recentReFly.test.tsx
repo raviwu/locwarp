@@ -41,6 +41,10 @@ vi.mock('./components/MapView', () => ({
           data-testid="map-refly-manual-teleport"
           onClick={() => props.onRecentReFly?.({ lat: 10, lng: 20, kind: 'teleport', name: 'manual', ts: 1 })}
         />
+        <button
+          data-testid="map-refly-navigate"
+          onClick={() => props.onRecentReFly?.({ lat: 10, lng: 20, kind: 'navigate', name: 'nav', ts: 1 })}
+        />
       </div>
     )
   }),
@@ -183,6 +187,32 @@ describe('onRecentReFly (Task 8)', () => {
     await act(async () => { await Promise.resolve(); await Promise.resolve() })
 
     expect(screen.getByText('Teleport failed')).toBeInTheDocument()
+    expect(screen.queryByText('Interrupted the running simulation')).not.toBeInTheDocument()
+  })
+
+  it('raises toast.sim_stopped_by_refly when re-flying a navigate row interrupts a running simulation', async () => {
+    const router = createWsRouter()
+    await act(async () => { renderApp(router) })
+    await connectDevices(router, ['A'])
+    await startRunningSim()
+
+    await act(async () => { fireEvent.click(screen.getByTestId('map-refly-navigate')) })
+    await act(async () => { await Promise.resolve(); await Promise.resolve() })
+
+    expect(screen.getByText('Interrupted the running simulation')).toBeInTheDocument()
+  })
+
+  it('does not overwrite a failure toast with the interruption toast when a navigate re-fly fails', async () => {
+    const router = createWsRouter()
+    await act(async () => { renderApp(router) })
+    await connectDevices(router, ['A'])
+    await startRunningSim()
+    vi.mocked(api.navigate).mockRejectedValueOnce(new Error('boom'))
+
+    await act(async () => { fireEvent.click(screen.getByTestId('map-refly-navigate')) })
+    await act(async () => { await Promise.resolve(); await Promise.resolve() })
+
+    expect(screen.getByText('Navigate failed')).toBeInTheDocument()
     expect(screen.queryByText('Interrupted the running simulation')).not.toBeInTheDocument()
   })
 })

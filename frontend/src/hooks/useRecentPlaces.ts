@@ -32,7 +32,11 @@ export function useRecentPlaces(api: ApiGateway, connected: boolean, ws?: WsRout
   // route stop (POST /api/recent rejects that kind; the backend is the sole
   // writer). A fan-out run emits one event per device for the same physical
   // stop, and stops on a fast jump loop land back-to-back, so the refetch is
-  // coalesced onto a trailing timer instead of firing per event.
+  // coalesced onto a trailing timer instead of firing per event. 500ms is
+  // long enough to swallow a multi-device fan-out's N broadcasts for one
+  // physical stop plus the back-to-back stops of a fast jump loop into a
+  // single refetch, while staying short enough that the popover never looks
+  // stale to a user who opens it right after an arrival.
   const refreshRef = useRef(refreshRecent)
   refreshRef.current = refreshRecent
   useEffect(() => {
