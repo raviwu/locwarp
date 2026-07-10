@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
-"""Snapshot LocWarp's live in-memory bookmarks + routes to a local backup dir.
+"""Snapshot LocWarp's live in-memory bookmarks + routes, plus the recent
+places store, to a local backup dir.
 
 Insurance against the disk-persistence bug: the backend's atomic write can
 fail silently (e.g. a stale root-owned ``bookmarks.json.tmp`` left by an
 admin-mode run), so the user's input can live only in the backend's RAM
 until a restart or the file-watcher reloads it away. This polls the live
 HTTP API — which serves the in-memory state, the only fresh copy — and
-writes a durable snapshot.
+writes a durable snapshot. The recent-places file is read directly instead
+(see RECENT_PLACES_FILE below): it isn't subject to that admin-mode bug, so
+the on-disk copy is already as fresh as the in-memory one.
 
 Writes to ~/.locwarp/backups/ rather than ~/Desktop: macOS TCC blocks a
 launchd agent from writing to the Desktop ("Operation not permitted"), but
@@ -42,18 +45,41 @@ SNAPSHOT_GLOB = "locwarp-backup-*.json"
 RETENTION_S = 3 * 24 * 60 * 60  # keep timestamped snapshots for 3 days
 TIMEOUT_S = 5
 
+# Read directly rather than via the HTTP API: unlike bookmarks/routes,
+# RecentPlacesManager._save() writes synchronously on every push (no admin-mode
+# atomic-write bug to work around), so the on-disk file is always fresh. It is
+# also not sync-folder-aware (config.RECENT_PLACES_FILE is always
+# ~/.locwarp/recent_places.json), so no settings.json lookup is needed either.
+RECENT_PLACES_FILE = os.path.expanduser("~/.locwarp/recent_places.json")
+
 
 def _get(path: str):
     with urllib.request.urlopen(API + path, timeout=TIMEOUT_S) as resp:
         return json.loads(resp.read().decode("utf-8"))
 
 
+def _read_recent() -> list:
+    """Best-effort read of the recent-places file. Never raises — a missing or
+    corrupt file just means an empty recent contribution to this backup, same
+    as the API-unreachable case does for bookmarks/routes."""
+    try:
+        with open(RECENT_PLACES_FILE, encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, list) else []
+    except (OSError, ValueError):
+        return []
+
+
 def _content_of(snapshot: dict) -> str:
-    """Canonical JSON of just the data (bookmarks + routes), excluding the
-    timestamped ``_backup_meta`` — so "changed" means the data changed, not
+    """Canonical JSON of just the data (bookmarks + routes + recent), excluding
+    the timestamped ``_backup_meta`` — so "changed" means the data changed, not
     merely that a minute passed."""
     return json.dumps(
-        {"bookmarks": snapshot.get("bookmarks"), "routes": snapshot.get("routes")},
+        {
+            "bookmarks": snapshot.get("bookmarks"),
+            "routes": snapshot.get("routes"),
+            "recent": snapshot.get("recent"),
+        },
         sort_keys=True,
         ensure_ascii=False,
     )
@@ -97,10 +123,16 @@ def main() -> int:
     bm_count = len(bookmarks.get("bookmarks", []))
     rt_count = len(routes.get("routes", []))
 
-    # Never let an empty fetch clobber a good backup.
+    # Never let an empty fetch clobber a good backup. Recent is deliberately
+    # NOT part of this guard — same rationale as the in-process BackupService:
+    # it is the least valuable store, and empty bookmarks+routes is the signal
+    # the data dir isn't ready, not recent being empty on its own.
     if bm_count == 0 and rt_count == 0:
         print("skip: API returned 0 bookmarks and 0 routes", file=sys.stderr)
         return 0
+
+    recent = _read_recent()
+    rec_count = len(recent)
 
     snapshot = {
         "_backup_meta": {
@@ -108,12 +140,14 @@ def main() -> int:
             "source": API,
             "bookmark_count": bm_count,
             "route_count": rt_count,
+            "recent_count": rec_count,
             "note": "Insurance snapshot of LocWarp in-memory state. The "
                     "'bookmarks' and 'routes' objects are each directly "
                     "re-importable via LocWarp's import endpoints.",
         },
         "bookmarks": bookmarks,
         "routes": routes,
+        "recent": recent,
     }
 
     os.makedirs(BACKUP_DIR, exist_ok=True)
@@ -136,7 +170,7 @@ def main() -> int:
     removed = _prune_old_snapshots(BACKUP_DIR, time.time(), RETENTION_S)
 
     state = "snapshot saved" if changed else "unchanged, latest refreshed"
-    msg = f"backed up {bm_count} bookmarks + {rt_count} routes ({state})"
+    msg = f"backed up {bm_count} bookmarks + {rt_count} routes + {rec_count} recent ({state})"
     if removed:
         msg += f"; pruned {len(removed)} >3d"
     print(msg)

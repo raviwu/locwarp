@@ -43,6 +43,7 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+import config
 from config import get_bookmarks_path, get_routes_path
 from models.schemas import BookmarkStore, RouteStore
 from services.json_safe import safe_load_json
@@ -179,16 +180,17 @@ def restore_combined_snapshot(
     force_restore: bool = False,
     dry_run: bool = False,
 ) -> dict:
-    """Restore BOTH stores from a combined snapshot in one pass: extract the
+    """Restore all stores from a combined snapshot in one pass: extract the
     nested {categories, bookmarks} and {categories, routes} sub-stores and merge
-    each into its live path. Returns ``{'bookmarks': summary, 'routes': summary}``.
+    each into its live path. Returns ``{'bookmarks': summary, 'routes': summary}``
+    plus a ``'recent'`` key when the snapshot carries one.
 
     This is what makes the auto-produced combined snapshot files actually
     restorable — feeding the whole combined file to the per-store path would
     raise (the nested dict is not a list of items)."""
     bm = BookmarkStore(**raw["bookmarks"])
     rt = RouteStore(**raw["routes"])
-    return {
+    results = {
         "bookmarks": _merge_store_into_live(
             bm, BookmarkStore, Path(bookmarks_live),
             force_restore=force_restore, dry_run=dry_run,
@@ -198,6 +200,23 @@ def restore_combined_snapshot(
             force_restore=force_restore, dry_run=dry_run,
         ),
     }
+
+    # `recent` is a flat list, not a pydantic store, so it bypasses
+    # detect_store_cls / merge_stores and uses its own pure union.
+    # Absent on snapshots written before recent joined the payload.
+    from domain.recent import merge_recent
+    from services.json_safe import safe_write_json
+
+    incoming = raw.get("recent")
+    if isinstance(incoming, list):
+        live_path = Path(config.RECENT_PLACES_FILE)
+        live = safe_load_json(live_path)
+        merged = merge_recent(live if isinstance(live, list) else [], incoming)
+        if not dry_run:
+            safe_write_json(live_path, merged)
+        results["recent"] = {"merged": len(merged), "incoming": len(incoming)}
+
+    return results
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -242,6 +261,9 @@ def main(argv: list[str] | None = None) -> int:
                       f"{len(s['tombstone_suppressed'])} — re-run with FORCE=1")
             if not s["dry_run"] and s["backup_copy"]:
                 print(f"  Live store backed up to: {s['backup_copy']}")
+        if "recent" in combined:
+            r = combined["recent"]
+            print(f"Recent places: {r['incoming']} incoming -> {r['merged']} after merge")
         print("DRY RUN — nothing written." if args.dry_run else "Combined restore complete.")
         return 0
 

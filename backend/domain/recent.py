@@ -66,3 +66,58 @@ def split_by_class(entries: list[dict]) -> tuple[list[dict], list[dict]]:
             continue
         (routes if e.get("kind") == ROUTE_KIND else manual).append(e)
     return manual, routes
+
+
+def _fold(rows: list[dict], cap: int, keep_visits: bool) -> list[dict]:
+    """Collapse rows within DEDUPE_DIST_M of each other, newest first.
+
+    Sorts with a deterministic secondary key (lat, lng) rather than plain
+    sort_desc: sort_desc's stable sort alone preserves the CALLER's input
+    order on an exact ts tie, so merge_recent(a, b) and merge_recent(b, a)
+    could fold onto different survivors (and thus different non-empty
+    `name` winners) purely because of which side was concatenated first.
+    Breaking the tie on the rows' own coordinates makes the fold — and
+    therefore merge_recent — order-independent, i.e. genuinely commutative.
+    """
+    ordered = sorted(rows, key=lambda e: (-e.get("ts", 0), e["lat"], e["lng"]))
+    kept: list[dict] = []
+    for row in ordered:
+        match = None
+        for k in kept:
+            if haversine_m(k["lat"], k["lng"], row["lat"], row["lng"]) < DEDUPE_DIST_M:
+                match = k
+                break
+        if match is None:
+            entry = dict(row)
+            if not keep_visits:
+                entry.pop("visit_count", None)
+            kept.append(entry)
+            continue
+        match["ts"] = max(match.get("ts", 0), row.get("ts", 0))
+        if not match.get("name") and row.get("name"):
+            match["name"] = row["name"]
+        if keep_visits:
+            match["visit_count"] = max(
+                int(match.get("visit_count", 1)), int(row.get("visit_count", 1))
+            )
+    return sort_desc(kept)[:cap]
+
+
+def merge_recent(a: list[dict], b: list[dict]) -> list[dict]:
+    """Union two recent-store snapshots. Commutative and idempotent.
+
+    Rows are matched WITHIN a class (a manual entry never merges into a route
+    stop) and by proximity, mirroring the live store's dedupe rule. A matched
+    pair keeps the newest ts, the non-empty name, and — for route stops only —
+    the highest visit_count, because a restored backup may hold visits the live
+    store lost. Each class is capped exactly as the live store caps it, so the
+    merged output already satisfies the store's invariants.
+
+    ``visit_count`` uses max(), not a sum: the two snapshots overlap in time, so
+    adding them would double-count every visit already present in both.
+    """
+    manual_a, route_a = split_by_class(a)
+    manual_b, route_b = split_by_class(b)
+    manual = _fold(manual_a + manual_b, MAX_MANUAL_ENTRIES, keep_visits=False)
+    routes = _fold(route_a + route_b, MAX_ROUTE_STOP_ENTRIES, keep_visits=True)
+    return sort_desc(manual + routes)

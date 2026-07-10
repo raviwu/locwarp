@@ -205,16 +205,19 @@ class AppState:
         # next fetch.
         self.route_manager = make_route_manager()
 
-        # Rotating local backup: snapshots both managers' live state to
-        # ~/.locwarp/backups on a 5-min cadence (the loop is started in the
-        # lifespan). The provider reads each store consistently (bookmark under
-        # its _store_lock) and is independent of where the live files reside.
+        # Rotating local backup: snapshots the bookmark, route, and recent
+        # stores' live state to ~/.locwarp/backups on a 5-min cadence (the loop
+        # is started in the lifespan). The provider reads each store
+        # consistently (bookmark under its _store_lock) and is independent of
+        # where the live files reside.
         from bootstrap.factories import make_backup_service
 
         def _backup_provider():
+            from services.recent import get_manager as _recent_manager
             return (
                 self.bookmark_manager.snapshot_export(),
                 self.route_manager.snapshot_export(),
+                _recent_manager().snapshot_export(),
             )
 
         self.backup_service = make_backup_service(_backup_provider)

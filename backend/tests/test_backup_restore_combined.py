@@ -18,7 +18,7 @@ from merge_backup import (
 from models.schemas import Coordinate, SavedRoute
 
 
-def _build_combined(tmp_path):
+def _build_combined(tmp_path, recent=None):
     """Produce a real combined snapshot file exactly like the lifespan loop does."""
     bm = make_bookmark_manager()
     cat = bm.create_category(name="Cat")
@@ -27,7 +27,8 @@ def _build_combined(tmp_path):
     rm.create_route(SavedRoute(name="R", waypoints=[Coordinate(lat=1.0, lng=2.0)]))
 
     snap = backup.build_snapshot(
-        bm.snapshot_export(), rm.snapshot_export(), datetime(2026, 6, 22, 12, 0, 0), "in-process"
+        bm.snapshot_export(), rm.snapshot_export(), recent or [],
+        datetime(2026, 6, 22, 12, 0, 0), "in-process",
     )
     f = tmp_path / "locwarp-latest-backup.json"
     f.write_text(json.dumps(snap), encoding="utf-8")
@@ -56,6 +57,42 @@ def test_combined_snapshot_restores_both_stores(tmp_path):
     assert bm_live.exists() and rt_live.exists()
     assert any(b["name"] == "B" for b in json.loads(bm_live.read_text())["bookmarks"])
     assert any(r["name"] == "R" for r in json.loads(rt_live.read_text())["routes"])
+
+
+def test_combined_snapshot_restores_recent_via_union(tmp_path):
+    """The recent sub-store restores through merge_recent's union (not a
+    replace): a row already present in the live file survives alongside a row
+    that only the backup carries. Relies on the autouse conftest guard, which
+    redirects config.RECENT_PLACES_FILE to this test's own tmp_path."""
+    live_recent = [{"lat": 5.0, "lng": 6.0, "kind": "teleport", "name": "Live", "ts": 1}]
+    (tmp_path / "recent_places.json").write_text(json.dumps(live_recent), encoding="utf-8")
+
+    backup_recent = [{"lat": 25.0, "lng": 121.0, "kind": "route_stop", "name": "",
+                       "ts": 2, "visit_count": 3}]
+    f = _build_combined(tmp_path, recent=backup_recent)
+    raw = json.loads(f.read_text())
+    bm_live = tmp_path / "restored-bookmarks.json"
+    rt_live = tmp_path / "restored-routes.json"
+
+    summary = restore_combined_snapshot(raw, bm_live, rt_live, force_restore=True)
+
+    assert summary["recent"] == {"merged": 2, "incoming": 1}
+    restored = json.loads((tmp_path / "recent_places.json").read_text())
+    assert {"teleport", "route_stop"} == {e["kind"] for e in restored}
+
+
+def test_combined_snapshot_pre_recent_key_does_not_crash_restore(tmp_path):
+    """A combined snapshot written before recent joined the payload has no
+    'recent' key at all — the restore must simply skip it, not crash."""
+    f = _build_combined(tmp_path)
+    raw = json.loads(f.read_text())
+    del raw["recent"]
+    bm_live = tmp_path / "restored-bookmarks.json"
+    rt_live = tmp_path / "restored-routes.json"
+
+    summary = restore_combined_snapshot(raw, bm_live, rt_live, force_restore=True)
+
+    assert "recent" not in summary
 
 
 def test_per_store_file_still_restores(tmp_path):

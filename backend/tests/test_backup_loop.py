@@ -68,6 +68,7 @@ async def test_loop_with_real_service_archives_and_prunes(tmp_path):
         return (
             {"categories": [], "bookmarks": [{"id": str(seq["n"])}]},
             {"categories": [], "routes": []},
+            [],
         )
 
     svc = BackupService(repo, provider, retention_hours=72)

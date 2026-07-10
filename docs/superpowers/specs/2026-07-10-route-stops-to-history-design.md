@@ -313,3 +313,7 @@ Every commit carries its own tests, so the suite is never red at a commit bounda
 - **`DELETE /api/recent` clears both classes.** Route stops regenerate on the next run (with
   `visit_count` reset); curated manual history does not.
 - `random_walk` and navigate-arrivals are not recorded.
+- **`make restore-backup` must be run with LocWarp stopped** for the recent
+  store. Bookmarks and routes have file watchers that pick up an external write;
+  the recent store does not, so a restore into a running app would be overwritten
+  by the next push.

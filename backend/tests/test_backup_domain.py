@@ -6,18 +6,21 @@ from domain import backup
 def test_fingerprint_stable_orderinsensitive_and_detects_change():
     a = {"categories": [{"id": "c1"}], "bookmarks": [{"id": "x"}]}
     r = {"routes": []}
+    rec = [{"lat": 1.0, "lng": 2.0, "kind": "teleport", "name": "", "ts": 1}]
     # Stable across two independent but equal inputs.
-    assert backup.data_fingerprint(a, r) == backup.data_fingerprint(
-        {"categories": [{"id": "c1"}], "bookmarks": [{"id": "x"}]}, {"routes": []}
+    assert backup.data_fingerprint(a, r, rec) == backup.data_fingerprint(
+        {"categories": [{"id": "c1"}], "bookmarks": [{"id": "x"}]}, {"routes": []}, rec
     )
     # Key order must not matter (sort_keys) — else identical data churns snapshots.
     assert backup.data_fingerprint(
-        {"bookmarks": [{"id": "x"}], "categories": [{"id": "c1"}]}, r
-    ) == backup.data_fingerprint(a, r)
+        {"bookmarks": [{"id": "x"}], "categories": [{"id": "c1"}]}, r, rec
+    ) == backup.data_fingerprint(a, r, rec)
     # A real data change is detected.
-    assert backup.data_fingerprint(a, r) != backup.data_fingerprint(
-        {"categories": [{"id": "c1"}], "bookmarks": [{"id": "y"}]}, r
+    assert backup.data_fingerprint(a, r, rec) != backup.data_fingerprint(
+        {"categories": [{"id": "c1"}], "bookmarks": [{"id": "y"}]}, r, rec
     )
+    # A recent-only change is also detected.
+    assert backup.data_fingerprint(a, r, rec) != backup.data_fingerprint(a, r, [])
 
 
 def test_stamp_roundtrip():
@@ -48,14 +51,18 @@ def test_select_stale_boundary_just_under_and_over():
 
 
 def test_build_snapshot_shape():
+    recent = [{"lat": 1.0, "lng": 2.0, "kind": "teleport", "name": "", "ts": 1}]
     snap = backup.build_snapshot(
         {"categories": [], "bookmarks": [{"id": "a"}]},
         {"categories": [], "routes": []},
+        recent,
         datetime(2026, 6, 22, 1, 2, 3),
         "in-process",
     )
     assert snap["bookmarks"]["bookmarks"] == [{"id": "a"}]
     assert snap["_backup_meta"]["bookmark_count"] == 1
     assert snap["_backup_meta"]["route_count"] == 0
+    assert snap["_backup_meta"]["recent_count"] == 1
     assert snap["_backup_meta"]["source"] == "in-process"
-    assert set(snap) == {"_backup_meta", "bookmarks", "routes"}
+    assert snap["recent"] == recent
+    assert set(snap) == {"_backup_meta", "bookmarks", "routes", "recent"}

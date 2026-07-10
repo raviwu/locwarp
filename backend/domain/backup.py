@@ -17,12 +17,13 @@ SNAPSHOT_SUFFIX = ".json"
 _STAMP_FMT = "%Y%m%d-%H%M%S"
 
 
-def data_fingerprint(bookmarks: dict, routes: dict) -> str:
+def data_fingerprint(bookmarks: dict, routes: dict, recent: list) -> str:
     """Canonical JSON of the DATA only (excludes _backup_meta) — so 'changed'
-    means the bookmarks/routes changed, not merely that a tick passed.
+    means the stores changed, not merely that a tick passed.
     Mirrors desktop_backup._content_of."""
     return json.dumps(
-        {"bookmarks": bookmarks, "routes": routes}, sort_keys=True, ensure_ascii=False
+        {"bookmarks": bookmarks, "routes": routes, "recent": recent},
+        sort_keys=True, ensure_ascii=False,
     )
 
 
@@ -57,19 +58,24 @@ def select_stale_snapshots(
     return stale
 
 
-def build_snapshot(bookmarks: dict, routes: dict, now: datetime, source: str) -> dict:
+def build_snapshot(
+    bookmarks: dict, routes: dict, recent: list, now: datetime, source: str
+) -> dict:
     """Assemble the combined snapshot payload. ``bookmarks`` is the
     {categories, bookmarks} whole-store shape; ``routes`` is {categories, routes}
-    — each directly re-importable via LocWarp's import endpoints."""
+    — each directly re-importable via LocWarp's import endpoints. ``recent`` is
+    a flat list (RecentPlacesManager.snapshot_export()), not a pydantic store."""
     return {
         "_backup_meta": {
             "captured_at": now.astimezone().isoformat(timespec="seconds"),
             "source": source,
             "bookmark_count": len(bookmarks.get("bookmarks", [])),
             "route_count": len(routes.get("routes", [])),
+            "recent_count": len(recent),
             "note": "Insurance snapshot of LocWarp live state. 'bookmarks' and "
             "'routes' are each re-importable via LocWarp's import endpoints.",
         },
         "bookmarks": bookmarks,
         "routes": routes,
+        "recent": recent,
     }

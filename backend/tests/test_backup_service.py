@@ -29,8 +29,8 @@ class FakeRepo:
         return names
 
 
-def _svc(repo, bms, rts, retention=72):
-    return BackupService(repo, lambda: (bms, rts), retention)
+def _svc(repo, bms, rts, recent=None, retention=72):
+    return BackupService(repo, lambda: (bms, rts, recent or []), retention)
 
 
 def test_skip_when_empty_writes_nothing():
@@ -72,7 +72,7 @@ def test_payload_is_restore_compatible_shape():
     _svc(r, {"categories": [], "bookmarks": [{"id": "a"}]}, {"categories": [], "routes": []}).tick(
         datetime(2026, 6, 22, 12, 0, 0)
     )
-    assert set(r.latest) == {"_backup_meta", "bookmarks", "routes"}
+    assert set(r.latest) == {"_backup_meta", "bookmarks", "routes", "recent"}
     assert "bookmarks" in r.latest["bookmarks"] and "routes" in r.latest["routes"]
 
 
@@ -91,10 +91,33 @@ def test_meta_change_alone_does_not_trigger_new_snapshot():
     r = FakeRepo()
     bms = {"categories": [], "bookmarks": [{"id": "a"}]}
     rts = {"categories": [], "routes": []}
-    s = BackupService(r, lambda: (bms, rts), 72)
+    s = BackupService(r, lambda: (bms, rts, []), 72)
     s.tick(datetime(2026, 6, 22, 12, 0, 0))  # latest now carries captured_at #1
     assert len(r.snaps) == 1
     # Same data, different time → latest's _backup_meta.captured_at differs, but
     # data is unchanged, so no new timestamped snapshot.
     s.tick(datetime(2026, 6, 22, 18, 30, 0))
     assert len(r.snaps) == 1
+
+
+def test_a_recent_only_change_archives_a_new_snapshot():
+    repo = FakeRepo()
+    bms = {"categories": [], "bookmarks": [{"id": "b1"}]}
+    rts = {"categories": [], "routes": []}
+    _svc(repo, bms, rts, recent=[]).tick(datetime(2026, 1, 1, 0, 0, 0))
+    before = len(repo.snaps)
+    row = [{"lat": 1.0, "lng": 2.0, "kind": "route_stop", "name": "", "ts": 1, "visit_count": 1}]
+    _svc(repo, bms, rts, recent=row).tick(datetime(2026, 1, 1, 0, 5, 0))
+    assert len(repo.snaps) == before + 1
+
+
+def test_a_pre_recent_latest_file_still_compares():
+    """A 'latest' written before recent joined the payload has no 'recent' key;
+    it must read as an empty recent store, not crash."""
+    repo = FakeRepo()
+    repo.latest = {"_backup_meta": {}, "bookmarks": {"categories": [], "bookmarks": [{"id": "b1"}]},
+                   "routes": {"categories": [], "routes": []}}
+    bms = {"categories": [], "bookmarks": [{"id": "b1"}]}
+    rts = {"categories": [], "routes": []}
+    r = _svc(repo, bms, rts, recent=[]).tick(datetime(2026, 1, 1, 0, 0, 0))
+    assert r.changed is False
