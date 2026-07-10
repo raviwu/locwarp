@@ -195,6 +195,105 @@ describe('useSimActions — navigate', () => {
   })
 })
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Task 8 (ae838d3): re-fly must not duplicate a Recent row and must not
+// silently kill a running simulation. handleTeleport/handleNavigate gained a
+// 4th `opts: { record?: boolean }` arg and now resolve a success boolean:
+//   - opts.record === false skips the pushRecent push (used when re-flying a
+//     route_stop row, which already has its own history entry — pushing a
+//     manual 'teleport'/'navigate' on top would be an undedupeable duplicate).
+//   - the resolved boolean is true iff at least one device actually moved, so
+//     App.tsx's onRecentReFly can toast the interruption warning only when
+//     the fly-to actually landed.
+// The two onRecentReFly toast assertions (isRunning-gated, never-overwrite-
+// a-failure-toast) live in App.recentReFly.test.tsx since onRecentReFly and
+// isRunning are App-local; App.dangerzone.test.tsx already pins the
+// single-vs-dual fan-out shape, so this block only covers the opts.record /
+// boolean-return surface.
+// ─────────────────────────────────────────────────────────────────────────────
+describe('useSimActions — re-fly record opt-out + success boolean', () => {
+  describe('handleTeleport', () => {
+    it('re-flying a route stop does not create a duplicate manual entry', async () => {
+      const { result, pushRecent } = setup({ udids: ['A'] })
+      await act(async () => {
+        await result.current.handleTeleport(25.0, 121.0, 'menu', { record: false })
+      })
+      expect(pushRecent).not.toHaveBeenCalled()
+    })
+
+    it('re-flying a manual row still records it', async () => {
+      const { result, pushRecent } = setup({ udids: ['A'] })
+      await act(async () => { await result.current.handleTeleport(25.0, 121.0) })
+      expect(pushRecent).toHaveBeenCalledWith(25.0, 121.0, 'teleport')
+    })
+
+    it('resolves false when the single-device teleport throws', async () => {
+      const sim = makeSim({ teleport: vi.fn(async () => { throw new Error('boom') }) })
+      const { result } = setup({ udids: ['A'], sim })
+      let ok: boolean | undefined
+      await act(async () => { ok = await result.current.handleTeleport(1, 2) })
+      expect(ok).toBe(false)
+    })
+
+    it('resolves true on single-device success', async () => {
+      const { result } = setup({ udids: ['A'] })
+      let ok: boolean | undefined
+      await act(async () => { ok = await result.current.handleTeleport(25.0, 121.0) })
+      expect(ok).toBe(true)
+    })
+
+    it('dual device, total failure: resolves false and skips pushRecent', async () => {
+      const failed = { ok: [], failed: [{ udid: 'A', reason: 'x' }, { udid: 'B', reason: 'y' }] }
+      const sim = makeSim({ teleportAll: vi.fn(async () => failed) })
+      const { result, pushRecent } = setup({ udids: ['A', 'B'], sim })
+      let ok: boolean | undefined
+      await act(async () => { ok = await result.current.handleTeleport(25.0, 121.0) })
+      expect(ok).toBe(false)
+      expect(pushRecent).not.toHaveBeenCalled()
+    })
+
+    it('dual device, partial success: resolves true', async () => {
+      const partial = { ok: [{ udid: 'A', value: {} }], failed: [{ udid: 'B', reason: 'x' }] }
+      const sim = makeSim({ teleportAll: vi.fn(async () => partial) })
+      const { result } = setup({ udids: ['A', 'B'], sim })
+      let ok: boolean | undefined
+      await act(async () => { ok = await result.current.handleTeleport(25.0, 121.0) })
+      expect(ok).toBe(true)
+    })
+  })
+
+  describe('handleNavigate', () => {
+    it('re-flying a route stop does not create a duplicate manual entry', async () => {
+      const { result, pushRecent } = setup({ udids: ['A'] })
+      await act(async () => {
+        await result.current.handleNavigate(25.0, 121.0, 'menu', { record: false })
+      })
+      expect(pushRecent).not.toHaveBeenCalled()
+    })
+
+    it('re-flying a manual row still records it', async () => {
+      const { result, pushRecent } = setup({ udids: ['A'] })
+      await act(async () => { await result.current.handleNavigate(25.0, 121.0) })
+      expect(pushRecent).toHaveBeenCalledWith(25.0, 121.0, 'navigate')
+    })
+
+    it('resolves false when the single-device navigate throws', async () => {
+      const sim = makeSim({ navigate: vi.fn(async () => { throw new Error('boom') }) })
+      const { result } = setup({ udids: ['A'], sim })
+      let ok: boolean | undefined
+      await act(async () => { ok = await result.current.handleNavigate(1, 2) })
+      expect(ok).toBe(false)
+    })
+
+    it('resolves true on single-device success', async () => {
+      const { result } = setup({ udids: ['A'] })
+      let ok: boolean | undefined
+      await act(async () => { ok = await result.current.handleNavigate(25.0, 121.0) })
+      expect(ok).toBe(true)
+    })
+  })
+})
+
 describe('useSimActions — start (mode gate + joystick branch)', () => {
   it('default Teleport mode is a no-op (the mode gate): no sim call', async () => {
     const sim = makeSim({ mode: SimMode.Teleport })
