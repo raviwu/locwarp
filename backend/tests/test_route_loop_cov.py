@@ -484,3 +484,49 @@ async def test_jump_loop_infinite_stops_via_event_negative_interval():
     assert loc.pushes == []
     assert eng.lap_count == 0
     assert eng.state == SimulationState.IDLE
+
+
+# ── stop_reached emission (Task 4) ───────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_routed_loop_emits_stop_reached_per_leg_and_flags_the_closing_leg():
+    """closed_waypoints appends waypoints[0], so the final leg lands back on the
+    start. That leg reports origin=True: the loop DOES pass through the start,
+    but it is the auto-injected position the user never chose, and multi_stop's
+    routed path never records it either."""
+    eng, _loc, emitted = make_engine()
+    _wire(eng)
+    looper = RouteLooper(eng)
+
+    wps = [_wp(0.0, 0.0), _wp(1.0, 1.0), _wp(2.0, 2.0)]
+    await looper.start_loop(
+        wps, MovementMode.WALKING, pause_enabled=False, lap_count=1,
+    )
+
+    stops = [d for (t, d) in emitted if t == "stop_reached"]
+    assert stops == [
+        {"index": 1, "total": 3, "lat": 1.0, "lng": 1.0, "origin": False},
+        {"index": 2, "total": 3, "lat": 2.0, "lng": 2.0, "origin": False},
+        {"index": 3, "total": 3, "lat": 0.0, "lng": 0.0, "origin": True},
+    ]
+
+
+@pytest.mark.asyncio
+async def test_jump_loop_emits_stop_reached_and_flags_the_origin():
+    eng, _loc, emitted = make_engine()
+    _wire(eng)
+    looper = RouteLooper(eng)
+
+    wps = [_wp(0.0, 0.0), _wp(1.0, 1.0), _wp(2.0, 2.0)]
+    await looper.start_loop(
+        wps, MovementMode.WALKING, pause_enabled=False, lap_count=1,
+        jump_mode=True, jump_interval=0.0,
+    )
+
+    stops = [d for (t, d) in emitted if t == "stop_reached"]
+    assert stops == [
+        {"index": 1, "total": 3, "lat": 0.0, "lng": 0.0, "origin": True},
+        {"index": 2, "total": 3, "lat": 1.0, "lng": 1.0, "origin": False},
+        {"index": 3, "total": 3, "lat": 2.0, "lng": 2.0, "origin": False},
+    ]

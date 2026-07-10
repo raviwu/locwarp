@@ -268,10 +268,26 @@ class RouteLooper:
                 if engine._stop_event.is_set():
                     break
 
+                # The closing leg lands back on waypoints[0] (closed_waypoints
+                # appends it). That is the position the device already occupied
+                # when Start was pressed, so flag it and let the history
+                # recorder skip it — matching multi_stop's routed path, which
+                # never emits for waypoints[0] at all.
+                is_last_leg = leg_idx == num_legs - 1
+
+                # Arrived at a stop. Mirrors multi_stop.py's per-leg emit; the
+                # leg walk above was already shaped for it.
+                await engine._emit("stop_reached", {
+                    "index": leg_idx + 1,
+                    "total": num_legs,
+                    "lat": wp_b.lat,
+                    "lng": wp_b.lng,
+                    "origin": is_last_leg,
+                })
+
                 # Pause at every stop except the last one of the lap (the
                 # closing leg lands back on waypoints[0], which becomes the
                 # start of the next lap — no double-pause needed).
-                is_last_leg = leg_idx == num_legs - 1
                 if not is_last_leg:
                     if await _pause_at_stop(leg_idx + 1):
                         break
@@ -383,6 +399,16 @@ async def _run_jump_loop(
             await engine._emit("user_waypoint_advance", {
                 "current_index": i,
                 "next_index": min(i + 1, len(waypoints) - 1),
+            })
+            # Mirrors _run_jump_multistop: i == 0 is waypoints[0], the start
+            # position, flagged so the history recorder skips it. The
+            # close_loop teleport back to waypoints[0] below deliberately emits
+            # nothing — it is the same place.
+            await engine._emit("stop_reached", {
+                "index": i + 1,
+                "total": len(waypoints),
+                "lat": wp.lat, "lng": wp.lng,
+                "origin": i == 0,
             })
             if await _dwell():
                 break
