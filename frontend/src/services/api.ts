@@ -414,8 +414,11 @@ export const bookmarksExportUrl = (opts: BookmarkExportOptions = {}): string => 
 // kind distinguishes the entry point AND the action, so the UI can show
 // a clear label ("座標 / 瞬移 / 導航 / 地址") and re-fly with the same
 // action the user originally invoked.
-export type RecentKind = 'teleport' | 'navigate' | 'search' | 'coord_teleport' | 'coord_navigate'
-export interface RecentEntry { lat: number; lng: number; kind: RecentKind; name: string; ts: number }
+// 'route_stop' rows are written ONLY by the backend recorder as a simulated
+// route reaches each stop; POST /api/recent rejects that kind. visit_count is
+// present on route stops only (absent means 1).
+export type RecentKind = 'teleport' | 'navigate' | 'search' | 'coord_teleport' | 'coord_navigate' | 'route_stop'
+export interface RecentEntry { lat: number; lng: number; kind: RecentKind; name: string; ts: number; visit_count?: number }
 export const getRecent = () => request<RecentEntry[]>('GET', '/api/recent')
 export const pushRecent = (entry: { lat: number; lng: number; kind: RecentKind; name?: string | null }) =>
   request<RecentEntry>('POST', '/api/recent', entry)

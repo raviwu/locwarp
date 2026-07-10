@@ -2,13 +2,16 @@ import React, { useState, useEffect } from 'react';
 import { useT } from '../i18n';
 import { BookmarkGeoLine } from './BookmarkGeoLine';
 
-// One recent-destination entry (last 20 teleport / navigate / search actions).
+// One recent-destination entry. Manual kinds are the user's own fly-to actions;
+// 'route_stop' rows are arrivals the backend recorded while a simulated route
+// ran, and are the only kind carrying visit_count (absent means 1).
 export interface RecentPlaceEntry {
   lat: number;
   lng: number;
-  kind: 'teleport' | 'navigate' | 'search' | 'coord_teleport' | 'coord_navigate';
+  kind: 'teleport' | 'navigate' | 'search' | 'coord_teleport' | 'coord_navigate' | 'route_stop';
   name: string;
   ts: number;
+  visit_count?: number;
 }
 
 // The bookmark-by-coord match value: a bookmark pin (subset used by a row).
@@ -276,6 +279,7 @@ export const RecentPlacesPopover: React.FC<RecentPlacesPopoverProps> = ({
                 search:          { label: t('recent.kind_search'),     color: '#f48fb1', bg: 'rgba(244, 143, 177, 0.16)' },
                 coord_teleport:  { label: t('recent.kind_coord'),      color: '#ffb74d', bg: 'rgba(255, 183, 77, 0.16)' },
                 coord_navigate:  { label: t('recent.kind_coord'),      color: '#ffb74d', bg: 'rgba(255, 183, 77, 0.16)' },
+                route_stop:      { label: t('recent.kind_route_stop'), color: '#b085f5', bg: 'rgba(176, 133, 245, 0.16)' },
               };
               const badge = badgeByKind[entry.kind] ?? { label: entry.kind, color: '#9499ac', bg: 'rgba(148, 153, 172, 0.16)' };
               const now = Math.floor(Date.now() / 1000);
@@ -346,6 +350,18 @@ export const RecentPlacesPopover: React.FC<RecentPlacesPopoverProps> = ({
                       minWidth: 34,
                       textAlign: 'center',
                     }}>{badge.label}</span>
+                    {(entry.visit_count ?? 1) > 1 && (
+                      <span
+                        title={t('recent.visit_count_tooltip')}
+                        style={{
+                          flexShrink: 0,
+                          fontSize: 10, fontWeight: 700,
+                          fontFamily: 'monospace',
+                          color: '#9499ac',
+                          marginLeft: -4,
+                        }}
+                      >×{entry.visit_count}</span>
+                    )}
                     <div style={{ minWidth: 0, flex: 1 }}>
                       {(() => {
                         // If this entry's coords match an existing

@@ -16,7 +16,7 @@ import { S2LevelPicker } from './S2LevelPicker';
 import { WaypointMenu } from './WaypointMenu';
 import MapContextMenu from './MapContextMenu';
 import { CoordInputStrip } from './CoordInputStrip';
-import { RecentPlacesPopover } from './RecentPlacesPopover';
+import { RecentPlacesPopover, type RecentPlaceEntry } from './RecentPlacesPopover';
 import { useLeafletBarButton } from './LeafletBarButton';
 
 interface Position {
@@ -114,10 +114,12 @@ interface MapViewProps {
   // owns both the map-pan and the preview-pin state so we route through
   // it instead of touching mapRef locally.
   onCoordPreview?: (lat: number, lng: number) => void;
-  // Recent destinations (last 20 teleport / navigate / search actions).
-  // Rendered in a topright popover so the user can re-fly in one click.
-  recentPlaces?: Array<{ lat: number; lng: number; kind: 'teleport' | 'navigate' | 'search' | 'coord_teleport' | 'coord_navigate'; name: string; ts: number }>;
-  onRecentReFly?: (entry: { lat: number; lng: number; kind: 'teleport' | 'navigate' | 'search' | 'coord_teleport' | 'coord_navigate'; name: string }) => void;
+  // Recent destinations: the user's own fly-to actions plus the stops a
+  // simulated route passed through. The row shape is owned by
+  // RecentPlacesPopover — import it rather than restating the union, which
+  // silently drifted when the route_stop kind was added.
+  recentPlaces?: RecentPlaceEntry[];
+  onRecentReFly?: (entry: RecentPlaceEntry) => void;
   onRecentClear?: () => void;
   // Click handler for the topleft library shortcut. Opens the
   // bookmarks / routes panel without the user having to scroll down

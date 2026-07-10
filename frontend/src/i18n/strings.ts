@@ -380,6 +380,8 @@ export const STRINGS = {
   'recent.kind_navigate': { zh: '導航', en: 'Navigate' },
   'recent.kind_search': { zh: '地址', en: 'Address' },
   'recent.kind_coord': { zh: '座標', en: 'Coord' },
+  'recent.kind_route_stop': { zh: '路線', en: 'Route' },
+  'recent.visit_count_tooltip': { zh: '路線經過此點的次數', en: 'Times the route passed through' },
   'recent.menu_tooltip': { zh: '更多動作', en: 'More actions' },
   'time.just_now': { zh: '剛剛', en: 'just now' },
   'time.minutes_ago': { zh: '分鐘前', en: 'min ago' },

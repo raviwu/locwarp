@@ -265,4 +265,37 @@ describe('RecentPlacesPopover', () => {
     fireEvent.mouseDown(getByText('map.recent_clear'));
     expect(addSpy).not.toHaveBeenCalledWith('mousemove', expect.any(Function), true);
   });
+
+  // --- route stops (Task 6) --------------------------------------------------
+  it('renders a route badge for a route_stop row', () => {
+    const { container, getByText } = render(
+      <RecentPlacesPopover
+        {...makeProps({
+          recentPlaces: [
+            { lat: 25.0, lng: 121.0, kind: 'route_stop', name: '', ts: NOW - 10, visit_count: 1 },
+          ],
+        })}
+      />,
+    );
+    openPopover(container);
+    // Identity translator returns the raw i18n key (same pattern as the
+    // teleport badge assertion above), not the English word "Route".
+    expect(getByText('recent.kind_route_stop')).toBeTruthy();
+  });
+
+  it('shows a visit-count chip only when the stop was reached more than once', () => {
+    const { container, getByText, queryByText } = render(
+      <RecentPlacesPopover
+        {...makeProps({
+          recentPlaces: [
+            { lat: 25.0, lng: 121.0, kind: 'route_stop', name: 'A', ts: NOW - 5, visit_count: 3 },
+            { lat: 26.0, lng: 122.0, kind: 'route_stop', name: 'B', ts: NOW - 10, visit_count: 1 },
+          ],
+        })}
+      />,
+    );
+    openPopover(container);
+    expect(getByText('×3')).toBeTruthy();
+    expect(queryByText('×1')).toBeNull();
+  });
 });
