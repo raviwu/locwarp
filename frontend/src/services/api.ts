@@ -410,7 +410,8 @@ export const bookmarksExportUrl = (opts: BookmarkExportOptions = {}): string => 
   return `${API}/api/bookmarks/export${qs ? `?${qs}` : ''}`
 }
 
-// Recent places: last 20 flights.
+// Recent places: the user's own fly-to actions (capped at 20), plus the stops a
+// simulated route passed through (capped at 30).
 // kind distinguishes the entry point AND the action, so the UI can show
 // a clear label ("座標 / 瞬移 / 導航 / 地址") and re-fly with the same
 // action the user originally invoked.

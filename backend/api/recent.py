@@ -1,6 +1,11 @@
-"""Recent places API: stores the last 20 teleport / navigate / search
-destinations the user actually flew to, so the map's Recent button can
-re-fly to any of them with one click.
+"""Recent places API: the rows behind the map's Recent button, each re-flyable
+with one click.
+
+Two classes share one store. Manual rows (teleport / navigate / search / the two
+coord-input buttons, capped at 20) are pushed here by the frontend. `route_stop`
+rows (capped at 30) are arrivals the backend records as a simulated route passes
+each waypoint — `RecentPushRequest.kind` deliberately excludes that kind, so the
+recorder is their only writer.
 """
 
 from __future__ import annotations

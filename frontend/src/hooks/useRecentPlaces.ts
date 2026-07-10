@@ -3,8 +3,9 @@ import type { ApiGateway } from '../contract/apiGateway'
 import type { RecentEntry, RecentKind } from '../services/api'
 import type { WsRouter } from '../ports/WsRouter'
 
-// Recent-destinations history (last 20 places the user flew to), extracted out
-// of App.tsx. Mirrors the useRoutes/useBookmarks `useX(api)` shape — the backend
+// Recent-destinations history — the places the user flew to, plus the stops a
+// simulated route passed through — extracted out of App.tsx. Mirrors the
+// useRoutes/useBookmarks `useX(api)` shape — the backend
 // `api` is injected (App sources it from useServices()) so the hook never imports
 // services/api directly and stays inside the hexagon-lite layering gate. The
 // `RecentEntry` / `RecentKind` imports are TYPE-ONLY (erased at build), so no
