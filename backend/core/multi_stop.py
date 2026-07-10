@@ -239,12 +239,16 @@ class MultiStopNavigator:
                 if engine._stop_event.is_set():
                     break
 
-                # Arrived at a stop
+                # Arrived at a stop. The routed leg walk reports each leg's
+                # DESTINATION, so waypoints[0] is never a subject here —
+                # origin is structurally False. The key exists so the history
+                # recorder can apply one rule across every mover path.
                 await engine._emit("stop_reached", {
                     "index": i + 1,
                     "total": len(waypoints),
                     "lat": wp_b.lat,
                     "lng": wp_b.lng,
+                    "origin": False,
                 })
 
                 # Pause at the stop. Precedence: explicit stop_duration > per-mode
@@ -372,10 +376,14 @@ async def _run_jump_multistop(
                 "current_index": i,
                 "next_index": min(i + 1, len(waypoints) - 1),
             })
+            # i == 0 is waypoints[0], the position the device already occupied
+            # when Start was pressed. Flag it so the history recorder skips it
+            # and jump history matches routed history for the same waypoints.
             await engine._emit("stop_reached", {
                 "index": i + 1,
                 "total": len(waypoints),
                 "lat": wp.lat, "lng": wp.lng,
+                "origin": i == 0,
             })
             # Don't dwell after the very last stop on a non-looping run -
             # the simulation is finished, so dwelling there would just delay

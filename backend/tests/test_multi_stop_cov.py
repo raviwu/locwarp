@@ -468,3 +468,44 @@ async def test_pause_min_max_unsorted_is_sorted_random_range(monkeypatch):
     # to compute this_pause before the is_last gate.
     assert seen == [(5.0, 20.0)]  # sorted ascending
     assert eng.state == SimulationState.IDLE
+
+
+@pytest.mark.asyncio
+async def test_routed_stop_reached_never_flags_the_origin():
+    """Routed multi-stop walks legs 0..N-2 and reports each leg's DESTINATION,
+    so waypoints[0] is never a stop_reached subject. origin is always False."""
+    eng, _loc, emitted = make_engine()
+    _wire(eng)
+    eng.current_position = _wp(25.0, 121.0)
+    nav = MultiStopNavigator(eng)
+
+    wps = [_wp(25.0, 121.0), _wp(25.0, 121.001), _wp(25.0, 121.002)]
+    await nav.start(wps, MovementMode.WALKING, pause_enabled=False)
+
+    stops = [d for (t, d) in emitted if t == "stop_reached"]
+    assert stops == [
+        {"index": 1, "total": 3, "lat": 25.0, "lng": 121.001, "origin": False},
+        {"index": 2, "total": 3, "lat": 25.0, "lng": 121.002, "origin": False},
+    ]
+
+
+@pytest.mark.asyncio
+async def test_jump_stop_reached_flags_the_origin():
+    """Jump multi-stop teleports to EVERY waypoint including waypoints[0], so
+    the first emit carries origin=True and the recorder skips it — keeping jump
+    and routed history identical for the same waypoint list."""
+    eng, _loc, emitted = make_engine()
+    _wire(eng)
+    nav = MultiStopNavigator(eng)
+
+    wps = [_wp(25.0, 121.0), _wp(25.0, 121.001)]
+    await nav.start(
+        wps, MovementMode.WALKING,
+        pause_enabled=False, jump_mode=True, jump_interval=0.0,
+    )
+
+    stops = [d for (t, d) in emitted if t == "stop_reached"]
+    assert stops == [
+        {"index": 1, "total": 2, "lat": 25.0, "lng": 121.0, "origin": True},
+        {"index": 2, "total": 2, "lat": 25.0, "lng": 121.001, "origin": False},
+    ]
