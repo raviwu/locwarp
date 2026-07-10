@@ -513,6 +513,70 @@ async def test_routed_loop_emits_stop_reached_per_leg_and_flags_the_closing_leg(
 
 
 @pytest.mark.asyncio
+async def test_routed_loop_two_laps_emits_stop_reached_per_leg_each_lap():
+    """A second lap is NOT free: leg_start resets to 0 (no resume snapshot
+    survives lap 1), so both laps walk all 3 legs and each closing leg
+    (leg_idx == num_legs - 1) flags origin=True. This pins the revisit
+    contract that visit_count bumping depends on -- the second lap's events
+    must look exactly like the first lap's, not be skipped or deduped."""
+    eng, _loc, emitted = make_engine()
+    _wire(eng)
+    looper = RouteLooper(eng)
+
+    wps = [_wp(0.0, 0.0), _wp(1.0, 1.0), _wp(2.0, 2.0)]
+    await looper.start_loop(
+        wps, MovementMode.WALKING, pause_enabled=False, lap_count=2,
+    )
+
+    stops = [d for (t, d) in emitted if t == "stop_reached"]
+    assert stops == [
+        # Lap 1
+        {"index": 1, "total": 3, "lat": 1.0, "lng": 1.0, "origin": False},
+        {"index": 2, "total": 3, "lat": 2.0, "lng": 2.0, "origin": False},
+        {"index": 3, "total": 3, "lat": 0.0, "lng": 0.0, "origin": True},
+        # Lap 2 -- identical shape, not deduped/skipped.
+        {"index": 1, "total": 3, "lat": 1.0, "lng": 1.0, "origin": False},
+        {"index": 2, "total": 3, "lat": 2.0, "lng": 2.0, "origin": False},
+        {"index": 3, "total": 3, "lat": 0.0, "lng": 0.0, "origin": True},
+    ]
+    assert eng.lap_count == 2
+
+
+@pytest.mark.asyncio
+async def test_routed_loop_resume_first_lap_starts_at_leg_start_and_still_flags_closing_leg():
+    """A start_loop resume (peer handoff) begins the FIRST lap at leg_start
+    (segment_index from the snapshot), not leg 0 -- legs before leg_start are
+    never walked and never emit stop_reached. The closing leg still flags
+    origin=True regardless of where the lap started."""
+    eng, _loc, emitted = make_engine()
+    _wire(eng)
+    eng.current_position = _wp(50.0, 60.0)
+    eng._resume_snapshot = {
+        "kind": "start_loop",
+        "lap_count": 4,
+        "segment_index": 1,
+        "user_waypoint_next": 2,
+    }
+    looper = RouteLooper(eng)
+
+    wps = [_wp(0.0, 0.0), _wp(1.0, 1.0), _wp(2.0, 2.0)]
+    # closed = 4 points -> num_legs = 3. resume_seg = 1 -> leg_start = 1, so
+    # leg 0 (wp0->wp1) is skipped entirely on this first lap.
+    # Inherited lap_count=4 + this one completed lap == limit(5) -> stops
+    # after exactly one (partial) lap.
+    await looper.start_loop(
+        wps, MovementMode.WALKING, pause_enabled=False, lap_count=5,
+    )
+
+    stops = [d for (t, d) in emitted if t == "stop_reached"]
+    assert stops == [
+        {"index": 2, "total": 3, "lat": 2.0, "lng": 2.0, "origin": False},
+        {"index": 3, "total": 3, "lat": 0.0, "lng": 0.0, "origin": True},
+    ]
+    assert eng.lap_count == 5
+
+
+@pytest.mark.asyncio
 async def test_jump_loop_emits_stop_reached_and_flags_the_origin():
     eng, _loc, emitted = make_engine()
     _wire(eng)

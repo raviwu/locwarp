@@ -476,6 +476,7 @@ async def test_routed_stop_reached_never_flags_the_origin():
     so waypoints[0] is never a stop_reached subject. origin is always False."""
     eng, _loc, emitted = make_engine()
     _wire(eng)
+    # routed start() requires a current position, or it raises RuntimeError
     eng.current_position = _wp(25.0, 121.0)
     nav = MultiStopNavigator(eng)
 

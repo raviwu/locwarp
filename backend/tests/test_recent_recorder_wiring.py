@@ -102,4 +102,10 @@ async def test_a_revisit_bumps_visit_count(wired):
 
     rows = [e for e in recent.get_manager().list() if e["kind"] == "route_stop"]
     assert len(rows) == 2
-    assert rows[0]["visit_count"] == 2
+    # Identify by coordinate, not index -- all three pushes land within the
+    # same wall-clock second, so their ts values tie and list order comes
+    # from a stable sort, not from which row was revisited.
+    revisited = next(r for r in rows if (r["lat"], r["lng"]) == (25.0, 121.0))
+    other = next(r for r in rows if (r["lat"], r["lng"]) == (25.5, 121.5))
+    assert revisited["visit_count"] == 2
+    assert other["visit_count"] == 1
