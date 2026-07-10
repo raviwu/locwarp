@@ -186,9 +186,8 @@ No new endpoints.
 | `components/RecentPlacesPopover.tsx:6-12` | widen the local `RecentPlaceEntry.kind` union; add `visit_count?` |
 | `components/RecentPlacesPopover.tsx:273-279` | `badgeByKind` += `route_stop` → label `路線` / `Route`, purple `#b085f5` |
 | `components/RecentPlacesPopover.tsx` row | render `×N` beside the badge when `visit_count > 1` |
-| `hooks/useRecentPlaces.ts:16` | signature becomes `useRecentPlaces(api, connected, ws)`; subscribe to `stop_reached` → **coalesced** `refreshRecent()` (trailing debounce, ~500 ms) so a multi-device fan-out's N broadcasts collapse into one GET. Read-path only — the hook never POSTs a route stop. |
-| `App.tsx:345` | pass the ws router (sole production call site) |
-| `hooks/useRecentPlaces.test.ts:30,39,49,63,77` | five call sites to update |
+| `hooks/useRecentPlaces.ts:16` | signature becomes `useRecentPlaces(api, connected, ws?)`; subscribe to `stop_reached` → **coalesced** `refreshRecent()` (trailing debounce, ~500 ms) so a multi-device fan-out's N broadcasts collapse into one GET. Read-path only — the hook never POSTs a route stop. |
+| `App.tsx:345` | pass the ws router (sole production call site; `ws` is optional, so the five existing test call sites compile unchanged) |
 | `App.tsx:1147-1151` | `onRecentReFly`: `route_stop` takes the teleport branch, with `{ record: false }` |
 | `hooks/useSimActions.ts:195` | `handleTeleport` gains a `record` option (default `true`); when a sim is running, show the stopped-simulation toast |
 | `adapters/ws/eventWiring.test.tsx:88, 120-133` | remove `stop_reached` from `UI_IGNORED_BY_DESIGN` **and** mount `useRecentPlaces` in `collectSubscribedTypes()` |
@@ -288,16 +287,19 @@ characterization tests **before** touching any of them, and assert ordered exact
 
 ## 9. Commit plan
 
+Every commit carries its own tests, so the suite is never red at a commit boundary.
+
 | # | Scope |
 |---|---|
-| C1 | Store tests (red): split budgets, cross-class dedup, legacy load, ts-desc |
-| C2 | `services/recent.py` two-list restructure + `push_route_stop` + `record_route_stop` (green) |
-| C3 | Engine: `origin` key on `multi_stop`; new `route_loop` emits (routed + jump); characterization tests |
-| C4 | `main.py` recorder wiring + recorder tests |
-| C5 | Frontend: types, badge, `×N`, ws subscribe, `eventWiring`, re-fly `record:false` + toast, i18n |
-| C6 | Backup: `snapshot_export`, fingerprint, `domain/recent_merge.py`, restore path + tests |
-
-Each commit leaves the full suite green.
+| C1 | `domain/recent.py` (pure policy) + `services/recent.py` two-list restructure + `push_route_stop` / `record_route_stop` / `should_record_stop`, with their tests |
+| C2 | `/api/recent` contract tests (no production change) |
+| C3 | Engine: `origin` key on `multi_stop`'s two emits + tests |
+| C4 | Engine: new `route_loop` emits (routed + jump) + characterization tests |
+| C5 | `main.py` recorder wiring + tests |
+| C6 | Frontend: types, route badge, `×N` chip, i18n |
+| C7 | Frontend: `useRecentPlaces` ws subscribe + `eventWiring` gate |
+| C8 | Frontend: re-fly `record:false` + interrupted-simulation toast |
+| C9 | Backup: `merge_recent`, fingerprint + payload, `snapshot_export`, restore path + tests |
 
 ## 10. Known limitations
 
