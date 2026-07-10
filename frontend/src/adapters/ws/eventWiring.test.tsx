@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest'
-import { renderHook, act } from '@testing-library/react'
+import { describe, it, expect, vi } from 'vitest'
+import { renderHook, waitFor } from '@testing-library/react'
 import { createWsRouter } from './router'
 import type { WsRouterImpl } from './router'
 import type { WsRouter } from '../../ports/WsRouter'
@@ -134,24 +134,28 @@ async function collectSubscribedTypes(): Promise<Set<string>> {
   )
   // useRecentPlaces refetches the history list when a simulated route reaches a
   // stop (the backend writes the row; this hook only invalidates its cache).
+  // getRecent resolves to a non-empty, non-default list so the mount fetch's
+  // effect on hook state is observably different from the initial `[]` —
+  // that gives waitFor below a real condition to poll for, rather than a
+  // magic tick count tuned by trial and error.
+  const MOUNT_FETCH_STUB_RECENT = [{ lat: 1, lng: 2, kind: 'teleport' as const, name: 'X', ts: 1 }]
   const apiStub = {
-    getRecent: async () => [],
+    getRecent: vi.fn(async () => MOUNT_FETCH_STUB_RECENT),
     pushRecent: async (e: unknown) => e,
     clearRecent: async () => ({ status: 'ok' }),
     reverseGeocode: async () => ({}),
   } as unknown as ApiGateway
-  renderHook(() => useRecentPlaces(apiStub, true, recordingRouter))
+  const { result } = renderHook(() => useRecentPlaces(apiStub, true, recordingRouter))
 
-  // useRecentPlaces' mount effect calls the (immediately-resolving) mock
-  // apiStub.getRecent() and applies the result in the promise continuation.
-  // That continuation lands a few microtask ticks after this synchronous
-  // renderHook() call returns, so without an explicit flush the resulting
-  // setState escapes React's act() boundary and vitest logs an "update ...
-  // was not wrapped in act(...)" warning. Flush it here, inside act(), so
-  // the state settles before this function returns.
-  await act(async () => {
-    for (let i = 0; i < 4; i++) await Promise.resolve()
-  })
+  // useRecentPlaces' mount effect calls apiStub.getRecent() and applies the
+  // result in the promise continuation, which lands a few microtask ticks
+  // after this synchronous renderHook() call returns. Wait for that
+  // continuation's observable effect (recentPlaces populated) instead of an
+  // untethered tick count — this settles the state before this function
+  // returns (avoiding the "update ... was not wrapped in act(...)" warning)
+  // AND fails loudly if the mount fetch ever stops resolving instead of
+  // silently passing.
+  await waitFor(() => expect(result.current.recentPlaces).toEqual(MOUNT_FETCH_STUB_RECENT))
 
   return subscribed
 }

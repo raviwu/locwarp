@@ -113,14 +113,37 @@ describe('useRecentPlaces', () => {
   })
 
   it('never posts a route stop', async () => {
-    const { api, stub } = makeStubApi()
-    const handlers: Record<string, (e: any) => void> = {}
-    const ws = {
-      subscribe: (type: string, h: (e: any) => void) => { handlers[type] = h; return () => {} },
+    // Must advance past the 500ms debounce and observe the debounced refetch
+    // actually fire before asserting pushRecent was never called — otherwise
+    // this only proves the *synchronous* handler body is clean, and a
+    // regression that added api.pushRecent(...) inside the setTimeout
+    // callback (right beside the legitimate refreshRef.current() call) would
+    // go completely undetected (global afterEach(cleanup()) unmounts the
+    // hook and clears the pending timer before it ever runs). Mirrors the
+    // 'coalesces a burst of stop_reached events into one refetch' test.
+    vi.useFakeTimers()
+    try {
+      const { api, stub } = makeStubApi()
+      const handlers: Record<string, (e: any) => void> = {}
+      const ws = {
+        subscribe: (type: string, h: (e: any) => void) => { handlers[type] = h; return () => { delete handlers[type] } },
+      }
+      renderHook(() => useRecentPlaces(api, true, ws as any))
+      await act(async () => { await Promise.resolve() })   // flush the mount fetch
+      const afterMount = stub.getRecent.mock.calls.length
+
+      act(() => { handlers['stop_reached']({ type: 'stop_reached', lat: 1, lng: 2 }) })
+      expect(stub.getRecent.mock.calls.length).toBe(afterMount)  // nothing yet — still debouncing
+
+      await act(async () => { vi.advanceTimersByTime(500); await Promise.resolve() })
+
+      // Proves the debounced callback actually executed (the exact spot a
+      // stray pushRecent call would land) — only now is "pushRecent was
+      // never called" a meaningful assertion.
+      expect(stub.getRecent.mock.calls.length).toBe(afterMount + 1)
+      expect(stub.pushRecent).not.toHaveBeenCalled()
+    } finally {
+      vi.useRealTimers()
     }
-    renderHook(() => useRecentPlaces(api, true, ws as any))
-    await waitFor(() => expect(stub.getRecent).toHaveBeenCalled())
-    act(() => { handlers['stop_reached']({ type: 'stop_reached', lat: 1, lng: 2 }) })
-    expect(stub.pushRecent).not.toHaveBeenCalled()
   })
 })
