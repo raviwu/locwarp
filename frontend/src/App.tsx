@@ -342,7 +342,7 @@ const App: React.FC = () => {
   // useRecentPlaces (api injected from useServices). The background
   // reverse-geocode-and-re-push behavior + the mount/connected refresh gate are
   // preserved inside the hook.
-  const recent = useRecentPlaces(api, connected)
+  const recent = useRecentPlaces(api, connected, router)
   const recentPlaces = recent.recentPlaces
   const pushRecent = recent.pushRecent
   const clearRecentList = recent.clearRecentList

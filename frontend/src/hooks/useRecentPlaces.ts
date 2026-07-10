@@ -1,6 +1,7 @@
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import type { ApiGateway } from '../contract/apiGateway'
 import type { RecentEntry, RecentKind } from '../services/api'
+import type { WsRouter } from '../ports/WsRouter'
 
 // Recent-destinations history (last 20 places the user flew to), extracted out
 // of App.tsx. Mirrors the useRoutes/useBookmarks `useX(api)` shape — the backend
@@ -13,7 +14,7 @@ import type { RecentEntry, RecentKind } from '../services/api'
 // WebSocket becomes reachable: without it, a slow/racing backend boot could blow
 // the only fetch attempt and the list would stay empty for the rest of the
 // session (the silent catch in refreshRecent swallows the failure).
-export function useRecentPlaces(api: ApiGateway, connected: boolean) {
+export function useRecentPlaces(api: ApiGateway, connected: boolean, ws?: WsRouter) {
   const [recentPlaces, setRecentPlaces] = useState<RecentEntry[]>([])
 
   const refreshRecent = useCallback(async () => {
@@ -23,6 +24,25 @@ export function useRecentPlaces(api: ApiGateway, connected: boolean) {
   // Re-fetch on initial mount AND whenever the backend WebSocket becomes
   // reachable (see header note on the `connected` dep).
   useEffect(() => { void refreshRecent() }, [refreshRecent, connected])
+
+  // The backend records a route stop on every `stop_reached` and broadcasts the
+  // same event, so the popover would otherwise show stale data until the next
+  // reconnect. This is a READ-path subscription only — the hook never POSTs a
+  // route stop (POST /api/recent rejects that kind; the backend is the sole
+  // writer). A fan-out run emits one event per device for the same physical
+  // stop, and stops on a fast jump loop land back-to-back, so the refetch is
+  // coalesced onto a trailing timer instead of firing per event.
+  const refreshRef = useRef(refreshRecent)
+  refreshRef.current = refreshRecent
+  useEffect(() => {
+    if (!ws) return
+    let timer: ReturnType<typeof setTimeout> | null = null
+    const off = ws.subscribe('stop_reached', () => {
+      if (timer) clearTimeout(timer)
+      timer = setTimeout(() => { timer = null; void refreshRef.current() }, 500)
+    })
+    return () => { off(); if (timer) clearTimeout(timer) }
+  }, [ws])
 
   const pushRecent = useCallback(async (lat: number, lng: number, kind: RecentKind, name?: string) => {
     try {

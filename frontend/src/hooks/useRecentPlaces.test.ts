@@ -81,4 +81,46 @@ describe('useRecentPlaces', () => {
     rerender({ c: true })
     await waitFor(() => expect(stub.getRecent).toHaveBeenCalledTimes(2))
   })
+
+  it('coalesces a burst of stop_reached events into one refetch', async () => {
+    vi.useFakeTimers()
+    try {
+      const { api, stub } = makeStubApi()
+      const handlers: Record<string, (e: any) => void> = {}
+      const ws = {
+        subscribe: (type: string, h: (e: any) => void) => {
+          handlers[type] = h
+          return () => { delete handlers[type] }
+        },
+      }
+      renderHook(() => useRecentPlaces(api, true, ws as any))
+      await act(async () => { await Promise.resolve() })   // flush the mount fetch
+      const afterMount = stub.getRecent.mock.calls.length
+
+      // A 3-device fan-out emits the same physical stop three times.
+      act(() => {
+        handlers['stop_reached']({ type: 'stop_reached' })
+        handlers['stop_reached']({ type: 'stop_reached' })
+        handlers['stop_reached']({ type: 'stop_reached' })
+      })
+      expect(stub.getRecent.mock.calls.length).toBe(afterMount)  // nothing yet
+
+      await act(async () => { vi.advanceTimersByTime(500); await Promise.resolve() })
+      expect(stub.getRecent.mock.calls.length).toBe(afterMount + 1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('never posts a route stop', async () => {
+    const { api, stub } = makeStubApi()
+    const handlers: Record<string, (e: any) => void> = {}
+    const ws = {
+      subscribe: (type: string, h: (e: any) => void) => { handlers[type] = h; return () => {} },
+    }
+    renderHook(() => useRecentPlaces(api, true, ws as any))
+    await waitFor(() => expect(stub.getRecent).toHaveBeenCalled())
+    act(() => { handlers['stop_reached']({ type: 'stop_reached', lat: 1, lng: 2 }) })
+    expect(stub.pushRecent).not.toHaveBeenCalled()
+  })
 })

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { renderHook } from '@testing-library/react'
+import { renderHook, act } from '@testing-library/react'
 import { createWsRouter } from './router'
 import type { WsRouterImpl } from './router'
 import type { WsRouter } from '../../ports/WsRouter'
@@ -7,6 +7,8 @@ import { useDevice } from '../../hooks/useDevice'
 import { useSimulation } from '../../hooks/useSimulation'
 import { useExternalChangeSubscriptions } from '../../hooks/useExternalChangeSubscriptions'
 import { useGoldDittoSubscription } from '../../hooks/useGoldDittoSubscription'
+import { useRecentPlaces } from '../../hooks/useRecentPlaces'
+import type { ApiGateway } from '../../contract/apiGateway'
 
 // ---------------------------------------------------------------------------
 // GAP 2 — WS event-type subscribe-key wiring guard.
@@ -85,7 +87,6 @@ const UI_IGNORED_BY_DESIGN = new Set<string>([
   'connection_lost', // random-walk internal recovery signal
   'random_walk_arrived', // intermediate mover progress, not surfaced
   'random_walk_complete', // folded into the generic *_complete UI? no — no subscriber
-  'stop_reached', // multi-stop intermediate progress, not surfaced
   'user_waypoint_advance', // multi-stop / loop internal advance, not surfaced
   'teleport', // one-shot REST result; UI updates from position_update
   'restored', // restore.py result; UI updates from position_update / state_change
@@ -102,7 +103,7 @@ const REQUIRED_TYPES = CANONICAL_BACKEND_EVENT_TYPES.filter(
  * Build a real WsRouter, mount ALL real subscriber hooks through it, and
  * return the set of `type` strings each hook registered via subscribe().
  */
-function collectSubscribedTypes(): Set<string> {
+async function collectSubscribedTypes(): Promise<Set<string>> {
   const router = createWsRouter() as WsRouterImpl
   const subscribed = new Set<string>()
   // Wrap the real subscribe so we record every (type) while keeping the real
@@ -131,13 +132,33 @@ function collectSubscribedTypes(): Set<string> {
       showToast: noop,
     }),
   )
+  // useRecentPlaces refetches the history list when a simulated route reaches a
+  // stop (the backend writes the row; this hook only invalidates its cache).
+  const apiStub = {
+    getRecent: async () => [],
+    pushRecent: async (e: unknown) => e,
+    clearRecent: async () => ({ status: 'ok' }),
+    reverseGeocode: async () => ({}),
+  } as unknown as ApiGateway
+  renderHook(() => useRecentPlaces(apiStub, true, recordingRouter))
+
+  // useRecentPlaces' mount effect calls the (immediately-resolving) mock
+  // apiStub.getRecent() and applies the result in the promise continuation.
+  // That continuation lands a few microtask ticks after this synchronous
+  // renderHook() call returns, so without an explicit flush the resulting
+  // setState escapes React's act() boundary and vitest logs an "update ...
+  // was not wrapped in act(...)" warning. Flush it here, inside act(), so
+  // the state settles before this function returns.
+  await act(async () => {
+    for (let i = 0; i < 4; i++) await Promise.resolve()
+  })
 
   return subscribed
 }
 
 describe('WS event-type subscribe wiring', () => {
-  it('every backend-emitted event type (minus the UI-ignored allowlist) has a real subscriber', () => {
-    const subscribed = collectSubscribedTypes()
+  it('every backend-emitted event type (minus the UI-ignored allowlist) has a real subscriber', async () => {
+    const subscribed = await collectSubscribedTypes()
 
     const missing = REQUIRED_TYPES.filter((t) => !subscribed.has(t))
 
@@ -172,8 +193,8 @@ describe('WS event-type subscribe wiring', () => {
     ).toEqual([])
   })
 
-  it('does NOT subscribe to event types the backend never emits', () => {
-    const subscribed = collectSubscribedTypes()
+  it('does NOT subscribe to event types the backend never emits', async () => {
+    const subscribed = await collectSubscribedTypes()
     // These five were dead listeners — the backend has no emit site for any
     // of them (see CANONICAL_BACKEND_EVENT_TYPES). A subscription here is a
     // silent no-op that misleads future readers.
@@ -189,11 +210,11 @@ describe('WS event-type subscribe wiring', () => {
     ).toEqual([])
   })
 
-  it('POSITIVE CONTROL: the subset check would FAIL if a required key were dropped', () => {
+  it('POSITIVE CONTROL: the subset check would FAIL if a required key were dropped', async () => {
     // Prove the assertion has teeth: simulate a hook that "renamed" its
     // state_change subscription by feeding the same check a subscribed set
     // with that one canonical key removed. The check MUST flag it.
-    const real = collectSubscribedTypes()
+    const real = await collectSubscribedTypes()
     expect(real.has('state_change')).toBe(true) // sanity: it's really there
 
     const broken = new Set(real)
