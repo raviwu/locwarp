@@ -474,8 +474,9 @@ class AppState:
                 # there is no unlocked pop->create window for a concurrent caller.
                 self.simulation_engines.pop(udid, None)
             from core.simulation_engine import SimulationEngine
-            from api.websocket import broadcast
+            import api.websocket as ws_api
             from infra.device.location_service_port import LocationServiceDevicePort
+            from services import recent as recent_service
 
             loc_service = await self.device_manager.get_location_service(udid)
 
@@ -483,7 +484,15 @@ class AppState:
                 # Always tag emissions with udid so the frontend can route per-device.
                 if isinstance(data, dict) and "udid" not in data:
                     data = {**data, "udid": udid}
-                await broadcast(event_type, data)
+                # Record a route arrival BEFORE the broadcast: the renderer
+                # refetches /api/recent when it sees stop_reached, so writing
+                # afterwards would let the refetch win the race and miss the
+                # row. _primary_udid is read live, so a promotion after the
+                # primary disconnects keeps recording. This is the composition
+                # root — core/ never learns the recent store exists.
+                if recent_service.should_record_stop(event_type, data, udid, self._primary_udid):
+                    recent_service.record_route_stop(data["lat"], data["lng"])
+                await ws_api.broadcast(event_type, data)
                 if event_type == "position_update" and "lat" in data:
                     self.update_last_position(data["lat"], data["lng"])
 
