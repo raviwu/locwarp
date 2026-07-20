@@ -134,13 +134,18 @@ export function useSimActions(args: UseSimActionsArgs) {
       // Group mode: fan out restore to every connected device; fall back to
       // the legacy single-engine restore when no devices are tracked yet.
       const udids = device.connectedDevices.map((d) => d.udid)
+      let finalMessage: string
       if (udids.length >= 2) {
         const outcome = await sim.restoreAll(udids)
-        if (outcome.failed.length > 0 && outcome.ok.length === 0) {
-          throw new Error(outcome.failed[0]?.reason ?? 'restore failed')
-        }
+        // Surface the PER-DEVICE outcome instead of a flat success toast —
+        // mirrors handleNavigate (4d42706). Without this, a genuinely-failed
+        // phone's restore was hidden behind the same "cleared, please wait"
+        // toast shown for a full success, so the user believed every device
+        // was un-spoofed when one of two actually wasn't.
+        finalMessage = toastForFanout(t, t('status.restore'), outcome, device.connectedDevices)
       } else {
         await sim.restore()
+        finalMessage = t('status.restore_success_wait')
       }
       // Keep the in-progress toast visible for at least 1.2 s — otherwise a
       // fast restore (sub-second) would overwrite it before the user even
@@ -149,7 +154,7 @@ export function useSimActions(args: UseSimActionsArgs) {
       if (elapsed < 1200) {
         await new Promise((r) => setTimeout(r, 1200 - elapsed))
       }
-      showToast(t('status.restore_success_wait'))
+      showToast(finalMessage)
     } catch {
       showToast(t('status.restore_failed'))
     }

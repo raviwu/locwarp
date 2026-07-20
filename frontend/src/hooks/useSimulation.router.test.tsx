@@ -130,3 +130,34 @@ describe('useSimulation position_update — group mode + dual-device filter', ()
     expect(rt.distanceTraveled).toBeUndefined()
   })
 })
+
+describe('useSimulation.restoreAll — partial failure keeps the failed device on the map', () => {
+  it('wipes runtimes only for udids in outcome.ok; a genuinely-failed device keeps its marker', async () => {
+    const ws = createWsRouter()
+    const { result } = renderHook(() => useSimulation(ws, null))
+
+    // Seed runtimes for both devices via position_update, same as the
+    // dual-device filter tests above.
+    act(() => {
+      ws.dispatch({ type: 'position_update', udid: 'A', lat: 1, lng: 1, progress: 0.5, eta_seconds: 10 })
+      ws.dispatch({ type: 'position_update', udid: 'B', lat: 2, lng: 2, progress: 0.6, eta_seconds: 20 })
+    })
+    expect(result.current.runtimes['A'].currentPos).toEqual({ lat: 1, lng: 1 })
+    expect(result.current.runtimes['B'].currentPos).toEqual({ lat: 2, lng: 2 })
+
+    // A restores successfully; B's restore genuinely fails.
+    vi.mocked(api.restoreSim).mockImplementation((udid?: string) =>
+      udid === 'B' ? Promise.reject(new Error('DVT clear failed')) : Promise.resolve({} as any),
+    )
+
+    await act(async () => { await result.current.restoreAll(['A', 'B']) })
+
+    // A was restored: marker wiped.
+    expect(result.current.runtimes['A'].currentPos).toBeNull()
+    expect(result.current.runtimes['A'].state).toBe('idle')
+    // B genuinely failed: marker/state must NOT be wiped — it is still spoofed.
+    expect(result.current.runtimes['B'].currentPos).toEqual({ lat: 2, lng: 2 })
+    expect(result.current.runtimes['B'].progress).toBe(0.6)
+    expect(result.current.runtimes['B'].eta).toBe(20)
+  })
+})

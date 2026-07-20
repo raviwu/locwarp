@@ -1028,9 +1028,13 @@ export function useSimulation(
     const outcome = await fanout(udids, 'restore', (u) => api.restoreSim(u))
     // Clear per-device runtime state (markers, routes) and legacy state so
     // the map immediately reflects the wipe without waiting for events.
+    // Only wipe the udids that actually restored (outcome.ok) — a genuinely
+    // failed device's marker must stay put, not vanish as if it were clear.
+    const okUdids = new Set(outcome.ok.map((o) => o.udid))
     setRuntimes((prev) => {
       const next: RuntimesMap = { ...prev }
       for (const u of udids) {
+        if (!okUdids.has(u)) continue
         if (next[u]) {
           next[u] = { ...next[u], currentPos: null, destination: null, routePath: [], progress: 0, eta: 0, distanceRemaining: 0, distanceTraveled: 0, waypointIndex: null, state: 'idle' }
         }

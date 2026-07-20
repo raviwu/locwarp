@@ -289,6 +289,17 @@ class DeviceManager:
         # None in tests that don't exercise the WiFi-tunnel branch — call sites
         # guard against None before dereferencing.
         self._tunnels = tunnel_registry
+        # Durable per-udid "believed simulating" flag — DEVICE truth, not
+        # per-instance truth. Fed by each DvtLocationService/LegacyLocation
+        # Service's on_active_change callback and used to seed a freshly
+        # REBUILT service (e.g. after a WiFi tunnel restart / USB<->WiFi
+        # transition / force=True engine rebuild) with the correct
+        # initial_active, so restore's clear() still reaches a device that
+        # is still simulating instead of silently no-oping on a fresh
+        # instance's _active=False. Only flips False on a CONFIRMED clear()
+        # success, so a swallowed teardown clear() on a dead channel leaves
+        # it True and the next restore correctly re-attempts a real clear.
+        self._device_simulating: dict[str, bool] = {}
         # Udids the user has explicitly tapped "Don't Trust" on the iPhone
         # for, or forgotten via the in-app Forget action. The watchdog
         # refuses to auto-connect these (would just trigger another ignored
@@ -963,6 +974,8 @@ class DeviceManager:
                 dvt,
                 lockdown=conn.lockdown,
                 dvt_factory=_factory,
+                initial_active=self._device_simulating.get(conn.udid, False),
+                on_active_change=lambda a, u=conn.udid: self._device_simulating.__setitem__(u, a),
             )
         except Exception as dvt_exc:
             logger.warning(
@@ -977,7 +990,11 @@ class DeviceManager:
                 # Prefer the original usbmux/TCP lockdown for DtSimulateLocation;
                 # fall back to whatever we have stored if not available.
                 legacy_lockdown = conn.usbmux_lockdown or conn.lockdown
-                legacy = LegacyLocationService(legacy_lockdown)
+                legacy = LegacyLocationService(
+                    legacy_lockdown,
+                    initial_active=self._device_simulating.get(conn.udid, False),
+                    on_active_change=lambda a, u=conn.udid: self._device_simulating.__setitem__(u, a),
+                )
                 logger.info("Using LegacyLocationService fallback for %s", conn.udid)
                 return legacy
             except Exception:
@@ -995,7 +1012,11 @@ class DeviceManager:
         except Exception:
             logger.warning("Classic DDI auto-mount failed; legacy location may still fail", exc_info=True)
         logger.info("Using LegacyLocationService for %s", conn.udid)
-        return LegacyLocationService(conn.lockdown)
+        return LegacyLocationService(
+            conn.lockdown,
+            initial_active=self._device_simulating.get(conn.udid, False),
+            on_active_change=lambda a, u=conn.udid: self._device_simulating.__setitem__(u, a),
+        )
 
     # _ensure_classic_ddi_mounted, _create_legacy_location_service, and
     # connect_wifi (legacy direct-IP WiFi) removed in v0.1.49 — see

@@ -106,13 +106,28 @@ class DvtLocationService(LocationService):
         dvt_provider: DvtProvider,
         lockdown=None,
         dvt_factory: Callable[[], Awaitable[DvtProvider]] | None = None,
+        initial_active: bool = False,
+        on_active_change: Callable[[bool], None] | None = None,
     ) -> None:
         self._dvt = dvt_provider
         self._lockdown = lockdown
         self._dvt_factory = dvt_factory
         self._location_sim: LocationSimulation | None = None
-        self._active = False
+        self._on_active_change = on_active_change
+        self._active = initial_active
         self._reconnect_lock = asyncio.Lock()
+
+    def _set_active(self, active: bool) -> None:
+        """Update ``_active`` and notify the owner (DeviceManager's durable
+        per-udid "believed simulating" flag) so a later rebuilt instance can
+        be seeded with the right truth. A callback failure must never break
+        set()/clear() themselves."""
+        self._active = active
+        if self._on_active_change is not None:
+            try:
+                self._on_active_change(active)
+            except Exception:
+                logger.debug("on_active_change callback failed", exc_info=True)
 
     async def _ensure_instrument(self) -> LocationSimulation:
         """Lazily create, connect, and cache the LocationSimulation instrument."""
@@ -202,7 +217,7 @@ class DvtLocationService(LocationService):
         try:
             sim = await self._ensure_instrument()
             await asyncio.wait_for(sim.set(lat, lng), timeout=DVT_SET_TIMEOUT_S)
-            self._active = True
+            self._set_active(True)
             logger.info("DVT location set to (%.6f, %.6f)", lat, lng)
         except (ConnectionTerminatedError, OSError, EOFError, BrokenPipeError,
                 ConnectionResetError, asyncio.TimeoutError) as exc:
@@ -211,7 +226,7 @@ class DvtLocationService(LocationService):
             await self._reconnect()
             sim = await self._ensure_instrument()
             await asyncio.wait_for(sim.set(lat, lng), timeout=DVT_SET_TIMEOUT_S)
-            self._active = True
+            self._set_active(True)
             logger.info("DVT location set to (%.6f, %.6f) after reconnect", lat, lng)
         except Exception:
             logger.exception("Failed to set DVT simulated location")
@@ -225,7 +240,7 @@ class DvtLocationService(LocationService):
         try:
             sim = await self._ensure_instrument()
             await asyncio.wait_for(sim.clear(), timeout=DVT_SET_TIMEOUT_S)
-            self._active = False
+            self._set_active(False)
             logger.info("DVT simulated location cleared")
         except (ConnectionTerminatedError, OSError, EOFError, BrokenPipeError,
                 ConnectionResetError, asyncio.TimeoutError) as exc:
@@ -234,7 +249,7 @@ class DvtLocationService(LocationService):
             await self._reconnect()
             sim = await self._ensure_instrument()
             await asyncio.wait_for(sim.clear(), timeout=DVT_SET_TIMEOUT_S)
-            self._active = False
+            self._set_active(False)
             logger.info("DVT simulated location cleared after reconnect")
         except Exception:
             logger.exception("Failed to clear DVT simulated location")
@@ -251,10 +266,26 @@ class LegacyLocationService(LocationService):
         A lockdown service provider (LockdownClient) for the target device.
     """
 
-    def __init__(self, lockdown_client) -> None:
+    def __init__(
+        self,
+        lockdown_client,
+        initial_active: bool = False,
+        on_active_change: Callable[[bool], None] | None = None,
+    ) -> None:
         self._lockdown = lockdown_client
         self._service: DtSimulateLocation | None = None
-        self._active = False
+        self._on_active_change = on_active_change
+        self._active = initial_active
+
+    def _set_active(self, active: bool) -> None:
+        """See DvtLocationService._set_active — identical treatment for
+        parity between the two LocationService implementations."""
+        self._active = active
+        if self._on_active_change is not None:
+            try:
+                self._on_active_change(active)
+            except Exception:
+                logger.debug("on_active_change callback failed", exc_info=True)
 
     def _ensure_service(self) -> DtSimulateLocation:
         """Lazily create and cache the DtSimulateLocation service."""
@@ -282,7 +313,7 @@ class LegacyLocationService(LocationService):
         try:
             svc = self._ensure_service()
             await self._maybe_await(svc.set(lat, lng))
-            self._active = True
+            self._set_active(True)
             logger.info("Legacy location set to (%.6f, %.6f)", lat, lng)
         except (OSError, EOFError, BrokenPipeError, ConnectionResetError) as exc:
             logger.warning("Legacy location channel dropped (%s: %s); reconnecting and retrying",
@@ -291,7 +322,7 @@ class LegacyLocationService(LocationService):
             try:
                 svc = self._ensure_service()
                 await self._maybe_await(svc.set(lat, lng))
-                self._active = True
+                self._set_active(True)
                 logger.info("Legacy location set to (%.6f, %.6f) after reconnect", lat, lng)
             except Exception as retry_exc:
                 logger.error("Legacy reconnect failed — device likely lost (%s)", retry_exc)
@@ -311,7 +342,7 @@ class LegacyLocationService(LocationService):
         try:
             svc = self._ensure_service()
             await self._maybe_await(svc.clear())
-            self._active = False
+            self._set_active(False)
             logger.info("Legacy simulated location cleared")
         except (OSError, EOFError, BrokenPipeError, ConnectionResetError) as exc:
             logger.warning("Legacy clear channel dropped (%s: %s); reconnecting",
@@ -320,7 +351,7 @@ class LegacyLocationService(LocationService):
             try:
                 svc = self._ensure_service()
                 await self._maybe_await(svc.clear())
-                self._active = False
+                self._set_active(False)
             except Exception:
                 logger.exception("Legacy clear failed after reconnect")
         except Exception:

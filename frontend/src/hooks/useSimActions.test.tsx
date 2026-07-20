@@ -34,6 +34,7 @@ const t = ((k: any, v?: Record<string, string | number>) => {
     'mode.multi_stop': 'MultiStop',
     'panel.apply_speed_success': 'ApplySpeed OK',
     'panel.apply_speed_failed': 'ApplySpeed failed',
+    'status.restore': 'Restore',
     'status.restore_in_progress': 'restoring…',
     'status.restore_success_wait': 'restored',
     'status.restore_failed': 'restore failed',
@@ -450,6 +451,32 @@ describe('useSimActions — applySpeed / restore', () => {
     await act(async () => { await dual.result.current.handleRestore() })
     expect(dual.sim.restoreAll).toHaveBeenCalledWith(['A', 'B'])
     expect(dual.sim.restore).not.toHaveBeenCalled()
+  })
+
+  // H3: dual-device restore used to only throw (and show the flat
+  // restore_failed toast) when BOTH devices failed — a partial failure (one
+  // phone genuinely still spoofed) fell through to the unconditional
+  // "restored, please wait" success toast, hiding the still-spoofed device
+  // from the user. Mirrors handleNavigate's partial-success dual test.
+  it('dual device, partial success: shows a toast that reflects the failure, not a plain success', async () => {
+    const partial = { ok: [{ udid: 'A', value: {} }], failed: [{ udid: 'B', reason: 'y' }] }
+    const sim = makeSim({ restoreAll: vi.fn(async () => partial) })
+    const { result, showToast } = setup({ udids: ['A', 'B'], sim })
+    await act(async () => { await result.current.handleRestore() })
+    // Must NOT be the flat single-device-style success toast — that would
+    // silently tell the user both phones are un-spoofed when B is not.
+    expect(showToast).not.toHaveBeenCalledWith('restored')
+    expect(showToast).not.toHaveBeenCalledWith('restore failed')
+    expect(showToast).toHaveBeenCalledWith('Restore: A OK, B y')
+  })
+
+  it('dual device, total failure: shows the all-failed fan-out toast, not a plain success', async () => {
+    const failed = { ok: [], failed: [{ udid: 'A', reason: 'x' }, { udid: 'B', reason: 'y' }] }
+    const sim = makeSim({ restoreAll: vi.fn(async () => failed) })
+    const { result, showToast } = setup({ udids: ['A', 'B'], sim })
+    await act(async () => { await result.current.handleRestore() })
+    expect(showToast).not.toHaveBeenCalledWith('restored')
+    expect(showToast).toHaveBeenCalledWith('Restore failed on all devices')
   })
 })
 
