@@ -73,8 +73,16 @@ class LocationService(ABC):
         """Simulate the device location to the given coordinates."""
 
     @abstractmethod
-    async def clear(self) -> None:
-        """Stop simulating and restore the real device location."""
+    async def clear(self, force: bool = False) -> None:
+        """Stop simulating and restore the real device location.
+
+        ``force`` (default False): bypass the ``_active`` guard and always
+        issue the real device stop. The DVT stopLocationSimulation DTX
+        method is fire-and-forget (no reply confirms the phone obeyed), so
+        a single clear() can silently fail to land while ``_active`` still
+        flips False. User-initiated restore passes force=True so repeated
+        restore presses keep re-sending the stop instead of no-oping.
+        """
 
 
 class DvtLocationService(LocationService):
@@ -232,16 +240,16 @@ class DvtLocationService(LocationService):
             logger.exception("Failed to set DVT simulated location")
             raise
 
-    async def clear(self) -> None:
+    async def clear(self, force: bool = False) -> None:
         """Clear the simulated location via the DVT instrument channel."""
-        if not self._active:
+        if not self._active and not force:
             logger.debug("DVT clear called but no simulation is active")
             return
         try:
             sim = await self._ensure_instrument()
             await asyncio.wait_for(sim.clear(), timeout=DVT_SET_TIMEOUT_S)
             self._set_active(False)
-            logger.info("DVT simulated location cleared")
+            logger.info("DVT simulated location cleared%s", " (forced)" if force else "")
         except (ConnectionTerminatedError, OSError, EOFError, BrokenPipeError,
                 ConnectionResetError, asyncio.TimeoutError) as exc:
             logger.warning("DVT channel dropped during clear (%s: %s); reconnecting",
@@ -250,7 +258,7 @@ class DvtLocationService(LocationService):
             sim = await self._ensure_instrument()
             await asyncio.wait_for(sim.clear(), timeout=DVT_SET_TIMEOUT_S)
             self._set_active(False)
-            logger.info("DVT simulated location cleared after reconnect")
+            logger.info("DVT simulated location cleared after reconnect%s", " (forced)" if force else "")
         except Exception:
             logger.exception("Failed to clear DVT simulated location")
             raise
@@ -334,16 +342,16 @@ class LegacyLocationService(LocationService):
             logger.exception("Failed to set legacy simulated location")
             raise
 
-    async def clear(self) -> None:
+    async def clear(self, force: bool = False) -> None:
         """Clear the simulated location using the legacy service."""
-        if not self._active:
+        if not self._active and not force:
             logger.debug("Legacy clear called but no simulation is active")
             return
         try:
             svc = self._ensure_service()
             await self._maybe_await(svc.clear())
             self._set_active(False)
-            logger.info("Legacy simulated location cleared")
+            logger.info("Legacy simulated location cleared%s", " (forced)" if force else "")
         except (OSError, EOFError, BrokenPipeError, ConnectionResetError) as exc:
             logger.warning("Legacy clear channel dropped (%s: %s); reconnecting",
                            type(exc).__name__, exc)

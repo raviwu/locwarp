@@ -40,7 +40,7 @@ class RestoreHandler:
         # Clear the simulated location on the device
         clear_error: Exception | None = None
         try:
-            await engine.location_service.clear()
+            await engine.location_service.clear(force=True)
             logger.info("Device location simulation cleared (restored real GPS)")
         except Exception as e:  # noqa: BLE001 — decision deferred to raise_on_clear_failure
             logger.exception("Failed to clear device location")

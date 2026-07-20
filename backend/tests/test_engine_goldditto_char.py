@@ -120,7 +120,7 @@ async def test_goldditto_cycle_clear_failure_emits_restore_failed_and_raises():
     because the cycle calls restore(raise_on_clear_failure=True)."""
     eng, loc, emitted = make_engine()
 
-    async def boom_clear():
+    async def boom_clear(force: bool = False):
         raise RuntimeError("dvt channel dropped during clear")
     loc.clear = boom_clear
 

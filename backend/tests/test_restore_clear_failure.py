@@ -13,7 +13,7 @@ from tests._engine_harness import make_engine
 pytestmark = pytest.mark.asyncio
 
 
-async def _failing_clear():
+async def _failing_clear(force: bool = False):
     raise RuntimeError("clear failed")
 
 

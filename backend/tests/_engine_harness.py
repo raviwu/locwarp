@@ -37,7 +37,7 @@ class RecordingLocation:
     async def set(self, lat: float, lng: float) -> None:
         self.pushes.append((lat, lng))
 
-    async def clear(self) -> None:
+    async def clear(self, force: bool = False) -> None:
         self.clears += 1
 
 
