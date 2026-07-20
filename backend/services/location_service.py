@@ -245,6 +245,14 @@ class DvtLocationService(LocationService):
         if not self._active and not force:
             logger.debug("DVT clear called but no simulation is active")
             return
+        if force and self._dvt_factory is not None:
+            # iOS ignores a repeated stopLocationSimulation over a REUSED DVT
+            # connection; the pmd3 CLI + go-ios open a fresh connection per clear.
+            # Rebuild the whole DvtProvider so this stop lands on a virgin
+            # connection + instrument. _reconnect() swaps conn.dvt_provider via
+            # the factory (keeps device_manager consistent) and nulls
+            # _location_sim; on a healthy device it is just close-old+open-fresh.
+            await self._reconnect()
         try:
             sim = await self._ensure_instrument()
             await asyncio.wait_for(sim.clear(), timeout=DVT_SET_TIMEOUT_S)
@@ -347,6 +355,8 @@ class LegacyLocationService(LocationService):
         if not self._active and not force:
             logger.debug("Legacy clear called but no simulation is active")
             return
+        if force:
+            self._reset_service()
         try:
             svc = self._ensure_service()
             await self._maybe_await(svc.clear())
