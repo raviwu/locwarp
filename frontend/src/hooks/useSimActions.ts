@@ -160,6 +160,31 @@ export function useSimActions(args: UseSimActionsArgs) {
     }
   }, [])
 
+  // Restores exactly ONE explicit udid — the device-chip popout's "還原此裝置"
+  // (as opposed to handleRestore's "一鍵還原" which fans out to every connected
+  // device). Deliberately routes through `sim.restoreAll([udid])`, NOT
+  // `api.restoreSim(udid)` directly: restoreAll is what clears the shared sim
+  // state (currentPosition/destination/routes/per-device runtime) after the
+  // backend restore succeeds. Calling the api directly (the old behavior) left
+  // the blue current-position dot on the map because nothing ever reset
+  // `sim.currentPosition` — the backend clear worked, the frontend just never
+  // heard about it.
+  const handleRestoreOne = useCallback(async (udid: string) => {
+    const sim = simRef.current
+    const showToast = showToastRef.current
+    const t = tRef.current
+    try {
+      const outcome = await sim.restoreAll([udid])
+      if (outcome.failed.length > 0 && outcome.ok.length === 0) {
+        showToast(t('status.restore_failed'))
+      } else {
+        showToast(t('status.restore_success'))
+      }
+    } catch {
+      showToast(t('status.restore_failed'))
+    }
+  }, [])
+
   // `opts.record` exists for the Recent popover's re-fly: a route_stop row is
   // already in history, and pushing a manual 'teleport' for it would mint a
   // duplicate row the backend cannot dedupe (manual and route entries live in
@@ -437,6 +462,7 @@ export function useSimActions(args: UseSimActionsArgs) {
 
   return {
     handleRestore,
+    handleRestoreOne,
     handleTeleport,
     handleNavigate,
     handleStartWaypointRoute,

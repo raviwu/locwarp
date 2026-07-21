@@ -37,6 +37,7 @@ const t = ((k: any, v?: Record<string, string | number>) => {
     'status.restore': 'Restore',
     'status.restore_in_progress': 'restoring…',
     'status.restore_success_wait': 'restored',
+    'status.restore_success': 'restore success',
     'status.restore_failed': 'restore failed',
     'toast.no_position_random': 'no position',
     'toast.no_waypoints': 'no waypoints',
@@ -477,6 +478,37 @@ describe('useSimActions — applySpeed / restore', () => {
     await act(async () => { await result.current.handleRestore() })
     expect(showToast).not.toHaveBeenCalledWith('restored')
     expect(showToast).toHaveBeenCalledWith('Restore failed on all devices')
+  })
+})
+
+// The device-chip popout's "還原此裝置" (restore ONE device) used to call
+// api.restoreSim(udid) directly, bypassing sim.restoreAll — the backend clear
+// succeeded but the frontend never reset currentPosition/runtime, so the blue
+// dot lingered on the map even though the phone was actually un-spoofed.
+// handleRestoreOne must route through sim.restoreAll([udid]) so the SAME
+// state-reset handleRestore relies on runs for a single explicit udid too.
+describe('useSimActions — restoreOne (single explicit udid, routes through restoreAll)', () => {
+  it('calls sim.restoreAll(["A"]) — NOT api.restoreSim directly — and toasts success', async () => {
+    const { result, sim, showToast } = setup({ udids: ['A', 'B'] })
+    await act(async () => { await result.current.handleRestoreOne('A') })
+    expect(sim.restoreAll).toHaveBeenCalledWith(['A'])
+    expect(showToast).toHaveBeenCalledWith('restore success')
+  })
+
+  it('shows a failure toast when restoreAll reports the udid as failed', async () => {
+    const failed = { ok: [], failed: [{ udid: 'A', reason: 'x' }] }
+    const sim = makeSim({ restoreAll: vi.fn(async () => failed) })
+    const { result, showToast } = setup({ udids: ['A'], sim })
+    await act(async () => { await result.current.handleRestoreOne('A') })
+    expect(sim.restoreAll).toHaveBeenCalledWith(['A'])
+    expect(showToast).toHaveBeenCalledWith('restore failed')
+  })
+
+  it('shows a failure toast when sim.restoreAll throws', async () => {
+    const sim = makeSim({ restoreAll: vi.fn(async () => { throw new Error('boom') }) })
+    const { result, showToast } = setup({ udids: ['A'], sim })
+    await act(async () => { await result.current.handleRestoreOne('A') })
+    expect(showToast).toHaveBeenCalledWith('restore failed')
   })
 })
 

@@ -369,7 +369,7 @@ const App: React.FC = () => {
     randomWalkRadius, clampLat, normalizeLng, setPreviewPin,
   })
   const {
-    handleRestore, handleTeleport, handleNavigate,
+    handleRestore, handleRestoreOne, handleTeleport, handleNavigate,
     handleStart, handleStop, handleApplySpeed, handlePause, handleResume,
     handleUndo,
   } = simActions
@@ -1204,14 +1204,7 @@ const App: React.FC = () => {
             // one device remains, which is wrong right after a forget.
             device.disconnect(udid)
           }}
-          onRestoreOne={async (udid) => {
-            try {
-              await api.restoreSim(udid)
-              setToastMsg(t('status.restore_success'))
-            } catch (e: any) {
-              setToastMsg(e?.message ?? 'restore failed')
-            }
-          }}
+          onRestoreOne={handleRestoreOne}
         />
         {/* `device` is the currently-connected device (lockdown succeeded), so pair_status is always "ok"; omit it. */}
         <DeviceStatus
