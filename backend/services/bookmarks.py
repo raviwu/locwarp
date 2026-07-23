@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Callable
 
 from config import BOOKMARKS_FILE, get_bookmarks_path
+from domain.coords import round_coord
 from domain.ports.bookmark_repository import BookmarkRepository
 from models.schemas import Bookmark, BookmarkCategory, BookmarkStore, Tombstone
 from services.file_watch_binding import FileWatchBinding
@@ -369,8 +370,8 @@ class BookmarkManager:
         bm = Bookmark(
             id=str(uuid.uuid4()),
             name=name,
-            lat=lat,
-            lng=lng,
+            lat=round_coord(lat),
+            lng=round_coord(lng),
             address=address,
             category_id=category_id,
             created_at=now,
@@ -406,6 +407,8 @@ class BookmarkManager:
         allowed = {"name", "lat", "lng", "address", "category_id", "last_used_at", "country_code"}
         for key, value in kwargs.items():
             if key in allowed and value is not None:
+                if key in ("lat", "lng"):
+                    value = round_coord(value)  # type: ignore[assignment]
                 setattr(bm, key, value)
 
         # Float equality is safe here: no arithmetic was performed on
@@ -544,6 +547,8 @@ class BookmarkManager:
         existing = {b.id: b for b in self.store.bookmarks}
         added = updated = 0
         for bm in items:
+            bm.lat = round_coord(bm.lat)
+            bm.lng = round_coord(bm.lng)
             old = existing.get(bm.id)
             if old is not None:
                 old.name = bm.name
