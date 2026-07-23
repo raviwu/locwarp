@@ -587,22 +587,43 @@ class SimulationEngine:
             except Exception:
                 logger.exception("Event callback error for '%s'", event_type)
 
-    async def _set_position(self, lat: float, lng: float) -> None:
-        """Push a coordinate to the device and update internal state."""
-        await self._device.set_location(self._udid, lat, lng)
-        self.current_position = Coordinate(lat=lat, lng=lng)
+    async def _set_position(
+        self,
+        lat: float,
+        lng: float,
+        state_lat: float | None = None,
+        state_lng: float | None = None,
+    ) -> None:
+        """Push a coordinate to the device and update internal state.
 
-    async def _push_with_retry(self, lat: float, lng: float) -> bool:
+        The value pushed to the device is (lat, lng). The value recorded as the
+        live ``current_position`` is (state_lat, state_lng), defaulting to the
+        pushed coord. The route/joystick loops push the JITTERED coord but pass
+        the PRISTINE point as state_* so the recorded/broadcast position — and
+        therefore any 'Bookmark Here' save — stays drift-free."""
+        await self._device.set_location(self._udid, lat, lng)
+        self.current_position = Coordinate(
+            lat=state_lat if state_lat is not None else lat,
+            lng=state_lng if state_lng is not None else lng,
+        )
+
+    async def _push_with_retry(
+        self,
+        lat: float,
+        lng: float,
+        state_lat: float | None = None,
+        state_lng: float | None = None,
+    ) -> bool:
         """Push one coordinate to the device with up to 3 attempts.
 
         Transient (ConnectionError, OSError) -> warn + backoff-sleep
         0.5*(attempt+1)s and retry. CancelledError propagates. Any other
         Exception logs and gives up immediately. Returns True iff the push
-        landed. Carved verbatim from the inline loop in _move_along_route.
-        """
+        landed. state_lat/state_lng forward to _set_position (pristine record
+        while the jittered coord goes to the device)."""
         for attempt in range(3):
             try:
-                await self._set_position(lat, lng)
+                await self._set_position(lat, lng, state_lat, state_lng)
                 return True
             except (ConnectionError, OSError) as exc:
                 logger.warning(
