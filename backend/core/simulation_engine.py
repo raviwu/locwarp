@@ -823,10 +823,14 @@ class SimulationEngine:
                 step_dist = RouteInterpolator.haversine(prev_lat, prev_lng, lat, lng)
                 accumulated_distance += step_dist
 
-                # Add GPS jitter for realism
+                # Add GPS jitter for the DEVICE only — the recorded live
+                # position and the broadcast stay pristine so 'Bookmark Here'
+                # and the blue dot never inherit the drift.
                 jittered_lat, jittered_lng = RouteInterpolator.add_jitter(lat, lng, jitter)
 
-                if not await self._push_with_retry(jittered_lat, jittered_lng):
+                if not await self._push_with_retry(
+                    jittered_lat, jittered_lng, state_lat=lat, state_lng=lng
+                ):
                     logger.error("Giving up on this route after repeated push failures")
                     break
 
@@ -839,8 +843,8 @@ class SimulationEngine:
                 combined_remaining = self.distance_remaining + self._route_offset_remaining
                 combined_eta = combined_remaining / max(eff_speed, 0.001)
                 await self._emit("position_update", {
-                    "lat": jittered_lat,
-                    "lng": jittered_lng,
+                    "lat": lat,
+                    "lng": lng,
                     "bearing": bearing,
                     "speed_mps": eff_speed,
                     "progress": self.eta_tracker.progress,
