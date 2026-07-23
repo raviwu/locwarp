@@ -11,6 +11,7 @@ import json
 import logging
 import uuid
 
+from domain.coords import round_coord
 from models.schemas import Bookmark, BookmarkCategory
 from services.bookmarks import enrich_bookmark
 
@@ -81,8 +82,8 @@ def _import_single_category(manager, payload: dict) -> dict:
         bm = Bookmark(
             id=bm_id,
             name=raw_bm["name"],
-            lat=float(raw_bm["lat"]),
-            lng=float(raw_bm["lng"]),
+            lat=round_coord(float(raw_bm["lat"])),
+            lng=round_coord(float(raw_bm["lng"])),
             address=raw_bm.get("address", ""),
             category_id=new_id,
             country_code=raw_bm.get("country_code", ""),
@@ -127,8 +128,8 @@ def _import_geojson(manager, payload: dict) -> dict:
             bm = Bookmark(
                 id=bm_id,
                 name=bm_name,
-                lat=lat,
-                lng=lng,
+                lat=round_coord(lat),
+                lng=round_coord(lng),
                 category_id=cat.id,
                 country_code=str(props.get("country_code", "")).lower(),
                 created_at="",

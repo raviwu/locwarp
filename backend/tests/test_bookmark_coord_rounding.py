@@ -52,6 +52,14 @@ def test_update_bookmark_rounds_coords():
     assert updated.lng == 120.0
 
 
+def test_update_bookmark_preserves_clean():
+    mgr = make_bookmark_manager()
+    bm = mgr.create_bookmark(name="x", lat=25.0, lng=121.0)
+    updated = mgr.update_bookmark(bm.id, lat=34.331024, lng=120.0000001)
+    assert updated.lat == 34.331024
+    assert updated.lng == 120.0000001
+
+
 def test_import_json_rounds_coords():
     """_upsert_items (shared by import_json) rounds incoming coords too."""
     import json
@@ -78,3 +86,55 @@ def test_import_json_rounds_coords():
     bm = next(b for b in mgr.store.bookmarks if b.id == "imported-1")
     assert bm.lat == 25.0346233
     assert bm.lng == 121.5460874
+
+
+def test_single_category_import_rounds_coords():
+    """_import_single_category is a bypass path around import_json's
+    _upsert_items rounding — it builds Bookmark(...) directly and must
+    round there too."""
+    import json
+
+    from services.bookmark_import import detect_and_import
+
+    mgr = make_bookmark_manager()
+    payload = json.dumps({
+        "_meta": {"exported_at": "2026-05-09T08:30:00Z", "format_version": 1, "scope": "category"},
+        "category": {"id": "cat-shared", "name": "京都散步", "color": "#ef4444",
+                     "sort_order": 1, "created_at": "2026-05-09T00:00:00Z"},
+        "bookmarks": [
+            {"id": "b1", "name": "常照皇寺",
+             "lat": 25.034623329423810123, "lng": 121.546087432423910123,
+             "category_id": "cat-shared", "created_at": "", "last_used_at": ""},
+        ],
+    })
+    result = detect_and_import(mgr, payload)
+    assert result["imported"] == 1
+    bm = next(b for b in mgr.store.bookmarks if b.name == "常照皇寺")
+    assert bm.lat == 25.0346233
+    assert bm.lng == 121.5460874
+
+
+def test_geojson_import_rounds_coords():
+    """_import_geojson is a bypass path around import_json's
+    _upsert_items rounding — it builds Bookmark(...) directly and must
+    round there too."""
+    import json
+
+    from services.bookmark_import import detect_and_import
+
+    mgr = make_bookmark_manager()
+    payload = json.dumps({
+        "type": "FeatureCollection",
+        "name": "京都散步",
+        "features": [
+            {"type": "Feature",
+             "geometry": {"type": "Point",
+                          "coordinates": [135.685625512340987123, 35.200424823410987123]},
+             "properties": {"name": "常照皇寺", "country_code": "jp"}},
+        ],
+    })
+    result = detect_and_import(mgr, payload)
+    assert result["imported"] == 1
+    bm = next(b for b in mgr.store.bookmarks if b.name == "常照皇寺")
+    assert bm.lat == 35.2004248
+    assert bm.lng == 135.6856255
