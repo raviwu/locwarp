@@ -244,8 +244,10 @@ class RouteLooper:
 
                 # Resume support: on the first leg of the first lap after
                 # taking over (peer handoff or live waypoint splice), start
-                # from the iPhone's actual GPS instead of routing back to
-                # wp_a (which would teleport to the previous waypoint).
+                # from the recorded current position (the pristine intended
+                # point — device jitter is not reflected here) instead of
+                # routing back to wp_a (which would teleport to the
+                # previous waypoint).
                 # Compares against leg_start, not 0, so a splice that
                 # resumes at leg_idx > 0 still uses current_position.
                 if first_iteration and leg_idx == leg_start and resume_snap and engine.current_position is not None:

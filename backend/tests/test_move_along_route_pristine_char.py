@@ -57,6 +57,8 @@ async def test_route_jitter_hits_device_not_broadcast(monkeypatch):
     # The route runs along lat==25.0; every pushed device coord carries the
     # +0.001 jitter offset (pushed lat == 25.001), while the broadcast lat
     # stays pristine (25.0).
+    # Device-side jitter is asserted on lat here; the both-axes device-jitter
+    # property is covered exactly by the joystick test (single-tick exact tuple).
     assert loc.pushes, "expected at least one device push"
     assert all(plat == pytest.approx(25.001) for (plat, _plng) in loc.pushes)
 

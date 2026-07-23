@@ -56,6 +56,8 @@ class FakeEngine:
     async def _emit(self, event_type, data):
         self.emitted.append((event_type, dict(data)))
 
+    # Mirrors SimulationEngine._set_position's (lat, lng, state_lat, state_lng)
+    # signature — keep in sync if the real seam changes.
     async def _set_position(self, lat, lng, state_lat=None, state_lng=None):
         # Mirror the real engine's _set_position (Task 1 seam): push the
         # (possibly jittered) lat/lng, but record current_position from

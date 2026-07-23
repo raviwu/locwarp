@@ -198,10 +198,11 @@ class MultiStopNavigator:
                     wp_a.lat, wp_a.lng, wp_b.lat, wp_b.lng,
                 )
 
-                # On the first leg of a resume, start from the iPhone's
-                # actual current GPS instead of routing from wp_a (which
-                # would teleport the iPhone back to that earlier waypoint
-                # before walking forward).
+                # On the first leg of a resume, start from the recorded
+                # current position (the pristine intended point — device
+                # jitter is not reflected here) instead of routing from
+                # wp_a (which would teleport the iPhone back to that
+                # earlier waypoint before walking forward).
                 leg_origin = (
                     engine.current_position
                     if (first_lap and resume_snap and i == leg_start and engine.current_position)
