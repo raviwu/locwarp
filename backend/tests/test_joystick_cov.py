@@ -56,9 +56,15 @@ class FakeEngine:
     async def _emit(self, event_type, data):
         self.emitted.append((event_type, dict(data)))
 
-    async def _set_position(self, lat, lng):
+    async def _set_position(self, lat, lng, state_lat=None, state_lng=None):
+        # Mirror the real engine's _set_position (Task 1 seam): push the
+        # (possibly jittered) lat/lng, but record current_position from
+        # state_lat/state_lng when provided, defaulting to lat/lng.
         self.positions.append((lat, lng))
-        self.current_position = Coordinate(lat=lat, lng=lng)
+        self.current_position = Coordinate(
+            lat=state_lat if state_lat is not None else lat,
+            lng=state_lng if state_lng is not None else lng,
+        )
 
 
 # --------------------------------------------------------------------------
@@ -378,6 +384,56 @@ async def test_real_engine_stop_deactivates_joystick():
     await eng.stop()
     assert jh.is_active is False
     assert eng.state == SimulationState.IDLE
+
+
+@pytest.mark.asyncio
+async def test_joystick_tick_jitter_hits_device_not_broadcast(monkeypatch):
+    """One joystick tick against the REAL engine: the device push carries the
+    jitter offset, but current_position and the position_update broadcast
+    stay on the pristine move_point output. Joystick is the one independent
+    second jitter site (route loop already fixed) -- same pristine-state
+    seam applies here (engine._set_position(pushed, state_lat=, state_lng=))."""
+    eng, loc, emitted = make_engine()
+    eng.current_position = Coordinate(lat=25.0, lng=121.0)
+    jh = eng._joystick
+    jh.speed_profile = dict(SPEED_PROFILES["walking"])
+    jh.is_active = True
+    jh._current_input = JoystickInput(direction=0.0, intensity=1.0)
+
+    # Freeze move_point to a known pristine target.
+    monkeypatch.setattr(
+        RouteInterpolator, "move_point",
+        staticmethod(lambda lat, lng, direction, distance: (25.01, 121.01)),
+    )
+    # Fixed non-identity jitter so device != pristine deterministically.
+    monkeypatch.setattr(
+        RouteInterpolator, "add_jitter",
+        staticmethod(lambda lat, lng, j: (lat + 0.002, lng + 0.002)),
+    )
+
+    # asyncio.sleep replacement: deactivate then return immediately so the
+    # while-loop condition (is_active) is False on the next check -> exit
+    # (same one-shot-tick pattern as test_loop_tick_moves_position_and_emits).
+    async def _kill_sleep(_s):
+        jh.is_active = False
+
+    monkeypatch.setattr("core.joystick.asyncio.sleep", _kill_sleep)
+
+    await jh._loop()
+
+    # Device push carries the jitter offset on BOTH axes.
+    assert len(loc.pushes) == 1
+    assert loc.pushes[-1] == pytest.approx((25.012, 121.012))
+
+    # ...but broadcast + recorded position are the pristine move_point output
+    # on BOTH axes.
+    kinds = [d for (t, d) in emitted if t == "position_update"]
+    assert len(kinds) == 1
+    pos = kinds[0]
+    assert (pos["lat"], pos["lng"]) == pytest.approx((25.01, 121.01))
+    assert (eng.current_position.lat, eng.current_position.lng) == pytest.approx(
+        (25.01, 121.01)
+    )
 
 
 def test_module_tick_interval_constant():

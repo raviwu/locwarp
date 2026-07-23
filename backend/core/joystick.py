@@ -89,7 +89,9 @@ class JoystickHandler:
                     distance = speed_mps * _TICK_INTERVAL  # meters this tick
                     jitter = self.speed_profile.get("jitter", 0.3)
 
-                    # Calculate new position
+                    # Calculate new position -- this is the PRISTINE intended
+                    # position (no jitter). Kept pristine so it can be used
+                    # to record + broadcast current_position below.
                     new_lat, new_lng = RouteInterpolator.move_point(
                         engine.current_position.lat,
                         engine.current_position.lng,
@@ -97,13 +99,18 @@ class JoystickHandler:
                         distance,
                     )
 
-                    # Add GPS jitter
-                    new_lat, new_lng = RouteInterpolator.add_jitter(
+                    # GPS jitter goes to the DEVICE push only -- separate
+                    # variables so new_lat/new_lng stay pristine (a saved
+                    # bookmark must reflect the intended route, not drift).
+                    jittered_lat, jittered_lng = RouteInterpolator.add_jitter(
                         new_lat, new_lng, jitter * 0.3,
                     )
 
-                    # Push to device
-                    await engine._set_position(new_lat, new_lng)
+                    # Push jittered to device; record pristine current_position.
+                    await engine._set_position(
+                        jittered_lat, jittered_lng,
+                        state_lat=new_lat, state_lng=new_lng,
+                    )
 
                     # Accumulate distance
                     engine.distance_traveled += distance
