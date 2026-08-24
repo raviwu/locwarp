@@ -567,3 +567,58 @@ describe('BookmarkList country filter', () => {
     expect(screen.getByText('Kyoto')).toBeInTheDocument();
   });
 });
+
+describe('BookmarkList custom-coordinate dialog state lifetime', () => {
+  // Abandoning the 自訂座標 dialog used to leave customName / customLat /
+  // customLng in BookmarkList state — they were cleared only on a successful
+  // submit. Reopening the dialog for a DIFFERENT place then showed the old
+  // coordinate pre-filled, and because the Add button only checks that lat/lng
+  // parse, a fresh name could be saved against the previous place's point.
+  function openCustomDialog() {
+    fireEvent.click(screen.getByTitle('bm.add_custom_tooltip'));
+  }
+
+  function coordField() {
+    return screen.getByPlaceholderText(
+      'bm.latlng_single_placeholder',
+    ) as HTMLInputElement;
+  }
+
+  function nameField() {
+    return screen.getByPlaceholderText(
+      'bm.name_placeholder',
+    ) as HTMLInputElement;
+  }
+
+  it('clears name and coordinate when the dialog is reopened after a cancel', () => {
+    renderWithServices(<BookmarkList {...makeProps()} />);
+
+    openCustomDialog();
+    fireEvent.change(nameField(), { target: { value: 'Place A' } });
+    fireEvent.change(coordField(), { target: { value: '24.1477, 120.6736' } });
+    fireEvent.click(screen.getByText('generic.cancel'));
+
+    openCustomDialog();
+    expect(nameField().value).toBe('');
+    expect(coordField().value).toBe('');
+  });
+
+  it('does not save the previous place\'s coordinate under a new name', () => {
+    const onBookmarkAdd = vi.fn();
+    renderWithServices(<BookmarkList {...makeProps({ onBookmarkAdd })} />);
+
+    openCustomDialog();
+    fireEvent.change(nameField(), { target: { value: 'Place A' } });
+    fireEvent.change(coordField(), { target: { value: '24.1477, 120.6736' } });
+    fireEvent.click(screen.getByText('generic.cancel'));
+
+    // Second add: only a name is typed. With the stale coordinate gone the Add
+    // button must stay disabled instead of silently persisting Place A's point.
+    openCustomDialog();
+    fireEvent.change(nameField(), { target: { value: 'Place B' } });
+    const add = screen.getByText('generic.add') as HTMLButtonElement;
+    expect(add.disabled).toBe(true);
+    fireEvent.click(add);
+    expect(onBookmarkAdd).not.toHaveBeenCalled();
+  });
+});

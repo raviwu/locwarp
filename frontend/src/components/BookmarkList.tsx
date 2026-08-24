@@ -342,6 +342,11 @@ const BookmarkList: React.FC<BookmarkListProps> = ({
         <button
           className="action-btn"
           onClick={() => {
+            // Start every custom add from a blank form. Cancel / Escape /
+            // backdrop only hide the dialog, so without this the previous
+            // (abandoned) place's coordinate stays in state and a freshly
+            // typed name would be saved against it.
+            setCustomName(''); setCustomLat(''); setCustomLng('');
             setCustomCategory(categories[0] || 'Default');
             setShowCustomDialog(true);
           }}
