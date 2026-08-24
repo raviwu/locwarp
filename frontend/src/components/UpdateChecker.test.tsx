@@ -109,7 +109,16 @@ describe('useUpdateCheck', () => {
     vi.stubGlobal('fetch', fetchMock)
     render(<Probe />)
 
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
+    // Wait for the hook's state to COMMIT, not merely for fetch to have been
+    // CALLED. The call is synchronous inside the effect, but the response
+    // resolves a microtask later and React commits a tick after that, so
+    // waiting on the call count and then reading the DOM races the commit —
+    // it wins on a fast machine and loses on a loaded CI runner, which is
+    // exactly how this test went red (url read `NONE`). The sibling
+    // html_url-fallback test above already waits on rendered state; match it.
+    await waitFor(() =>
+      expect(screen.getByTestId('latest')).toHaveTextContent('v9.9.9'),
+    )
     // The hook must hit the raviwu fork's releases API (DMG home), not upstream.
     expect(fetchMock).toHaveBeenCalledWith(
       'https://api.github.com/repos/raviwu/locwarp/releases/latest',
