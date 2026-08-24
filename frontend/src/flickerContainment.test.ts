@@ -144,6 +144,19 @@ describe('paint containment (whole-window flicker gate)', () => {
     expect(panel).not.toMatch(/backdropFilter|backdrop-filter/i)
   })
 
+  it('the route flow dash is stepped, not linear', () => {
+    // `stroke-dashoffset` is not compositor-accelerated: every CHANGED value
+    // repaints the Leaflet overlay pane's viewport-sized <svg> on the main
+    // thread. `linear` did that once per display refresh (120/s on ProMotion)
+    // for the whole life of a route — link 1 of the original flicker chain.
+    // A stepped timing function holds the computed value between steps, and an
+    // unchanged value skips paint. Do not relax this back to `linear`; raise
+    // the step count instead if the crawl ever reads as stuttering.
+    const body = ruleBody('.route-flow-dash')
+    expect(body).toMatch(/animation:\s*route-flow\s+[\d.]+m?s\s+steps\(\d+\)/)
+    expect(body).not.toMatch(/\blinear\b/)
+  })
+
   it('the map container is NOT paint-contained', () => {
     // REGRESSION GUARD. `contain: paint` makes an element the containing block
     // for `position: fixed` descendants and clips them to its box — unlike

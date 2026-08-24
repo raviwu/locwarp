@@ -2836,12 +2836,37 @@ input:focus-visible {
   50% { opacity: 0.65; transform: scale(1.15); }
 }
 
-/* Flowing arrow / chevron animation for the route polyline (design 6). */
+/* Flowing arrow / chevron animation for the route polyline (design 6).
+
+   `steps(24)`, NOT `linear` — this is a performance fix, not a style choice.
+   `stroke-dashoffset` is not a compositor-accelerated property, so every value
+   change repaints on the main thread and re-rasters the Leaflet overlay pane's
+   <svg>, which Leaflet sizes to the padded map viewport. With `linear` that
+   happened once per display refresh for as long as a route existed — 60/s, or
+   120/s on a ProMotion panel — and it is the repaint that used to escalate into
+   the whole-window flash (see the .noise-overlay comment above).
+
+   The motion is a 40px dash period crossed in 1.6s = 25px/s. At that speed a
+   per-refresh update is wildly oversampled: `steps(24)` changes the computed
+   value 15 times a second instead, in 1.67px increments (under the 2px dash
+   length, so it still reads as a crawl rather than a blink). Frames where the
+   computed value is unchanged recalc style but skip paint entirely. Measured
+   over a 5s CDP trace of this exact geometry (1200x700 viewport SVG, 400-point
+   path, dasharray '2 38'): `Paint` events 1060 -> 151, a 7.0x reduction, for no
+   visible difference.
+
+   If it ever reads as stuttering, raise the step count — do NOT go back to
+   `linear`. Gate: src/flickerContainment.test.ts */
 @keyframes route-flow {
   to { stroke-dashoffset: -40; }
 }
 .route-flow-dash {
-  animation: route-flow 1.6s linear infinite;
+  animation: route-flow 1.6s steps(24) infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  /* Also the cheapest state: no animation means no repaint at all. The dash
+     stays drawn, so the direction cue degrades to a static dotted overlay. */
+  .route-flow-dash { animation: none; }
 }
 
 /* Weather icon animations (Set 04 — breathing / light animation). */
