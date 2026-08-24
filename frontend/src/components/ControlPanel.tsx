@@ -926,8 +926,20 @@ const ControlPanelInner: React.FC<ControlPanelProps> = ({
             position: 'fixed', left: libraryPos.x, top: libraryPos.y, zIndex: 800,
             width: 340, maxWidth: '90vw', minWidth: 240,
             maxHeight: '90vh', minHeight: 240,
-            background: 'rgba(26, 29, 39, 0.96)',
-            backdropFilter: 'blur(14px)', WebkitBackdropFilter: 'blur(14px)',
+            // Opaque on purpose — NO `backdropFilter` here. This panel floats over
+            // the map, and the default basemap (CartoDB Voyager, useBaseLayers.ts)
+            // is a pale raster measured at luma 227/255. A backdrop-filter makes
+            // this element its own render surface that Chromium composites in two
+            // steps (blurred backdrop copied in, then background + children painted
+            // over). Its child scroller holds an unvirtualized ~616x5332px, 245-row
+            // contents layer plus one layer per `opacity < 1` category group, and
+            // BookmarkRow writes `style.background` on every mouseenter/mouseleave,
+            // so that surface is dirtied constantly while scrolling or sweeping the
+            // list. Any frame that lands between the two steps shows the blurred
+            // near-white basemap at exactly the panel's shape — a white flash.
+            // The old plate was 96% alpha, so the blur contributed ~4% of a
+            // near-white backdrop: no real glass look, all of the cost.
+            background: '#1a1d27',
             border: '1px solid rgba(108, 140, 255, 0.18)', borderRadius: 12,
             boxShadow: '0 20px 60px rgba(12, 18, 40, 0.65), 0 0 0 1px rgba(255, 255, 255, 0.04) inset',
             display: 'flex', flexDirection: 'column', overflow: 'hidden',

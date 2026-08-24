@@ -118,6 +118,32 @@ describe('paint containment (whole-window flicker gate)', () => {
     expect(ruleBody('.leaflet-container')).toMatch(/contain:\s*paint/)
   })
 
+  it('the floating library panel is NOT backdrop-filtered', () => {
+    // REGRESSION GUARD (2026-08-24, second symptom: the 座標收藏 panel flashing
+    // white on its own). The panel is `createPortal(…, document.body)`, so it was
+    // never inside the noise overlay's blend group — `#root` carries a filled
+    // `opacity` animation (index.html) and is itself the isolation boundary, which
+    // is why removing that blend changed nothing here (CDP layer trees before and
+    // after were identical, 13 layers, same reasons).
+    //
+    // Its own defect is separate: a backdrop-filter turns the panel into a render
+    // surface Chromium composites in two steps, and its backdrop is the pale
+    // default basemap (measured luma 227/255). A frame landing between the steps
+    // shows the blurred near-white map clipped to the panel. Scrolling the
+    // unvirtualized list and BookmarkRow's per-row `style.background` writes dirty
+    // that surface constantly, which is what provokes it.
+    //
+    // Line comments are stripped first so the prose explaining the ban — which
+    // necessarily names the property — cannot satisfy or trip the assertion.
+    const src = readFileSync(join(here, 'components', 'ControlPanel.tsx'), 'utf8')
+    const open = src.indexOf('{libraryOpen && createPortal(')
+    expect(open).toBeGreaterThan(-1)
+    const close = src.indexOf('document.body', open)
+    expect(close).toBeGreaterThan(open)
+    const panel = src.slice(open, close).replace(/^\s*\/\/.*$/gm, '')
+    expect(panel).not.toMatch(/backdropFilter|backdrop-filter/i)
+  })
+
   it('the map container is NOT paint-contained', () => {
     // REGRESSION GUARD. `contain: paint` makes an element the containing block
     // for `position: fixed` descendants and clips them to its box — unlike
