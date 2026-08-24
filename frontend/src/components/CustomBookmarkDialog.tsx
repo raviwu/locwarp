@@ -2,6 +2,7 @@ import React from 'react';
 import { isSubmitEnter } from '../utils/keyboard';
 import { useT } from '../i18n';
 import { trySplitLatLng } from '../utils/latlng';
+import { useRawCoordText } from '../hooks/useRawCoordText';
 import DialogShell from './DialogShell';
 
 interface NewBookmark {
@@ -55,6 +56,9 @@ const CustomBookmarkDialog: React.FC<CustomBookmarkDialogProps> = ({
   onClose,
 }) => {
   const t = useT();
+  // The field shows the user's raw text — never a re-derived `${lat}, ${lng}`,
+  // which moves the caret and lets a Backspace eat a longitude digit.
+  const coordText = useRawCoordText(lat, lng);
   if (!open) return null;
 
   const latNum = parseFloat(lat);
@@ -109,13 +113,10 @@ const CustomBookmarkDialog: React.FC<CustomBookmarkDialogProps> = ({
         className="search-input"
         inputMode="decimal"
         placeholder={t('bm.latlng_single_placeholder')}
-        value={
-          lat && lng
-            ? `${lat}, ${lng}`
-            : lat || lng
-        }
+        value={coordText.value}
         onChange={(e) => {
           const v = e.target.value;
+          coordText.setRaw(v);
           const split = trySplitLatLng(v);
           if (split) { onLatChange(split[0]); onLngChange(split[1]); }
           else { onLatChange(v); onLngChange(''); }

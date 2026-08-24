@@ -165,4 +165,27 @@ describe('EditBookmarkDialog', () => {
       lng: 122.5,
     });
   });
+
+  // --- coordinate-truncation regression (see CustomBookmarkDialog) ---------
+  function ControlledEdit() {
+    const [lat, setLat] = React.useState('25');
+    const [lng, setLng] = React.useState('121');
+    return (
+      <EditBookmarkDialog
+        {...makeProps({ lat, lng, onLatChange: setLat, onLngChange: setLng })}
+      />
+    );
+  }
+
+  it.each([
+    ['a trailing space', '25.033064, 121.5654 '],
+    ['a tab separator', '25.033064\t121.5654'],
+    ['pasted leading whitespace', '  25.033064, 121.5654'],
+    ['no space after the comma', '25.033064,121.5654'],
+  ])('does not rewrite the text the user typed — %s', (_label, typed) => {
+    render(<ControlledEdit />);
+    const field = screen.getByPlaceholderText('bm.latlng_single_placeholder') as HTMLInputElement;
+    fireEvent.change(field, { target: { value: typed } });
+    expect(field.value).toBe(typed);
+  });
 });

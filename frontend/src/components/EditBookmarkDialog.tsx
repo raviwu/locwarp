@@ -1,6 +1,7 @@
 import React from 'react';
 import { useT } from '../i18n';
 import { trySplitLatLng } from '../utils/latlng';
+import { useRawCoordText } from '../hooks/useRawCoordText';
 import DialogShell from './DialogShell';
 
 // Legacy NAME-shape bookmark (category is a plain string). Kept loose to match
@@ -54,6 +55,9 @@ const EditBookmarkDialog: React.FC<EditBookmarkDialogProps> = ({
   onClose,
 }) => {
   const t = useT();
+  // The field shows the user's raw text — never a re-derived `${lat}, ${lng}`,
+  // which moves the caret and lets a Backspace eat a longitude digit.
+  const coordText = useRawCoordText(lat, lng);
   if (!bookmark) return null;
 
   const latNum = parseFloat(lat);
@@ -114,13 +118,10 @@ const EditBookmarkDialog: React.FC<EditBookmarkDialogProps> = ({
         className="search-input"
         inputMode="decimal"
         placeholder={t('bm.latlng_single_placeholder')}
-        value={
-          lat && lng
-            ? `${lat}, ${lng}`
-            : lat || lng
-        }
+        value={coordText.value}
         onChange={(e) => {
           const v = e.target.value;
+          coordText.setRaw(v);
           const split = trySplitLatLng(v);
           if (split) { onLatChange(split[0]); onLngChange(split[1]); }
           else {

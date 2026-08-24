@@ -131,4 +131,32 @@ describe('CustomBookmarkDialog', () => {
     fireEvent.click(screen.getByText('generic.add'));
     expect(onSubmit).toHaveBeenCalledWith({ name: 'Pin', lat: 24.14, lng: 120.65, category: 'Work' });
   });
+
+  // --- coordinate-truncation regression -----------------------------------
+  // The field must show the user's RAW text. It used to re-derive
+  // `${lat}, ${lng}` on every keystroke, so a trailing space / tab separator /
+  // pasted whitespace was silently rewritten. The rewritten DOM string threw the
+  // caret to the end of the input, and the next Backspace ate the last digit of
+  // the LONGITUDE (121.5654 -> 121.565 = 40 m; twice -> 121.56 = 545 m).
+  function ControlledCustom() {
+    const [lat, setLat] = React.useState('');
+    const [lng, setLng] = React.useState('');
+    return (
+      <CustomBookmarkDialog
+        {...makeProps({ lat, lng, onLatChange: setLat, onLngChange: setLng })}
+      />
+    );
+  }
+
+  it.each([
+    ['a trailing space', '25.033064, 121.5654 '],
+    ['a tab separator', '25.033064\t121.5654'],
+    ['pasted leading whitespace', '  25.033064, 121.5654'],
+    ['no space after the comma', '25.033064,121.5654'],
+  ])('does not rewrite the text the user typed — %s', (_label, typed) => {
+    render(<ControlledCustom />);
+    const field = screen.getByPlaceholderText('bm.latlng_single_placeholder') as HTMLInputElement;
+    fireEvent.change(field, { target: { value: typed } });
+    expect(field.value).toBe(typed);
+  });
 });
