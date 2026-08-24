@@ -17,6 +17,7 @@ every other test in the suite. Cleanup is guaranteed three ways:
   3. an end-of-test assertion re-runs lint-imports on the restored tree and
      requires `0 broken`, proving cleanup actually worked.
 """
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -61,11 +62,21 @@ def _no_stale_probe():
         SERVICES_PROBE.unlink(missing_ok=True)
 
 
+def _strip_ansi(s: str) -> str:
+    """import-linter >=2.13 colourises the per-contract status even when its
+    output is captured (not a TTY), so the raw text reads
+    ``Core must not import API \\x1b[31mBROKEN\\x1b[0m``. Strip the escapes
+    before matching so the assertion is not coupled to the tool's colour
+    behaviour."""
+    return re.sub(r"\x1b\[[0-9;]*m", "", s)
+
+
 def _assert_contract_broken(combined: str, returncode: int, contract_name: str):
     # import-linter prints "Contracts: ..." then one line per contract; broken
     # contracts read e.g. "Core must not import API BROKEN". Assert both the
     # non-zero exit AND that THIS specific contract is the one named broken, so a
     # break in some unrelated contract can't make the probe pass spuriously.
+    combined = _strip_ansi(combined)
     assert "Contracts:" in combined, (
         f"lint-imports produced no 'Contracts:' output — invocation broken?\n{combined!r}"
     )
