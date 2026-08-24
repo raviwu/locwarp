@@ -467,6 +467,12 @@ class BookmarkManager:
         for bm in self.store.bookmarks:
             if bm.id in ids_set and bm.category_id != target_category_id:
                 bm.category_id = target_category_id
+                # This record ships to the merge on a fresh timestamp, so it has
+                # to carry a rounded coordinate like every other write path —
+                # otherwise a legacy long-precision value wins every later merge
+                # while keeping its drifted tail.
+                bm.lat = round_coord(bm.lat)
+                bm.lng = round_coord(bm.lng)
                 bm.updated_at = now
                 moved += 1
 

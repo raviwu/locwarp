@@ -138,3 +138,37 @@ def test_geojson_import_rounds_coords():
     bm = next(b for b in mgr.store.bookmarks if b.name == "常照皇寺")
     assert bm.lat == 35.2004248
     assert bm.lng == 135.6856255
+
+
+def test_move_bookmarks_rounds_coords():
+    """Moving a bookmark to another category re-stamps ``updated_at``, so the
+    record it ships to the merge must carry a rounded coordinate too.
+
+    Without this, a legacy long-precision record wins every later merge on a
+    fresh timestamp while keeping its drifted tail — 24 such records were found
+    in the live store on 2026-08-24.
+    """
+    mgr = make_bookmark_manager()
+    bm = mgr.create_bookmark(name="x", lat=25.0, lng=121.0)
+    # Bypass the create path's rounding to simulate a legacy record.
+    stored = next(b for b in mgr.store.bookmarks if b.id == bm.id)
+    stored.lat = 47.229477404699686
+    stored.lng = 11.879482269287111
+
+    cat = mgr.create_category(name="target")
+    assert mgr.move_bookmarks([bm.id], cat.id) == 1
+
+    moved = next(b for b in mgr.store.bookmarks if b.id == bm.id)
+    assert moved.lat == 47.2294774
+    assert moved.lng == 11.8794823
+
+
+def test_move_bookmarks_preserves_clean_coords():
+    mgr = make_bookmark_manager()
+    bm = mgr.create_bookmark(name="x", lat=25.034623, lng=121.546087)
+    cat = mgr.create_category(name="target")
+    assert mgr.move_bookmarks([bm.id], cat.id) == 1
+
+    moved = next(b for b in mgr.store.bookmarks if b.id == bm.id)
+    assert moved.lat == 25.034623
+    assert moved.lng == 121.546087
