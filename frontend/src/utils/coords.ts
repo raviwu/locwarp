@@ -28,10 +28,36 @@ function inRange(lat: number, lng: number): boolean {
     Number.isFinite(lng) && lng >= -180 && lng <= 180;
 }
 
+// A map-share URL carries SEVERAL coordinate pairs, and the leftmost one is the
+// worst: `/@lat,lng,17z` is where the camera was pointing, which sits tens to
+// hundreds of metres from the place itself (117 m for a Taipei 101 share link).
+// A plain left-to-right scrape therefore silently picks the wrong point. The
+// precedence below is the one CLAUDE.md already fixes for the catalog seeder:
+// the `!3d/!4d` pin first, then an explicit `ll=`/`q=` pair, and only then does
+// the generic scrape get to fall back on `/@`.
+const MAPS_PIN_RE = /!3d(-?\d+(?:\.\d+)?)!4d(-?\d+(?:\.\d+)?)/;
+const MAPS_QUERY_RE = /[?&](?:ll|q|sll|daddr)=(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)/;
+
+// Returns the authoritative pair from a map URL, or null when the text is not a
+// map URL (or its preferred pair is out of range, in which case the caller's
+// generic scrape still gets its turn).
+function parseMapUrlCoord(raw: string): { lat: number; lng: number } | null {
+  for (const re of [MAPS_PIN_RE, MAPS_QUERY_RE]) {
+    const m = raw.match(re);
+    if (!m) continue;
+    const lat = parseFloat(m[1]);
+    const lng = parseFloat(m[2]);
+    if (inRange(lat, lng)) return { lat, lng };
+  }
+  return null;
+}
+
 // Returns the first valid lat/lng pair found anywhere in `raw`, or null.
 // Any other text in the input is ignored — labels, prefixes ("#3", "OK"),
 // trailing notes ("一般火"), brackets, etc. all get discarded.
 export function parseCoord(raw: string): { lat: number; lng: number } | null {
+  const pin = parseMapUrlCoord(raw);
+  if (pin) return pin;
   const cleaned = raw.replace(DECORATION_RE, ' ');
   COORD_DECIMAL_RE.lastIndex = 0;
   let m: RegExpExecArray | null;

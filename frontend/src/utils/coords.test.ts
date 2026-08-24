@@ -81,3 +81,45 @@ describe('trySplitLatLng (consolidated into coords.ts)', () => {
     expect(trySplitLatLng('Taipei 101')).toBeNull()
   })
 })
+
+describe('parseCoord — map-URL precedence', () => {
+  // A Google Maps place URL carries several coordinate pairs. Left-to-right
+  // first-match takes the /@ CAMERA CENTRE, which sits tens to hundreds of
+  // metres from the pin. CLAUDE.md fixes the precedence as
+  // !3d/!4d > ?ll= > /@ for exactly this reason.
+  const PLACE_URL =
+    'https://www.google.com/maps/place/Taipei+101/@25.0330000,121.5640000,17z/' +
+    'data=!3m1!4b1!4m6!3m5!1s0x0:0x0!8m2!3d25.0339639!4d121.5644722!16s%2Fg%2F1234'
+
+  it('prefers the !3d/!4d pin over the /@ camera centre', () => {
+    expect(parseCoord(PLACE_URL)).toEqual({ lat: 25.0339639, lng: 121.5644722 })
+  })
+
+  it('prefers ?ll= over the /@ camera centre', () => {
+    const url =
+      'https://maps.google.com/maps/@25.0330000,121.5640000,17z?ll=25.0339639,121.5644722'
+    expect(parseCoord(url)).toEqual({ lat: 25.0339639, lng: 121.5644722 })
+  })
+
+  it('falls back to the /@ camera centre when nothing better is present', () => {
+    const url = 'https://www.google.com/maps/@25.0339639,121.5644722,17z'
+    expect(parseCoord(url)).toEqual({ lat: 25.0339639, lng: 121.5644722 })
+  })
+
+  it('reads an Apple Maps q= pair', () => {
+    const url = 'https://maps.apple.com/?q=25.0339639,121.5644722&z=17'
+    expect(parseCoord(url)).toEqual({ lat: 25.0339639, lng: 121.5644722 })
+  })
+
+  it('leaves plain pasted text on the generic scrape path', () => {
+    expect(parseCoord('#3 25.033064, 121.565418 一般火')).toEqual({
+      lat: 25.033064, lng: 121.565418,
+    })
+  })
+
+  it('ignores a map-URL token whose pair is out of range', () => {
+    // !3d/!4d present but nonsense — fall through rather than return garbage.
+    const url = 'https://www.google.com/maps/@25.0339639,121.5644722,17z/data=!3d999!4d999'
+    expect(parseCoord(url)).toEqual({ lat: 25.0339639, lng: 121.5644722 })
+  })
+})
