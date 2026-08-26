@@ -72,7 +72,7 @@ Design: `docs/superpowers/specs/2026-06-22-bookmark-route-rotating-backup-design
 
 - `locwarp-latest-backup.json` refreshed every tick; a timestamped
   `locwarp-backup-<YYYYMMDD-HHMMSS>.json` archived **only when data changed**; pruned past
-  `BACKUP_RETENTION_HOURS` (72h) by the **filename** timestamp.
+  `BACKUP_RETENTION_HOURS` (720h / 30 days, widened from 72h) by the **filename** timestamp.
 - **Never clobbers on empty:** `BackupService.tick` skips when bookmarks==0 AND routes==0.
 - Consistent reads via `BookmarkManager.snapshot_export()` (under `_store_lock`) /
   `RouteManager.snapshot_export()`.

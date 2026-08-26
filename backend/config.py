@@ -102,7 +102,13 @@ STICKY_DENIED_FILE = DATA_DIR / "sticky_denied.json"
 # never `from config import BACKUP_DIR` — so the test isolation guard works.
 BACKUP_DIR = DATA_DIR / "backups"
 BACKUP_INTERVAL_S = 300          # 5 minutes
-BACKUP_RETENTION_HOURS = 72      # 3 days
+# Raised from 72h (3 days) to 720h (30 days) to widen the forensic window for
+# diffing consecutive backups while the bookmark-revert bug is being hunted —
+# 3 days wasn't enough runway to catch the next one. scripts/desktop_backup.py
+# prunes the SAME directory with its own RETENTION_S constant (it cannot
+# import this module — see its comment) and MUST be changed together with
+# this value.
+BACKUP_RETENTION_HOURS = 720     # 30 days (was 72h/3d)
 
 # OSRM
 OSRM_BASE_URL = "https://router.project-osrm.org"

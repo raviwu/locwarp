@@ -42,7 +42,20 @@ API = "http://127.0.0.1:8777"
 BACKUP_DIR = os.path.expanduser("~/.locwarp/backups")
 LATEST = os.path.join(BACKUP_DIR, "locwarp-latest-backup.json")
 SNAPSHOT_GLOB = "locwarp-backup-*.json"
-RETENTION_S = 3 * 24 * 60 * 60  # keep timestamped snapshots for 3 days
+# MUST match backend/config.py's BACKUP_RETENTION_HOURS: the in-process
+# rotating backup (main.py's lifespan task) and this standalone tool write
+# into and prune the SAME directory (~/.locwarp/backups/) using the SAME
+# filename pattern (SNAPSHOT_GLOB above) — if the two windows disagree,
+# whichever tool runs prunes snapshots the other one needs. The value is
+# duplicated rather than imported because this script runs under plain
+# system python3 (see the ``backup`` Makefile target and the launchd agent
+# in the module docstring, not necessarily backend/.venv) and is
+# deliberately dependency-free / decoupled from the backend package (it
+# talks to the app over HTTP, never imports it) — reaching into
+# backend/config.py would tie that isolation to backend's future import
+# graph. Change both together.
+RETENTION_HOURS = 720  # 30 days — keep in lock-step with backend/config.py BACKUP_RETENTION_HOURS
+RETENTION_S = RETENTION_HOURS * 60 * 60
 TIMEOUT_S = 5
 
 # Read directly rather than via the HTTP API: unlike bookmarks/routes,
@@ -172,7 +185,7 @@ def main() -> int:
     state = "snapshot saved" if changed else "unchanged, latest refreshed"
     msg = f"backed up {bm_count} bookmarks + {rt_count} routes + {rec_count} recent ({state})"
     if removed:
-        msg += f"; pruned {len(removed)} >3d"
+        msg += f"; pruned {len(removed)} >{RETENTION_HOURS // 24}d"
     print(msg)
     return 0
 

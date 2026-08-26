@@ -93,7 +93,8 @@ Design: `docs/superpowers/specs/2026-06-22-bookmark-route-rotating-backup-design
 
 - `locwarp-latest-backup.json` is refreshed every tick; a timestamped
   `locwarp-backup-<YYYYMMDD-HHMMSS>.json` is archived **only when the data changed**
-  (fingerprint excludes `_backup_meta`). Pruned past `BACKUP_RETENTION_HOURS` (72h) by the
+  (fingerprint excludes `_backup_meta`). Pruned past `BACKUP_RETENTION_HOURS` (720h / 30 days,
+  widened from 72h to give the bookmark-revert forensic diff enough runway) by the
   **filename** timestamp, not mtime.
 - **Never clobbers on empty:** `BackupService.tick` skips entirely when bookmarks==0 AND
   routes==0 (guards transient iCloud eviction / startup).

@@ -4,6 +4,11 @@
 **Status:** Design — awaiting review
 **Author:** Ravi + Claude
 
+> **Update (2026-08-26):** `BACKUP_RETENTION_HOURS` was raised from 72h (3 days) to 720h
+> (30 days) to widen the forensic window while the bookmark-revert bug is being hunted. The
+> 72h figure below is the original design value, kept for historical record — see
+> `backend/config.py` for the current constant.
+
 ## Problem
 
 A rotating local backup script already ships (`scripts/desktop_backup.py` + `make backup` +

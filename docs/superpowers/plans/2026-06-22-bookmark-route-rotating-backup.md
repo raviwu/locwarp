@@ -1,5 +1,9 @@
 # In-Process Rotating Backup — Implementation Plan
 
+> **Update (2026-08-26):** `BACKUP_RETENTION_HOURS` was later raised from 72h to 720h
+> (30 days) — see `backend/config.py`. The 72h figure below is the original plan value,
+> kept for historical record.
+
 > **For agentic workers:** Execute task-by-task. Each task = failing tests → implement → green →
 > commit. Backend suite stays green + import-linter `7 kept, 0 broken` after every commit.
 
