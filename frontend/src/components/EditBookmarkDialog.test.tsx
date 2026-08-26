@@ -68,7 +68,7 @@ describe('EditBookmarkDialog', () => {
     expect(onLngChange).toHaveBeenCalledWith('');
   });
 
-  it('submits the merged shape (original fields + edited name/lat/lng) on Save', () => {
+  it('submits the sparse patch (id + the edited name/lat/lng) on Save', () => {
     const onSubmit = vi.fn();
     render(
       <EditBookmarkDialog
@@ -77,7 +77,7 @@ describe('EditBookmarkDialog', () => {
     );
     fireEvent.click(screen.getByText('generic.save'));
     expect(onSubmit).toHaveBeenCalledWith('bm-1', {
-      ...ORIG,
+      id: ORIG.id,
       name: 'New Name',
       lat: 26.5,
       lng: 122.5,
@@ -157,7 +157,7 @@ describe('EditBookmarkDialog', () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
-  it('still submits the merged shape unchanged after migration', () => {
+  it('still submits the sparse patch unchanged after migration', () => {
     const onSubmit = vi.fn();
     render(
       <EditBookmarkDialog
@@ -166,7 +166,7 @@ describe('EditBookmarkDialog', () => {
     );
     fireEvent.click(screen.getByText('generic.save'));
     expect(onSubmit).toHaveBeenCalledWith('bm-1', {
-      ...ORIG,
+      id: ORIG.id,
       name: 'New Name',
       lat: 26.5,
       lng: 122.5,
@@ -174,13 +174,36 @@ describe('EditBookmarkDialog', () => {
   });
 
   // --- per-field dirty tracking (bookmark-revert fix) ----------------------
-  it('submits the LIVE record value for a field the user never touched', () => {
+  it('puts only the dirty fields on the wire — nothing else is carried along', () => {
     const onSubmit = vi.fn();
-    // `bookmark` is the LIVE record (as BookmarkList now derives it fresh on
-    // every render) and its name has since changed to 'Renamed Elsewhere' —
-    // e.g. synced in from another machine while this dialog was open. The
-    // local `name` state still holds whatever was seeded when the dialog
-    // opened ('Old Name'). Only lat/lng are dirty (the user edited coords).
+    render(
+      <EditBookmarkDialog
+        {...makeProps({
+          name: 'Old Name',
+          nameDirty: false,
+          lat: '26.5',
+          lng: '122.5',
+          latDirty: true,
+          lngDirty: true,
+          onSubmit,
+        })}
+      />,
+    );
+    fireEvent.click(screen.getByText('generic.save'));
+    // Exact shape: the record's other fields (category, country_code, …) are
+    // not re-sent either, so the backend PUT leaves every one of them alone.
+    expect(onSubmit).toHaveBeenCalledWith('bm-1', { id: 'bm-1', lat: 26.5, lng: 122.5 });
+    const patch = onSubmit.mock.calls[0][1];
+    expect('name' in patch).toBe(false);
+  });
+
+  it('omits an untouched field rather than re-sending the live record value', () => {
+    const onSubmit = vi.fn();
+    // The record's name has changed to 'Renamed Elsewhere' since the dialog
+    // opened — e.g. synced in from another machine. The local `name` state
+    // still holds what was seeded at open time ('Old Name'). Only lat/lng are
+    // dirty, so `name` is left off the wire entirely and the concurrent
+    // rename cannot be reverted by this save.
     render(
       <EditBookmarkDialog
         {...makeProps({
@@ -196,11 +219,10 @@ describe('EditBookmarkDialog', () => {
       />,
     );
     fireEvent.click(screen.getByText('generic.save'));
-    // The submitted name is the LIVE record's current name, not the stale
-    // local state captured at open time.
+    // No `name` key at all — neither the stale open-time text nor the live
+    // record's value. The backend leaves the stored name exactly as it is.
     expect(onSubmit).toHaveBeenCalledWith('bm-1', {
-      ...ORIG,
-      name: 'Renamed Elsewhere',
+      id: ORIG.id,
       lat: 26.5,
       lng: 122.5,
     });
@@ -224,9 +246,9 @@ describe('EditBookmarkDialog', () => {
     );
     fireEvent.click(screen.getByText('generic.save'));
     expect(onSubmit).toHaveBeenCalledWith('bm-1', {
-      ...ORIG,
+      id: ORIG.id,
       name: 'User Typed Name',
-      // lat/lng untouched -> live record's values (25 / 121, same as ORIG).
+      // lat/lng untouched -> omitted, so the stored coordinates stand.
     });
   });
 

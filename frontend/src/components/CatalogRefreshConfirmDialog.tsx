@@ -6,26 +6,30 @@ interface CatalogRefreshConfirmDialogProps {
   open: boolean;
   // How many bundled catalog entries are not yet in the local store.
   newCount: number;
-  // How many EXISTING catalog-seeded bookmarks have diverged from the bundled
-  // value (name/lat/lng/category_id) and would be overwritten by the sync.
-  overwriteCount: number;
+  // How many EXISTING catalog-seeded bookmarks differ from the bundled value
+  // on one of the five merged fields (name/lat/lng/category_id/address). It
+  // means "differs from the catalog", not "will be kept" — the per-field merge
+  // is relative to a local baseline this side cannot read.
+  divergedCount: number;
   onConfirm: () => void;
   onClose: () => void;
 }
 
 /**
  * Informed-consent gate in front of the catalog "Refresh public events"
- * button. The sync (api.syncCatalog) force-overwrites every catalog-seeded
- * bookmark's name/lat/lng/address/category_id and re-stamps updated_at, which
- * silently wins the CRDT merge against a locally-edited copy on the other
- * synced Mac — see backend/services/bookmarks.py::import_catalog. This dialog
- * only adds a confirmation step; it does not change what the sync does.
+ * button. The sync (api.syncCatalog) resolves each of a catalog-seeded
+ * bookmark's name/lat/lng/address/category_id three ways: a field the user
+ * edited on this machine is kept, a field they never edited takes the
+ * catalog's value — see backend/services/bookmarks.py::import_catalog. The
+ * diverged count cannot say which way a given record will go (it compares ours
+ * vs theirs, the merge is baseline-relative), so the copy states both. This
+ * dialog only adds a confirmation step; it does not change what the sync does.
  * Controlled: open state lives in BookmarkList, counts come from useCatalog.
  */
 const CatalogRefreshConfirmDialog: React.FC<CatalogRefreshConfirmDialogProps> = ({
   open,
   newCount,
-  overwriteCount,
+  divergedCount,
   onConfirm,
   onClose,
 }) => {
@@ -51,7 +55,7 @@ const CatalogRefreshConfirmDialog: React.FC<CatalogRefreshConfirmDialogProps> = 
       <div style={{ fontSize: 12, opacity: 0.85, marginBottom: 6, lineHeight: 1.6 }}>
         {t('bm.catalog.confirm_added', { n: newCount })}
       </div>
-      {overwriteCount > 0 ? (
+      {divergedCount > 0 ? (
         <div style={{
           fontSize: 12, lineHeight: 1.6, marginBottom: 16,
           padding: '8px 10px',
@@ -59,11 +63,11 @@ const CatalogRefreshConfirmDialog: React.FC<CatalogRefreshConfirmDialogProps> = 
           border: '1px solid rgba(244, 67, 54, 0.3)', borderRadius: 6,
           color: '#ff8a80',
         }}>
-          {t('bm.catalog.confirm_overwrite', { n: overwriteCount })}
+          {t('bm.catalog.confirm_diverged', { n: divergedCount })}
         </div>
       ) : (
         <div style={{ fontSize: 12, opacity: 0.8, lineHeight: 1.6, marginBottom: 16 }}>
-          {t('bm.catalog.confirm_no_overwrite')}
+          {t('bm.catalog.confirm_no_diverged')}
         </div>
       )}
       <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap' }}>

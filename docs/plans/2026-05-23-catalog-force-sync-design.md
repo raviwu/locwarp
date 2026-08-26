@@ -428,3 +428,25 @@ cd frontend && npx tsc --noEmit
 - **Clock skew:** if the other device's tombstone has a future `deleted_at` (clock ahead by minutes), the resurrected item could lose. Acceptable — covered by `TOMBSTONE_RETENTION_DAYS` GC eventually, and the user can re-click sync.
 - **Cascade in delete_category:** unchanged. The user can still delete catalog categories — sync brings them back.
 - **`importBookmarks` callers:** still used for user-file imports (drag-drop a JSON). Skip-existing semantics retained for that path. Only the catalog Refresh button moves to the new endpoint.
+
+---
+
+## 2026-08-26 addendum — authority is now PER FIELD (E1)
+
+This document is kept as written; nothing above is rewritten. One statement in it
+has since been narrowed.
+
+"Catalog ids are authoritative" still holds for **resurrection**: an id the user
+deleted comes back through the ADD branch, exactly as designed here. It no longer
+holds for the **field values of a record that is still present**. Since E1
+(`docs/superpowers/plans/2026-08-26-bookmark-edit-durability-e1-f.md`),
+`import_catalog` resolves `name` / `lat` / `lng` / `address` / `category_id`
+three ways per field — against `~/.locwarp/catalog_baseline.json`, the catalog
+values this machine last applied — and takes the catalog's value only for a field
+the user has not edited locally. A field the user did edit keeps the local value,
+and the response reports `kept_local` / `conflicts` beside the original three
+counts. `country_code` left the write set entirely; `enrich_bookmark` owns it.
+
+The reason: wholesale overwrite of a still-alive record was never this design's
+goal — it was a side effect of reusing `_upsert_items`, and it silently reverted
+local edits across Ravi's two synced Macs.

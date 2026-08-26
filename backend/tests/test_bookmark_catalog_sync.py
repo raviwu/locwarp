@@ -58,7 +58,7 @@ def manager(tmp_path, monkeypatch):
 def test_first_sync_adds_everything(manager):
     res = manager.import_catalog(json.dumps(CATALOG))
     # 1 category + 2 bookmarks all new
-    assert res == {"added": 3, "updated": 0, "resurrected": 0}
+    assert res == {"added": 3, "updated": 0, "resurrected": 0, "kept_local": 0, "conflicts": 0}
     assert {b.id for b in manager.store.bookmarks} == {"bm-1", "bm-2"}
     assert any(c.id == "cat-A" for c in manager.store.categories)
 
@@ -67,7 +67,7 @@ def test_resync_unchanged_is_idempotent(manager):
     manager.import_catalog(json.dumps(CATALOG))
     res = manager.import_catalog(json.dumps(CATALOG))
     # All 3 ids upsert (existing rows touched), nothing new, no tombstones
-    assert res == {"added": 0, "updated": 3, "resurrected": 0}
+    assert res == {"added": 0, "updated": 3, "resurrected": 0, "kept_local": 0, "conflicts": 0}
     assert len(manager.store.bookmarks) == 2
 
 
@@ -114,4 +114,4 @@ def test_local_non_catalog_bookmarks_untouched(manager):
 
 def test_invalid_payload_returns_zeroes(manager):
     res = manager.import_catalog("not-json-at-all")
-    assert res == {"added": 0, "updated": 0, "resurrected": 0}
+    assert res == {"added": 0, "updated": 0, "resurrected": 0, "kept_local": 0, "conflicts": 0}

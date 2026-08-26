@@ -72,9 +72,12 @@ interface BookmarkListProps {
   onCategoryAdd: (name: string) => void;
   onCategoryDelete: (name: string) => void;
   onCategoryDeleteCascade?: (name: string, bookmarkCount: number) => void;
+  // The patch is sparse: only the fields the edit dialog session actually
+  // changed. An absent key means "leave it as stored" all the way to the
+  // backend PUT, so an untouched field cannot revert a concurrent edit.
   onCategoryEdit?: (
     name: string,
-    patch: { name: string; color: string; start_date: string; end_date: string },
+    patch: { name?: string; color?: string; start_date?: string; end_date?: string },
   ) => void;
   // Per-category event dates, keyed by category name (matches the
   // existing categoryColors prop).
@@ -88,10 +91,11 @@ interface BookmarkListProps {
   // hides the button entirely.
   catalogStatus?: 'loading' | 'ok' | 'missing' | 'failed';
   catalogNewCount?: number;
-  // Existing catalog-seeded bookmarks the refresh would overwrite (name/lat/
-  // lng/category_id diverged from the bundled value). Drives the confirm
-  // dialog's copy; see CatalogRefreshConfirmDialog.
-  catalogOverwriteCount?: number;
+  // Existing catalog-seeded bookmarks that differ from the bundled value on
+  // one of the five merged fields (name/lat/lng/category_id/address). Drives
+  // the confirm dialog's copy; "differs from", not "will be kept" — see
+  // CatalogRefreshConfirmDialog.
+  catalogDivergedCount?: number;
   catalogError?: string | null;
   catalogRefreshing?: boolean;
   onCatalogRefresh?: () => Promise<void> | void;
@@ -132,7 +136,7 @@ const BookmarkList: React.FC<BookmarkListProps> = ({
   onImport,
   catalogStatus,
   catalogNewCount,
-  catalogOverwriteCount,
+  catalogDivergedCount,
   catalogError,
   catalogRefreshing,
   onCatalogRefresh,
@@ -183,6 +187,15 @@ const BookmarkList: React.FC<BookmarkListProps> = ({
   const [editCatColor, setEditCatColor] = useState('#6c8cff');
   const [editCatStart, setEditCatStart] = useState('');
   const [editCatEnd, setEditCatEnd] = useState('');
+  // Per-field dirty tracking, same pattern as the bookmark edit dialog below:
+  // the four fields above are seeded once at open, so re-submitting an
+  // untouched one would push a stale snapshot value over whatever the other
+  // Mac has synced in since. Reset on every open; consulted at submit time
+  // (EditCategoryModal) to decide which fields go on the wire at all.
+  const [editCatNameDirty, setEditCatNameDirty] = useState(false);
+  const [editCatColorDirty, setEditCatColorDirty] = useState(false);
+  const [editCatStartDirty, setEditCatStartDirty] = useState(false);
+  const [editCatEndDirty, setEditCatEndDirty] = useState(false);
   const openEditCategory = (cat: string) => {
     setEditCatName(cat);
     setEditCatNewName(cat);
@@ -190,6 +203,10 @@ const BookmarkList: React.FC<BookmarkListProps> = ({
     const d = categoryDates?.[cat];
     setEditCatStart(d?.start_date ?? '');
     setEditCatEnd(d?.end_date ?? '');
+    setEditCatNameDirty(false);
+    setEditCatColorDirty(false);
+    setEditCatStartDirty(false);
+    setEditCatEndDirty(false);
   };
   const closeEditCategory = () => setEditCatName(null);
 
@@ -708,10 +725,14 @@ const BookmarkList: React.FC<BookmarkListProps> = ({
         color={editCatColor}
         startDate={editCatStart}
         endDate={editCatEnd}
-        onNewNameChange={setEditCatNewName}
-        onColorChange={setEditCatColor}
-        onStartDateChange={setEditCatStart}
-        onEndDateChange={setEditCatEnd}
+        nameDirty={editCatNameDirty}
+        colorDirty={editCatColorDirty}
+        startDateDirty={editCatStartDirty}
+        endDateDirty={editCatEndDirty}
+        onNewNameChange={(v) => { setEditCatNewName(v); setEditCatNameDirty(true); }}
+        onColorChange={(v) => { setEditCatColor(v); setEditCatColorDirty(true); }}
+        onStartDateChange={(v) => { setEditCatStart(v); setEditCatStartDirty(true); }}
+        onEndDateChange={(v) => { setEditCatEnd(v); setEditCatEndDirty(true); }}
         onSubmit={(name, patch) => onCategoryEdit?.(name, patch)}
         onClose={closeEditCategory}
       />
@@ -1039,7 +1060,7 @@ const BookmarkList: React.FC<BookmarkListProps> = ({
         <CatalogRefreshConfirmDialog
           open={showCatalogConfirm}
           newCount={catalogNewCount ?? 0}
-          overwriteCount={catalogOverwriteCount ?? 0}
+          divergedCount={catalogDivergedCount ?? 0}
           onConfirm={() => {
             setShowCatalogConfirm(false);
             void onCatalogRefresh();

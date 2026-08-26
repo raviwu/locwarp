@@ -66,6 +66,12 @@ def _isolate_real_data_paths(tmp_path, monkeypatch):
     # alone leaves it pointing at the real ~/.locwarp/backups. Redirect it too,
     # or a backup test would write real user data (the exact hazard above).
     monkeypatch.setattr(config, "BACKUP_DIR", tmp_path / "backups", raising=False)
+    # Same story for the catalog baseline: derived from DATA_DIR at import time,
+    # so patching DATA_DIR alone would leave a catalog-sync test writing the real
+    # ~/.locwarp/catalog_baseline.json and poisoning the user's next force-sync.
+    monkeypatch.setattr(
+        config, "CATALOG_BASELINE_FILE", tmp_path / "catalog_baseline.json", raising=False
+    )
 
     # Module-level copies captured at import time in the runtime modules.
     if "main" in sys.modules:

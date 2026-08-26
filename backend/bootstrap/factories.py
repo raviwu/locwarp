@@ -5,6 +5,7 @@ never import infra. Used by main.load_state, cloud_sync enable/disable, and test
 """
 import config
 from infra.persistence.backup_store import FileBackupStore
+from infra.persistence.catalog_baseline_store import FileCatalogBaselineStore
 from infra.persistence.json_store import JsonStore
 from models.schemas import BookmarkStore, RouteStore
 from services.backup_service import BackupService
@@ -12,9 +13,18 @@ from services.bookmarks import BookmarkManager, _bookmarks_path_default
 from services.route_store import RouteManager, _routes_path_default, _inject_default_category
 
 
-def make_bookmark_manager(path_provider=None) -> BookmarkManager:
+def make_bookmark_manager(path_provider=None, baseline_path_provider=None) -> BookmarkManager:
+    """Wire the store repo + the catalog-baseline port into the manager.
+
+    Both providers default to a lazy config lookup so test isolation applies;
+    baseline_path_provider is also the per-machine seam, since a two-Mac test
+    is two managers over one shared store file and must NOT share one baseline.
+    """
     repo = JsonStore(BookmarkStore, path_provider or _bookmarks_path_default)
-    return BookmarkManager(repo=repo)
+    baseline = FileCatalogBaselineStore(
+        baseline_path_provider or (lambda: config.CATALOG_BASELINE_FILE)
+    )
+    return BookmarkManager(repo=repo, catalog_baseline=baseline)
 
 
 def make_route_manager(path_provider=None) -> RouteManager:

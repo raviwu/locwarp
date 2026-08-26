@@ -94,7 +94,7 @@ def test_catalog_sync_first_call_adds_all(client, tmp_path, monkeypatch):
     resp = client.post("/api/bookmarks/catalog/sync")
     assert resp.status_code == 200
     body = resp.json()
-    assert body == {"added": 3, "updated": 0, "resurrected": 0}
+    assert body == {"added": 3, "updated": 0, "resurrected": 0, "kept_local": 0, "conflicts": 0}
 
 
 def test_catalog_sync_resurrects_after_delete(client, tmp_path, monkeypatch):

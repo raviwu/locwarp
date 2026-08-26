@@ -1,50 +1,47 @@
-"""Characterization tests pinning the two confirmed bookmark-revert hazards.
+"""The bookmark-revert acceptance tests: what E1 and F fixed, and what is left.
 
 Root-cause report: docs/superpowers/specs/2026-08-26-bookmark-revert-root-cause.md
 
-Design root cause (unchanged by these tests — they PIN today's behavior on
-purpose, they do not fix it):
-  - backend/domain/store_merge.py:41-52 merges whole records by comparing
+Design root cause (E1 and F both work UPSTREAM of it; neither changes it):
+  - backend/domain/store_merge.py merges whole records by comparing
     ``updated_at`` strings; there is no field-level merge.
-  - backend/services/bookmarks.py:419 unconditionally re-stamps
-    ``bm.updated_at = _now_iso()`` on every ``update_bookmark`` call, even
-    when the caller's copy of the record is stale.
+  - ``update_bookmark`` re-stamps ``bm.updated_at = _now_iso()`` on every call
+    that changes something, so a stale copy carrying a fresh timestamp beats a
+    newer copy carrying an older one.
 
-These two facts combine into two independently-triggerable hazards:
-  1. Catalog force-sync wholesale-overwrites every seed-* record
-     (backend/services/bookmarks.py:560-565, via ``import_catalog``).
-  2. A stale full-record PUT (e.g. from the Edit dialog re-submitting a
-     snapshot taken at dialog-open time) beats a fresher remote edit,
-     because the stale PUT gets a *newer* timestamp than the remote edit
-     simply by being submitted later in wall-clock time.
+The four tests here, in the order they appear:
 
-Test 2 below asserts TODAY'S (buggy) outcome and is expected to INVERT when
-fix E ships (catalog sync respects a local edit instead of always
-overwriting seed-* records) — do not delete it, it is the acceptance
-baseline fix E is measured against.
+  1. ``test_stale_whole_record_update_outranks_fresher_remote_copy`` — the
+     RESIDUAL hazard neither fix closes: two machines edit *different* fields
+     of one record between syncs, whole-record LWW takes the later save whole,
+     and the other machine's field is lost. Only per-field timestamps (change
+     G, deferred) would fix it. It stays red-flagged on purpose.
+  2. ``test_catalog_force_sync_preserves_local_rename`` — E1's acceptance test.
+     ``import_catalog`` resolves each field three ways against a per-machine
+     baseline (``domain/catalog_merge.py``) instead of overwriting seed-*
+     records wholesale, so a local rename survives a force-sync. The full E1
+     matrix lives in ``test_catalog_sync_three_way.py``.
+  3. ``test_api_put_omitting_address_field_leaves_it_unchanged`` — F's
+     acceptance test at the HTTP layer. The route takes a partial
+     ``BookmarkUpdate`` body, so a key the client omits is left alone instead
+     of arriving as ``Bookmark``'s schema default and blanking the field.
+  4. ``test_sparse_put_does_not_clobber_fresher_remote_field`` — F across two
+     machines: a sparse body no longer clobbers a field a peer changed, while
+     a client that explicitly sends every field still wins by LWW.
 
-Test 1 is a different shape, and a previous version of this docstring
-overclaimed what inverts it. Test 1 drives ``BookmarkManager.update_bookmark``
-DIRECTLY, at the SERVICE layer, with every field passed explicitly (never
-omitted) — it never goes through the HTTP route at all. Fix F, as scoped in
-the root-cause report, is an API-layer-only change (``api/bookmarks.py``
-gains a ``BookmarkUpdate`` model and forwards
-``bookmark.model_dump(exclude_unset=True)`` instead of every field); it does
-not touch ``update_bookmark``'s own allowed/``is not None`` loop, so fix F
-alone changes nothing Test 1 exercises and does NOT invert it. Test 1 instead
-pins the underlying SERVICE-level mechanism: the unconditional
-``bm.updated_at = _now_iso()`` re-stamp (services/bookmarks.py:419) combined
-with the whole-record strict-greater LWW (domain/store_merge.py:41-52). That
-would only flip if a future change makes the re-stamp itself conditional on
-an actual field diff, which fix F does not do. The test that fix F genuinely
-inverts is the new API-level one added below,
-``test_api_put_omitting_address_field_blanks_it_today`` — it drives the real
-``PUT /api/bookmarks/{id}`` route with a partial JSON body.
+Test 1 is a SERVICE-layer test and F cannot reach it: it calls
+``BookmarkManager.update_bookmark`` directly, and its staleness lives in
+manager A's in-memory record rather than in a request body. What does reach it
+is the no-op write guard shipped with F — a call whose values all match the
+stored record writes nothing — which is why manager A's call now carries one
+genuine field edit. That keeps it a test of the residual whole-record-LWW
+hazard rather than of the guard.
 """
 import json
 
 import pytest
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
 
 from bootstrap.factories import make_bookmark_manager
 from models.schemas import Bookmark
@@ -71,10 +68,9 @@ def _patch_paths(tmp_path, monkeypatch):
 
 
 def test_stale_whole_record_update_outranks_fresher_remote_copy(tmp_path, monkeypatch):
-    """HAZARD #2 (root-cause report § "1. Whole-record PUT carrying a stale
-    client snapshot — **PRIME SUSPECT**"): a stale PUT
-    re-stamps updated_at and therefore wins merge_stores against a fresher
-    remote rename, even though the remote rename happened first.
+    """RESIDUAL HAZARD: two machines edit different fields of one record
+    between syncs, and whole-record LWW takes the later save whole — so the
+    earlier machine's field is silently lost.
 
     Two BookmarkManager instances share one on-disk store file, mirroring
     Ravi's two-Mac iCloud-sync setup:
@@ -86,47 +82,27 @@ def test_stale_whole_record_update_outranks_fresher_remote_copy(tmp_path, monkey
                                           the same file -> also holds "old"
                                           update_bookmark(name="new") + save
                                           (disk now has "new", timestamp t_b)
-      update_bookmark(name="old", ...)   <- the HTTP PUT shape: full record,
-      + save                                built from A's STALE in-memory
-                                             copy, going through the real
-                                             services/bookmarks.py:419
-                                             re-stamp (timestamp t_a > t_b)
+      update_bookmark(address=...)       <- A edits a DIFFERENT field, never
+      + save                                having seen B's rename; its own
+                                             record still carries "old", and
+                                             the re-stamp makes it t_a > t_b
 
-    Expected (buggy, current) outcome: A's save wins the merge because
-    t_a > t_b, so the on-disk name reverts to "old" even though B's rename
-    to "new" was the newer *intent*. This test pins BOTH the outcome (final
-    name) and the mechanism (t_a > t_b) so it explains itself.
+    Outcome: A's save wins the merge because t_a > t_b, so the on-disk name
+    reverts to "old" even though B's rename to "new" was the newer *intent*.
+    This test pins BOTH the outcome (final name) and the mechanism (t_a > t_b)
+    so it explains itself.
 
-    This test calls ``BookmarkManager.update_bookmark`` DIRECTLY (the SERVICE
-    layer), passing `name` explicitly on every call — including A's stale
-    copy of it. It therefore does NOT go through the HTTP route at all, and
-    fix F (as scoped in the root-cause report: an API-layer change that makes
-    ``api/bookmarks.py`` forward only the keys the HTTP client actually sent)
-    changes nothing this test exercises. Fix F alone does NOT invert this
-    test.
+    Neither shipped fix reaches this. E1 is a catalog-sync rule, and F narrows
+    the request BODY while the staleness here lives in manager A's in-memory
+    record: ``update_bookmark`` mutates the object ``_find_bookmark`` returns —
+    A's own copy, which still holds "old" because A never reconciled after B's
+    save — so omitting ``name`` from the call changes nothing. Only per-field
+    timestamps (change G, deferred) would close it.
 
-    What this test actually pins is the SERVICE-level mechanism: the
-    unconditional ``bm.updated_at = _now_iso()`` re-stamp at
-    services/bookmarks.py:419, combined with the whole-record strict-greater
-    LWW in domain/store_merge.py:41-52. The two lines this test would need to
-    flip are ``assert on_disk_bm["name"] == "old"`` and
-    ``assert on_disk_bm["updated_at"] > b_result.updated_at`` below — and
-    they only flip if a future change makes that re-stamp conditional on an
-    actual field diff (e.g. skip the re-stamp, or skip applying a field,
-    when the incoming value matches what the manager already had before the
-    caller's snapshot went stale). That is a deeper change than fix F, which
-    touches only how the API layer builds the kwargs it passes into
-    ``update_bookmark`` — the loop inside ``update_bookmark`` itself is
-    unchanged by fix F.
-
-    A future engineer has two honest options here, not one:
-      (a) If the service-level re-stamp is ever made conditional, update
-          THIS test's two assertions above to match the new (fixed) outcome.
-      (b) Otherwise, leave this test alone — it keeps pinning the service
-          mechanism — and rely on the sibling API-level test added below,
-          ``test_api_put_omitting_address_field_blanks_it_today``, which
-          drives the real ``PUT /api/bookmarks/{id}`` route with a partial
-          JSON body. THAT is the test fix F is actually expected to invert.
+    A's call carries ``address="A's own edit"`` rather than re-sending its own
+    stored values: F's no-op write guard skips both the re-stamp and the save
+    when nothing differs, so a call that changed nothing would no longer reach
+    the merge at all. One genuine edit keeps this a test of whole-record LWW.
     """
     _patch_paths(tmp_path, monkeypatch)
     store_path = tmp_path / "bookmarks.json"
@@ -149,14 +125,15 @@ def test_stale_whole_record_update_outranks_fresher_remote_copy(tmp_path, monkey
     assert b_result is not None and b_result.name == "new"
 
     # Manager A never saw B's rename — it still holds the ORIGINAL snapshot
-    # from create_bookmark. This is exactly the full-record body an HTTP PUT
-    # built from a stale client-side copy would send.
+    # from create_bookmark, so its in-memory `name` is the stale "old". A edits
+    # a field B did not touch: that is a real write, which F's no-op guard
+    # therefore lets through, and it drags A's whole stale record to disk.
     a_result = mgr_a.update_bookmark(
         bm.id,
         name=bm.name,       # "old" -- stale
         lat=bm.lat,
         lng=bm.lng,
-        address=bm.address,
+        address="A's own edit",
         category_id=bm.category_id,
         country_code=bm.country_code,
     )
@@ -172,21 +149,24 @@ def test_stale_whole_record_update_outranks_fresher_remote_copy(tmp_path, monkey
     assert on_disk_bm["updated_at"] > b_result.updated_at
 
 
-def test_catalog_force_sync_discards_local_rename(tmp_path, monkeypatch):
-    """HAZARD #1 (root-cause report § "4. Catalog force-sync
-    wholesale-overwrites `seed-*` records"): import_catalog
-    unconditionally overwrites a locally-renamed seed-* bookmark back to the
-    bundled catalog's values, because _upsert_items (services/bookmarks.py:
-    559-566) overwrites name/lat/lng/category_id/country_code on any id
-    collision and force_seed_items stamps updated_at=now() so the catalog
-    copy always wins merge_stores.
+def test_catalog_force_sync_preserves_local_rename(tmp_path, monkeypatch):
+    """HAZARD #1, now closed by E1 (root-cause report § "4. Catalog force-sync
+    wholesale-overwrites `seed-*` records"): import_catalog resolves each
+    field against the local baseline instead of copying the catalog's values
+    wholesale, so a locally-renamed and locally-moved seed-* bookmark survives
+    a force-sync.
 
     Uses a small INLINE catalog payload constructed in this test, not the
     real backend/static/catalog.json (whose contents change over time).
 
-    Fix E (catalog sync respects local edits) is expected to INVERT this
-    assertion: a locally-renamed/moved seed-* bookmark should survive a
-    force-sync instead of being silently reverted.
+    This machine has no catalog_baseline.json, so the merge bootstraps
+    `base := theirs` for every field. The record therefore resolves as
+    ours != base, theirs == base for name/lat/lng — a pure local edit, not a
+    conflict: the values are kept, `kept_local` is 1 and `conflicts` is 0.
+    updated_at is left alone because none of §4.4's three re-stamp conditions
+    fires — nothing was taken from the catalog, the id has no tombstone, and
+    enrich_bookmark re-resolves the same coordinates the local move already
+    resolved, so it reports no change.
     """
     _patch_paths(tmp_path, monkeypatch)
 
@@ -249,39 +229,37 @@ def test_catalog_force_sync_discards_local_rename(tmp_path, monkeypatch):
     )
 
     result = mgr.import_catalog(catalog_payload)
+    # An id collision is still an "update", changed or not (plan Q4).
     assert result["updated"] >= 1
+    assert result["kept_local"] == 1
+    assert result["conflicts"] == 0
 
-    reverted = mgr._find_bookmark(seed.id)
-    assert reverted is not None
-    # Outcome: the local rename AND the local move are both discarded.
-    assert reverted.name == "Catalog Original"
-    assert reverted.lat == 25.0
-    assert reverted.lng == 121.0
-    assert reverted.category_id == "default"
-    # Mechanism: force_seed_items stamped a fresh updated_at, strictly newer
-    # than the local rename's, so the catalog copy always wins the merge.
-    assert reverted.updated_at > local_updated_at
+    preserved = mgr._find_bookmark(seed.id)
+    assert preserved is not None
+    # Outcome: the local rename AND the local move both survive.
+    assert preserved.name == "My Renamed Spot"
+    assert preserved.lat == 26.0
+    assert preserved.lng == 122.0
+    assert preserved.category_id == "default"  # unchanged on both sides here
+    # Mechanism: nothing was taken from the catalog, so the record is not
+    # re-stamped — a force-sync here cannot out-vote a fresher edit still
+    # un-synced on the other Mac.
+    assert preserved.updated_at == local_updated_at
 
 
-# ── API-level sibling of Test 1: the test fix F actually inverts ──────────
+# ── API-level sibling of Test 1: the test fix F actually inverted ─────────
 #
 # Test 1 above (test_stale_whole_record_update_outranks_fresher_remote_copy)
-# calls BookmarkManager.update_bookmark directly and always passes `name`
-# explicitly, so it pins the SERVICE-level mechanism and is untouched by an
-# API-only fix F (see that test's docstring). This test drives the real
-# FastAPI route instead, using the TestClient(main.app) pattern from
-# test_bookmarks_api.py's `client` fixture, and is the one fix F (root-cause
-# report § "1. Whole-record PUT carrying a stale client snapshot —
-# **PRIME SUSPECT**" → "Proposed fix (smallest correct change)") is expected
-# to invert: today, `Bookmark.address` defaults to `""` (models/schemas.py),
-# so a JSON body that simply OMITS "address" still arrives at the route as
-# address="" (Pydantic fills the default), which update_bookmark's
-# `value is not None` check happily applies — blanking a field the client
-# never touched. After fix F ships (the route accepts a partial
-# `BookmarkUpdate` and forwards only `model_dump(exclude_unset=True)`), an
-# omitted "address" key would leave the existing address alone and this
-# test's final assertion (`body["address"] == "existing address"`) would
-# flip.
+# calls BookmarkManager.update_bookmark directly, so it pins the SERVICE-level
+# mechanism and is out of F's reach (see that test's docstring). This test
+# drives the real FastAPI route instead, using the TestClient(main.app) pattern
+# from test_bookmarks_api.py's `client` fixture, and it is the one F inverted:
+# `Bookmark.address` defaults to `""` (models/schemas.py), so before F a JSON
+# body that simply OMITTED "address" still arrived at the route as address=""
+# (Pydantic filling the default), which update_bookmark's `value is not None`
+# check happily applied — blanking a field the client never touched. The route
+# now takes a partial `BookmarkUpdate` and forwards only the keys the client
+# actually sent.
 
 
 @pytest.fixture
@@ -295,17 +273,15 @@ def _api_client(tmp_path, monkeypatch):
     return TestClient(main.app)
 
 
-def test_api_put_omitting_address_field_blanks_it_today(_api_client):
-    """HAZARD #2, API layer (root-cause report § "1. Whole-record PUT
-    carrying a stale client snapshot — **PRIME SUSPECT**"): a PUT body that
-    omits a field the client never intended to touch still blanks it, because
-    ``Bookmark.address`` defaults to ``""`` and the route has no way to tell
-    "the client sent an empty string" apart from "the client sent nothing".
+def test_api_put_omitting_address_field_leaves_it_unchanged(_api_client):
+    """HAZARD #2, API layer, closed by F (root-cause report § "1. Whole-record
+    PUT carrying a stale client snapshot — **PRIME SUSPECT**"): a PUT body that
+    omits a field the client never intended to touch now leaves it alone.
 
-    Expected (buggy, current) outcome: the address is wiped even though the
-    PUT body never mentioned it. Fix F is expected to INVERT the final
-    assertion below (`body["address"] == "有地址"` instead of `== ""`), since
-    it changes the route to only apply keys the client actually sent.
+    The route's request model is ``BookmarkUpdate``, whose fields are all
+    optional, and it forwards only ``model_dump(exclude_unset=True)`` — so
+    "the client sent an empty string" and "the client sent nothing" are finally
+    distinguishable, and only the first one clears the field.
     """
     create_resp = _api_client.post(
         "/api/bookmarks",
@@ -323,5 +299,83 @@ def test_api_put_omitting_address_field_blanks_it_today(_api_client):
     assert put_resp.status_code == 200
     body = put_resp.json()
     assert body["name"] == "y"
-    # Outcome (buggy today): the never-mentioned address field is blanked.
-    assert body["address"] == ""
+    # Outcome: the never-mentioned address field survives untouched.
+    assert body["address"] == "有地址"
+
+
+def test_sparse_put_does_not_clobber_fresher_remote_field(tmp_path, monkeypatch):
+    """F across two machines: a sparse PUT no longer drags a stale name along.
+
+    This is the realistic topology, and it is NOT the one Test 1 pins. Each Mac
+    runs its own backend whose watcher reconciles the synced file, so by the
+    time the user presses Save that Mac's manager already holds the peer's
+    rename — the staleness lives only in the dialog snapshot in the browser.
+    So the manager HTTP serves here is built after B's save (it loads "new"),
+    and the only stale thing left is the request body.
+
+      Manager A                          Manager B
+      ────────────────────────────────   ────────────────────────────────
+      create_bookmark(name="old")
+                                          renames it to "new" and saves
+      serving = make_bookmark_manager()  <- reads "new" back off disk;
+      PUT {"address": ...}                  the sparse body never mentions
+                                             the name, so "new" survives
+
+    The second half is the retained characterization: a client that explicitly
+    sends every field still wins by LWW. That is correct behavior, not a bug —
+    F narrows what the client says, it does not second-guess what it means.
+    The store-level hazard that remains is Test 1's, and only change G closes
+    it.
+    """
+    _patch_paths(tmp_path, monkeypatch)
+    store_path = tmp_path / "bookmarks.json"
+
+    # The body below is parseable ONLY because the route now takes
+    # BookmarkUpdate. The persisted model still requires name/lat/lng, which is
+    # why this same body was a 422 before F — and why widening `Bookmark` would
+    # have been the wrong fix.
+    with pytest.raises(ValidationError):
+        Bookmark(**{"address": "Zhongshan Rd"})
+
+    mgr_a = make_bookmark_manager()
+    bm = mgr_a.create_bookmark(name="old", lat=25.0, lng=121.0, category_id="default")
+
+    mgr_b = make_bookmark_manager()
+    b_result = mgr_b.update_bookmark(bm.id, name="new")
+    assert b_result is not None and b_result.name == "new"
+
+    import main
+    serving = make_bookmark_manager()  # Mac A's backend after its watcher caught up
+    assert any(b.id == bm.id and b.name == "new" for b in serving.list_bookmarks())
+    monkeypatch.setattr(main.app_state, "bookmark_manager", serving)
+    client = TestClient(main.app)
+
+    # The user only edited the address, so only the address goes on the wire.
+    sparse_resp = client.put(f"/api/bookmarks/{bm.id}", json={"address": "Zhongshan Rd"})
+    assert sparse_resp.status_code == 200
+
+    on_disk = json.loads(store_path.read_text(encoding="utf-8"))
+    on_disk_bm = next(b for b in on_disk["bookmarks"] if b["id"] == bm.id)
+    assert on_disk_bm["name"] == "new"
+    assert on_disk_bm["address"] == "Zhongshan Rd"
+    # B's rename survives even though A's write is strictly newer -- which is
+    # the whole point: the sparse body had nothing to say about the name.
+    assert on_disk_bm["updated_at"] > b_result.updated_at
+
+    # Retained characterization: an explicit full body still wins by LWW.
+    full_resp = client.put(
+        f"/api/bookmarks/{bm.id}",
+        json={
+            "name": "old",
+            "lat": bm.lat,
+            "lng": bm.lng,
+            "address": bm.address,
+            "category_id": bm.category_id,
+            "country_code": bm.country_code,
+        },
+    )
+    assert full_resp.status_code == 200
+
+    on_disk = json.loads(store_path.read_text(encoding="utf-8"))
+    on_disk_bm = next(b for b in on_disk["bookmarks"] if b["id"] == bm.id)
+    assert on_disk_bm["name"] == "old"

@@ -23,10 +23,10 @@ interface DialogBookmark {
 interface EditBookmarkDialogProps {
   // The bookmark being edited (null => dialog closed). This is the LIVE
   // record — the parent re-derives it from its bookmarks list on every
-  // render, it is never a snapshot frozen at open time. Submit merges the
-  // edited fields over this so category + address survive the backend PUT,
-  // and so an untouched field picks up whatever changed on it concurrently
-  // (e.g. a rename synced in from another machine) instead of reverting it.
+  // render, it is never a snapshot frozen at open time. Only its `id` reaches
+  // the submitted patch; every other field is either typed by the user in
+  // this session or left off the wire entirely, so nothing here can revert a
+  // concurrent edit (e.g. a rename synced in from another machine).
   bookmark: DialogBookmark | null;
   name: string;
   // lat / lng as raw strings so the single 'lat, lng' field can hold partial
@@ -41,7 +41,7 @@ interface EditBookmarkDialogProps {
   onNameChange: (name: string) => void;
   onLatChange: (lat: string) => void;
   onLngChange: (lng: string) => void;
-  // Emits the SAME shape as the inline version: (id, { ...original, name, lat, lng }).
+  // Sparse by design: (id, { id, ...only the fields this session changed }).
   onSubmit: (id: string, patch: Partial<DialogBookmark>) => void;
   onClose: () => void;
 }
@@ -84,14 +84,12 @@ const EditBookmarkDialog: React.FC<EditBookmarkDialogProps> = ({
     if (!bookmark.id) { onClose(); return; }
     if (latDirty && (!Number.isFinite(latNum) || latNum < -90 || latNum > 90)) return;
     if (lngDirty && (!Number.isFinite(lngNum) || lngNum < -180 || lngNum > 180)) return;
-    // Backend PUT requires the full Bookmark shape, so merge over the LIVE
-    // record (never a snapshot frozen at open time). A field the user never
-    // touched in this session takes the record's CURRENT value — spread from
-    // `bookmark` and left alone — instead of whatever was seeded into local
-    // state when the dialog opened, which a concurrent edit (e.g. synced in
-    // from another machine) may have since made stale. Only a dirty field is
-    // overridden with what the user actually typed.
-    const patch: Partial<DialogBookmark> = { ...bookmark };
+    // Only the fields the user actually changed in this session go on the
+    // wire. The backend PUT is a partial update, so a field this patch omits
+    // is left exactly as stored — which is strictly stronger than re-sending
+    // the live record's value: an absent key cannot lose a race against a
+    // concurrent edit (e.g. one synced in from the other Mac) at all.
+    const patch: Partial<DialogBookmark> = { id: bookmark.id };
     if (nameDirty) patch.name = name.trim();
     if (latDirty) patch.lat = latNum;
     if (lngDirty) patch.lng = lngNum;

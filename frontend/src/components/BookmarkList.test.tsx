@@ -113,7 +113,7 @@ function makeProps(over: Partial<Record<string, any>> = {}) {
     onExportClick: undefined,
     catalogStatus: undefined,
     catalogNewCount: undefined,
-    catalogOverwriteCount: undefined,
+    catalogDivergedCount: undefined,
     catalogError: undefined,
     catalogRefreshing: undefined,
     onCatalogRefresh: undefined,
@@ -634,7 +634,7 @@ describe('BookmarkList custom-coordinate dialog state lifetime', () => {
   });
 });
 
-describe('BookmarkList edit dialog — live values for untouched fields (bookmark-revert fix)', () => {
+describe('BookmarkList edit dialog — untouched fields stay off the wire (bookmark-revert fix)', () => {
   // Self-contained wrapper so we can rerender with mutated `bookmarks` props
   // to simulate a concurrent iCloud-synced edit landing while the edit
   // dialog is open (mirrors the `wrapped` helper in the country-filter suite
@@ -664,7 +664,31 @@ describe('BookmarkList edit dialog — live values for untouched fields (bookmar
     ) as HTMLInputElement;
   }
 
-  it('submits the LIVE name (not the one captured at open time) when only coordinates were edited', async () => {
+  it('a rename-only edit sends only { name } to updateBookmark', async () => {
+    const onBookmarkEdit = vi.fn();
+    const categories = ['Default', 'Work'];
+    const bookmarks = makeBookmarks(2, categories);
+    render(wrapped(makeProps({ categories, bookmarks, onBookmarkEdit })));
+    await waitFor(() => expect(getBookmarkUiState).toHaveBeenCalledTimes(1));
+
+    openEditDialogFor('Place 0');
+    fireEvent.change(screen.getByPlaceholderText('bm.name_placeholder'), {
+      target: { value: 'Just Renamed' },
+    });
+    fireEvent.click(screen.getByText('generic.save'));
+
+    expect(onBookmarkEdit).toHaveBeenCalledTimes(1);
+    const [id, patch] = onBookmarkEdit.mock.calls[0];
+    expect(id).toBe('bm-0');
+    expect(patch.name).toBe('Just Renamed');
+    // Every field the user did not touch stays off the wire, so the backend
+    // PUT cannot revert any of them.
+    for (const k of ['lat', 'lng', 'category', 'category_id', 'address', 'country_code']) {
+      expect(patch).not.toHaveProperty(k);
+    }
+  });
+
+  it('omits the untouched name when only coordinates were edited', async () => {
     const onBookmarkEdit = vi.fn();
     const categories = ['Default', 'Work'];
     const bookmarks = makeBookmarks(2, categories); // bm-0 'Place 0', bm-1 'Place 1'
@@ -691,9 +715,9 @@ describe('BookmarkList edit dialog — live values for untouched fields (bookmar
     expect(onBookmarkEdit).toHaveBeenCalledTimes(1);
     const [id, patch] = onBookmarkEdit.mock.calls[0];
     expect(id).toBe('bm-0');
-    // The live name wins — the dialog never re-submits the name it captured
-    // at open time.
-    expect(patch.name).toBe('Renamed On Other Mac');
+    // The name is absent, not merely current: an omitted key cannot lose a
+    // race against the concurrent rename at all.
+    expect(patch).not.toHaveProperty('name');
     expect(patch.lat).toBe(25.5);
     expect(patch.lng).toBe(121.5);
   });
@@ -827,10 +851,11 @@ describe('BookmarkList edit dialog — live values for untouched fields (bookmar
     const [id, patch] = onBookmarkEdit.mock.calls[0];
     expect(id).toBe('bm-1');
     // If bm-0's leftover nameDirty had survived into this session, submit
-    // would force `patch.name` from the local text captured at THIS dialog's
-    // open time ('Place 1') instead of spreading bm-1's live current name —
-    // masking the very rename this session is supposed to pick up.
-    expect(patch.name).toBe('Renamed Bm1 On Other Mac');
+    // would put `patch.name` on the wire from the local text captured at THIS
+    // dialog's open time ('Place 1') — reverting the very rename this session
+    // is supposed to leave alone. The name being absent is what proves it did
+    // not leak.
+    expect(patch).not.toHaveProperty('name');
     expect(patch.lat).toBe(30);
     expect(patch.lng).toBe(130);
   });
@@ -869,7 +894,7 @@ describe('BookmarkList catalog refresh confirm dialog', () => {
     return makeProps({
       catalogStatus: 'ok',
       catalogNewCount: 3,
-      catalogOverwriteCount: 2,
+      catalogDivergedCount: 2,
       onCatalogRefresh: vi.fn(),
       ...over,
     });
@@ -894,17 +919,17 @@ describe('BookmarkList catalog refresh confirm dialog', () => {
     fireEvent.click(screen.getByText(/bm\.catalog\.refresh_count/));
 
     expect(screen.getByText('bm.catalog.confirm_added::{"n":3}')).toBeInTheDocument();
-    expect(screen.getByText('bm.catalog.confirm_overwrite::{"n":2}')).toBeInTheDocument();
+    expect(screen.getByText('bm.catalog.confirm_diverged::{"n":2}')).toBeInTheDocument();
   });
 
   it('shows the reassuring no-overwrite variant when the overwrite count is 0', async () => {
-    renderWithServices(<BookmarkList {...catalogProps({ catalogOverwriteCount: 0 })} />);
+    renderWithServices(<BookmarkList {...catalogProps({ catalogDivergedCount: 0 })} />);
     await waitFor(() => expect(getBookmarkUiState).toHaveBeenCalledTimes(1));
 
     fireEvent.click(screen.getByText(/bm\.catalog\.refresh_count/));
 
-    expect(screen.getByText('bm.catalog.confirm_no_overwrite')).toBeInTheDocument();
-    expect(screen.queryByText(/bm\.catalog\.confirm_overwrite::/)).toBeNull();
+    expect(screen.getByText('bm.catalog.confirm_no_diverged')).toBeInTheDocument();
+    expect(screen.queryByText(/bm\.catalog\.confirm_diverged::/)).toBeNull();
   });
 
   it('Cancel closes the dialog and calls no API', async () => {
@@ -929,5 +954,88 @@ describe('BookmarkList catalog refresh confirm dialog', () => {
 
     expect(onCatalogRefresh).toHaveBeenCalledTimes(1);
     expect(screen.queryByRole('dialog')).toBeNull();
+  });
+});
+
+describe('BookmarkList category edit dialog — untouched fields stay off the wire', () => {
+  // The category dialog used to seed its four fields at open and submit all
+  // four unconditionally, so renaming a category re-sent a stale colour and a
+  // stale date pair — the same revert vector the bookmark dialog had.
+  // 'Default' never gets an edit button, so with categories ['Default', cat]
+  // the manager panel renders exactly one — no need to disambiguate by row.
+  // The gear button TOGGLES the manager panel, so only open it when it is not
+  // already showing — a second session in the same test would close it again.
+  function openCategoryEdit() {
+    if (screen.queryByLabelText('bm.cat.edit_title') === null) {
+      fireEvent.click(screen.getByTitle('bm.manage_categories'));
+    }
+    fireEvent.click(screen.getByLabelText('bm.cat.edit_title'));
+  }
+
+  it('category edit submits only the fields the user touched', async () => {
+    const onCategoryEdit = vi.fn();
+    const categories = ['Default', 'Work'];
+    renderWithServices(
+      <BookmarkList
+        {...makeProps({
+          categories,
+          onCategoryEdit,
+          categoryColors: { Work: '#ef4444' },
+          categoryDates: { Work: { start_date: '2026-02-06', end_date: '2026-06-07' } },
+        })}
+      />,
+    );
+    await waitFor(() => expect(getBookmarkUiState).toHaveBeenCalledTimes(1));
+
+    openCategoryEdit();
+    fireEvent.change(screen.getByDisplayValue('Work'), { target: { value: 'Weekend' } });
+    fireEvent.click(screen.getByText('bm.cat.save'));
+
+    expect(onCategoryEdit).toHaveBeenCalledTimes(1);
+    const [oldName, patch] = onCategoryEdit.mock.calls[0];
+    expect(oldName).toBe('Work');
+    expect(patch.name).toBe('Weekend');
+    expect(patch).not.toHaveProperty('color');
+    expect(patch).not.toHaveProperty('start_date');
+    expect(patch).not.toHaveProperty('end_date');
+  });
+
+  it('sends only the colour when only a swatch was clicked', async () => {
+    const onCategoryEdit = vi.fn();
+    const categories = ['Default', 'Work'];
+    renderWithServices(
+      <BookmarkList {...makeProps({ categories, onCategoryEdit })} />,
+    );
+    await waitFor(() => expect(getBookmarkUiState).toHaveBeenCalledTimes(1));
+
+    openCategoryEdit();
+    fireEvent.click(screen.getByTitle('#22c55e'));
+    fireEvent.click(screen.getByText('bm.cat.save'));
+
+    const [, patch] = onCategoryEdit.mock.calls[0];
+    expect(patch.color).toBe('#22c55e');
+    expect(patch).not.toHaveProperty('name');
+  });
+
+  it('does not leak a dirty flag from one category session into the next', async () => {
+    const onCategoryEdit = vi.fn();
+    const categories = ['Default', 'Work'];
+    renderWithServices(
+      <BookmarkList {...makeProps({ categories, onCategoryEdit })} />,
+    );
+    await waitFor(() => expect(getBookmarkUiState).toHaveBeenCalledTimes(1));
+
+    // Session 1: rename, then close without saving.
+    openCategoryEdit();
+    fireEvent.change(screen.getByDisplayValue('Work'), { target: { value: 'Abandoned' } });
+    fireEvent.click(screen.getByText('generic.cancel'));
+
+    // Session 2: touch nothing, save. A leaked nameDirty would put the
+    // re-seeded 'Work' back on the wire.
+    openCategoryEdit();
+    fireEvent.click(screen.getByText('bm.cat.save'));
+
+    expect(onCategoryEdit).toHaveBeenCalledTimes(1);
+    expect(onCategoryEdit.mock.calls[0][1]).toEqual({});
   });
 });

@@ -870,7 +870,7 @@ const App: React.FC = () => {
   const catalogStatus = cat.catalogStatus
   const catalogError = cat.catalogError
   const catalogNewCount = cat.catalogNewCount
-  const catalogOverwriteCount = cat.catalogOverwriteCount
+  const catalogDivergedCount = cat.catalogDivergedCount
   const catalogRefreshing = cat.catalogRefreshing
 
   const handleCatalogRefresh = useCallback(async () => {
@@ -881,11 +881,22 @@ const App: React.FC = () => {
       const res = await catRef.current.refresh()
       if (!res) return
       await bmRef.current.refresh()
-      showToast(t('bm.catalog.synced', {
+      const summary = t('bm.catalog.synced', {
         added: res.added,
         updated: res.updated,
         resurrected: res.resurrected,
-      }))
+        kept_local: res.kept_local,
+      })
+      // Only the backend can see the baseline, so this is the one place the
+      // user learns a catalog correction was passed over in favour of an edit.
+      // It rides in the SAME toast: the toast is a single message slot, so a
+      // second showToast would replace the summary rather than follow it, and
+      // the conflict case is exactly when the kept-local count matters most.
+      // The toast container renders with white-space: pre-line, so the \n is a
+      // real second line.
+      showToast(res.conflicts > 0
+        ? `${summary}\n${t('bm.catalog.synced_conflicts', { n: res.conflicts })}`
+        : summary)
     } catch (err: unknown) {
       showToast(err instanceof Error ? err.message : t('bm.catalog.failed'))
     }
@@ -1086,17 +1097,21 @@ const App: React.FC = () => {
   const onBookmarkDelete = useCallback((id: string) => bm.deleteBookmark(id), [bm.deleteBookmark])
 
   const onBookmarkEdit = useCallback((id: string, data: any) => {
-    const orig = bm.bookmarks.find((b: any) => b.id === id)
-    const patch: any = orig ? { ...orig } : { ...data, id }
+    // Forward only what the caller actually sent. PUT /api/bookmarks/{id} is a
+    // partial update, so a key left out of the patch keeps its stored value —
+    // widening this back into a full record would re-send fields nobody
+    // touched and revert whatever changed on them in the meantime.
+    const patch: any = {}
     if (data.name != null) patch.name = data.name
     if (data.lat != null) patch.lat = data.lat
     if (data.lng != null) patch.lng = data.lng
+    // The list speaks category NAMES; the wire speaks ids.
     if (data.category != null) {
       const cat = bm.categories.find((c: any) => c.name === data.category)
       if (cat) patch.category_id = cat.id
     }
     bm.updateBookmark(id, patch)
-  }, [bm.bookmarks, bm.categories, bm.updateBookmark])
+  }, [bm.categories, bm.updateBookmark])
 
   const onCategoryAdd = useCallback(async (name: string) => {
     const palette = ['#ef4444', '#f97316', '#eab308', '#22c55e', '#14b8a6', '#3b82f6', '#6366f1', '#a855f7', '#ec4899', '#64748b']
@@ -1118,16 +1133,15 @@ const App: React.FC = () => {
     }
   }, [bm.categories, bm.deleteCategory, showToast, t])
 
-  const onCategoryEdit = useCallback((oldName: string, patch: any) => {
+  // The patch arrives sparse from the edit dialog — only the fields that
+  // session touched. Forward it as-is: widening it back into all four fields
+  // here would re-send the dialog's open-time snapshot and revert whatever the
+  // other Mac changed in the meantime.
+  const onCategoryEdit = useCallback((oldName: string, patch: { name?: string; color?: string; start_date?: string; end_date?: string }) => {
     const cat = bm.categories.find((c: any) => c.name === oldName)
     if (!cat) return
     if (cat.id === 'default') return
-    bm.updateCategory(cat.id, {
-      name: patch.name,
-      color: patch.color,
-      start_date: patch.start_date,
-      end_date: patch.end_date,
-    })
+    bm.updateCategory(cat.id, patch)
   }, [bm.categories, bm.updateCategory])
 
   const onCategoryDeleteCascade = useCallback(async (categoryId: string) => {
@@ -1302,7 +1316,7 @@ const App: React.FC = () => {
           onBookmarkImport={handleBookmarkImport}
           catalogStatus={catalogStatus}
           catalogNewCount={catalogNewCount}
-          catalogOverwriteCount={catalogOverwriteCount}
+          catalogDivergedCount={catalogDivergedCount}
           catalogError={catalogError}
           catalogRefreshing={catalogRefreshing}
           onCatalogRefresh={handleCatalogRefresh}

@@ -12,8 +12,8 @@ describe('i18n strings table — catalog refresh confirm dialog', () => {
   const DIALOG_KEYS = [
     'bm.catalog.confirm_title',
     'bm.catalog.confirm_added',
-    'bm.catalog.confirm_overwrite',
-    'bm.catalog.confirm_no_overwrite',
+    'bm.catalog.confirm_diverged',
+    'bm.catalog.confirm_no_diverged',
     'bm.catalog.confirm_button',
   ] as const
 

@@ -3,11 +3,13 @@ import { createPortal } from 'react-dom';
 import { useT } from '../i18n';
 import { COLOR_PALETTE } from '../utils/categoryColor';
 
+// Sparse by design: only the fields this dialog session actually changed. The
+// backend PUT is a partial update, so an absent key is left exactly as stored.
 interface CategoryEditPatch {
-  name: string;
-  color: string;
-  start_date: string;
-  end_date: string;
+  name?: string;
+  color?: string;
+  start_date?: string;
+  end_date?: string;
 }
 
 interface EditCategoryModalProps {
@@ -18,12 +20,20 @@ interface EditCategoryModalProps {
   color: string;
   startDate: string;
   endDate: string;
+  // Per-field dirty flags: true once the user has changed that field in this
+  // dialog session. They decide, per field, whether it ships at all — see
+  // handleSubmit.
+  nameDirty: boolean;
+  colorDirty: boolean;
+  startDateDirty: boolean;
+  endDateDirty: boolean;
   onNewNameChange: (name: string) => void;
   onColorChange: (color: string) => void;
   onStartDateChange: (date: string) => void;
   onEndDateChange: (date: string) => void;
   // Emits (originalName, patch) — same shape as onCategoryEdit. Only fires when
-  // the entry is valid (non-empty name, start <= end when both set).
+  // the entry is valid (non-empty name, start <= end when both set). The patch
+  // carries only the fields this session touched.
   onSubmit: (originalName: string, patch: CategoryEditPatch) => void;
   onClose: () => void;
 }
@@ -39,6 +49,10 @@ const EditCategoryModal: React.FC<EditCategoryModalProps> = ({
   color,
   startDate,
   endDate,
+  nameDirty,
+  colorDirty,
+  startDateDirty,
+  endDateDirty,
   onNewNameChange,
   onColorChange,
   onStartDateChange,
@@ -55,12 +69,17 @@ const EditCategoryModal: React.FC<EditCategoryModalProps> = ({
     const next = newName.trim();
     if (!next) return;
     if (datesInvalid) return;
-    onSubmit(categoryName, {
-      name: next,
-      color,
-      start_date: startDate,
-      end_date: endDate,
-    });
+    // Only the fields the user actually changed in this session go on the
+    // wire. An omitted key is left exactly as stored, which is strictly
+    // stronger than re-sending the value this dialog was seeded with: that
+    // seed is a snapshot taken at open time and can already be stale (the
+    // other Mac recolouring the category via iCloud sync mid-session).
+    const patch: CategoryEditPatch = {};
+    if (nameDirty) patch.name = next;
+    if (colorDirty) patch.color = color;
+    if (startDateDirty) patch.start_date = startDate;
+    if (endDateDirty) patch.end_date = endDate;
+    onSubmit(categoryName, patch);
     onClose();
   };
 

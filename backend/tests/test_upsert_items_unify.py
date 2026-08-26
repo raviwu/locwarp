@@ -47,7 +47,7 @@ def test_import_catalog_add_update_resurrect(manager):
     })
     first = manager.import_catalog(cat_payload)
     # 1 category + 1 bookmark are both new -> added counts BOTH (added_cats+added_bms).
-    assert first == {"added": 2, "updated": 0, "resurrected": 0}
+    assert first == {"added": 2, "updated": 0, "resurrected": 0, "kept_local": 0, "conflicts": 0}
     # Re-sync with a name+coord correction -> the existing ids are UPSERTED.
     cat_payload2 = json.dumps({
         "categories": [{"id": "seed-cat", "name": "Seed", "color": "#111111",
@@ -57,7 +57,7 @@ def test_import_catalog_add_update_resurrect(manager):
                        "last_used_at": ""}],
     })
     second = manager.import_catalog(cat_payload2)
-    assert second == {"added": 0, "updated": 2, "resurrected": 0}
+    assert second == {"added": 0, "updated": 2, "resurrected": 0, "kept_local": 0, "conflicts": 0}
     bm = next(b for b in manager.store.bookmarks if b.id == "seed-1")
     assert bm.name == "Corrected" and bm.lat == 9.0 and bm.lng == 8.0
 

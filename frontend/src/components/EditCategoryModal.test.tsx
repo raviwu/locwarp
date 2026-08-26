@@ -15,6 +15,10 @@ function makeProps(over: Partial<Record<string, any>> = {}) {
     color: '#6366f1',
     startDate: '',
     endDate: '',
+    nameDirty: false,
+    colorDirty: false,
+    startDateDirty: false,
+    endDateDirty: false,
     onNewNameChange: vi.fn(),
     onColorChange: vi.fn(),
     onStartDateChange: vi.fn(),
@@ -47,7 +51,7 @@ describe('EditCategoryModal', () => {
     expect(onColorChange).toHaveBeenCalledWith('#22c55e');
   });
 
-  it('submits (originalName, patch) with the current values on Save', () => {
+  it('submits (originalName, patch) with every DIRTY value on Save', () => {
     const onSubmit = vi.fn();
     render(
       <EditCategoryModal
@@ -57,6 +61,10 @@ describe('EditCategoryModal', () => {
           color: '#ef4444',
           startDate: '2026-01-01',
           endDate: '2026-12-31',
+          nameDirty: true,
+          colorDirty: true,
+          startDateDirty: true,
+          endDateDirty: true,
           onSubmit,
         })}
       />,
@@ -68,6 +76,36 @@ describe('EditCategoryModal', () => {
       start_date: '2026-01-01',
       end_date: '2026-12-31',
     });
+  });
+
+  it('leaves every UNTOUCHED field off the patch', () => {
+    const onSubmit = vi.fn();
+    render(
+      <EditCategoryModal
+        {...makeProps({
+          categoryName: 'Trips',
+          newName: 'Vacations',
+          color: '#ef4444',
+          startDate: '2026-01-01',
+          endDate: '2026-12-31',
+          nameDirty: true,
+          onSubmit,
+        })}
+      />,
+    );
+    fireEvent.click(screen.getByText('bm.cat.save'));
+    expect(onSubmit).toHaveBeenCalledWith('Trips', { name: 'Vacations' });
+  });
+
+  it('trims the typed name before putting it on the patch', () => {
+    const onSubmit = vi.fn();
+    render(
+      <EditCategoryModal
+        {...makeProps({ newName: '  Vacations  ', nameDirty: true, onSubmit })}
+      />,
+    );
+    fireEvent.click(screen.getByText('bm.cat.save'));
+    expect(onSubmit).toHaveBeenCalledWith('Trips', { name: 'Vacations' });
   });
 
   it('disables Save and does not submit when start > end', () => {

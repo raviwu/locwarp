@@ -14,7 +14,7 @@ LocWarp is a macOS/Windows desktop app that spoofs iOS device GPS: a **FastAPI b
 
 ### Backend rings (dependencies point inward only)
 
-`bootstrap/` (composition root — the ONLY ring allowed to import every other ring) → `api/` + `infra/` (outermost adapters) → `services/` (use-cases) → `core/` (engine + movers) → `domain/` (pure: `models/`, `events.py`, `movement.py`, `errors.py`, `store_merge.py`, `backup.py`, `ports/`).
+`bootstrap/` (composition root — the ONLY ring allowed to import every other ring) → `api/` + `infra/` (outermost adapters) → `services/` (use-cases) → `core/` (engine + movers) → `domain/` (pure: `models/`, `events.py`, `movement.py`, `errors.py`, `store_merge.py`, `backup.py`, `catalog_merge.py`, `ports/`). E1 (2026-08-26) added `domain/catalog_merge.py` + `domain/ports/catalog_baseline_repository.py` ← `infra/persistence/catalog_baseline_store.py`, built only at `bootstrap/factories.make_bookmark_manager`; every edge already existed in shape, so the contract count **stays 7**.
 
 Import bans (enforced as import-linter contracts — `7 kept, 0 broken`):
 - `domain/` imports stdlib + pydantic ONLY — never fastapi, httpx, asyncio I/O, pymobiledevice3, or any outer ring.
@@ -61,6 +61,11 @@ State the conclusion explicitly: reusing endpoint X / extending X with a paramet
 
 The bookmark and route stores are CRDT-style LWW-element-sets with tombstones (`backend/services/store_merge.py`). `merge_stores(a, b)` is the single merge primitive (commutative, idempotent), run inside `_save()` on every write against the on-disk copy. An item is alive iff there is no tombstone for its id with `deleted_at >= item.updated_at`. **An item with empty `updated_at = ""` always loses to a real-timestamp tombstone** — the source of "import succeeded but nothing changed" bugs. For catalog seeds / bulk imports, stamp `updated_at = now()` on incoming items (or use a force-sync path) so they win the merge. After the refactor this is encoded as `repository.force_seed()`. Tombstones GC after `TOMBSTONE_RETENTION_DAYS = 30`.
 
+**Two rules that work UPSTREAM of the merge (E1 + F, 2026-08-26).** `merge_stores` itself is unchanged — still whole-record LWW. Both rules shrink what reaches it, and both are the kind of invariant a later refactor would "simplify" away:
+
+- **The catalog force-sync resolves per field.** `import_catalog` compares `base` (the catalog values this machine last applied, `~/.locwarp/catalog_baseline.json` — local-only, never in `sync_folder`), `ours` and `theirs` via the pure `domain/catalog_merge.resolve_record`, and takes the catalog's value only for a field the user never edited. No baseline file ⇒ `base := theirs` per field, so every already-diverged value is preserved. The live record is re-stamped **only** when a field came from theirs, `enrich_bookmark` reported a change, or the id is in the tombstone set (in-memory **union** on-disk — otherwise an unstamped record dies to an unreconciled peer tombstone inside the same `_save()`). An unconditional re-stamp would make Refresh itself a revert trigger for the other Mac. `country_code` / `timezone` / `city` / `region` are not merged and the catalog never writes them onto an existing record — `enrich_bookmark` is their sole author. `import_json` / `force_seed` keep the blind-overwrite branch (`_upsert_items(resolver=None)`).
+- **`PUT` is a partial update, and a no-op `PUT` writes nothing.** `PUT /api/bookmarks/{id}` and `PUT /api/bookmarks/categories/{id}` take all-Optional request models forwarded as `model_dump(exclude_unset=True)`: an omitted key means "leave unchanged", `""` still clears, and `_validate_date_range` treats `None` like `""` (so an omitted date is a 200, not a 500). `update_bookmark` diffs before mutating and, when nothing differs, returns without re-stamping `updated_at` and without calling `_save()`. Deliberate asymmetry: `update_category` keeps its unconditional re-stamp.
+
 ---
 
 ## Local rotating backup (`~/.locwarp/backups/`)
@@ -84,7 +89,8 @@ Design: `docs/superpowers/specs/2026-06-22-bookmark-route-rotating-backup-design
   `restore_combined_snapshot`); per-store files via `make merge-bookmarks` / `make merge-routes`.
   `make backup` (`scripts/desktop_backup.py`) writes the same format and stays a manual tool.
 - **Test isolation:** `config.BACKUP_DIR` is redirected to tmp by the autouse
-  `conftest._isolate_real_data_paths` guard.
+  `conftest._isolate_real_data_paths` guard — extend it for any new `~/.locwarp` path.
+  `config.CATALOG_BASELINE_FILE` (the catalog three-way-merge baseline) is covered there too.
 
 ---
 

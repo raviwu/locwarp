@@ -122,7 +122,7 @@ export function useBookmarks() {
   )
 
   const updateCategory = useCallback(
-    async (id: string, data: api.CategoryPayload) => {
+    async (id: string, data: api.CategoryUpdatePayload) => {
       const updated = await api.updateCategory(id, data)
       await refresh()
       return updated

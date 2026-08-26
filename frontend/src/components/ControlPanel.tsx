@@ -107,9 +107,10 @@ interface ControlPanelProps {
   onBookmarkEdit: (id: string, bm: Partial<Bookmark>) => void;
   onCategoryAdd: (name: string) => void;
   onCategoryDelete: (name: string) => void;
+  // Sparse patch — see BookmarkList's own prop comment.
   onCategoryEdit?: (
     oldName: string,
-    patch: { name: string; color: string; start_date: string; end_date: string },
+    patch: { name?: string; color?: string; start_date?: string; end_date?: string },
   ) => void;
   categoryDates?: Record<string, { start_date: string; end_date: string }>;
   bookmarkShowOnMap?: boolean;
@@ -117,7 +118,7 @@ interface ControlPanelProps {
   onBookmarkImport?: (file: File) => Promise<void>;
   catalogStatus?: 'loading' | 'ok' | 'missing' | 'failed';
   catalogNewCount?: number;
-  catalogOverwriteCount?: number;
+  catalogDivergedCount?: number;
   catalogError?: string | null;
   catalogRefreshing?: boolean;
   onCatalogRefresh?: () => Promise<void> | void;
@@ -324,7 +325,7 @@ const ControlPanelInner: React.FC<ControlPanelProps> = ({
   onBookmarkImport,
   catalogStatus,
   catalogNewCount,
-  catalogOverwriteCount,
+  catalogDivergedCount,
   catalogError,
   catalogRefreshing,
   onCatalogRefresh,
@@ -1016,7 +1017,7 @@ const ControlPanelInner: React.FC<ControlPanelProps> = ({
                     onImport={onBookmarkImport}
                     catalogStatus={catalogStatus}
                     catalogNewCount={catalogNewCount}
-                    catalogOverwriteCount={catalogOverwriteCount}
+                    catalogDivergedCount={catalogDivergedCount}
                     catalogError={catalogError}
                     catalogRefreshing={catalogRefreshing}
                     onCatalogRefresh={onCatalogRefresh}

@@ -13,7 +13,7 @@ Project-specific instructions for Claude / agentic workers. Layered on top of `~
 **Why Pragmatic Hexagonal-lite, not strict L1–L4:** real clean architecture (inward-only rings, inner-owned ports, repository, composition-root DI, CI-enforced layering) **without** per-verb interactor classes, numbered `l1–l4` folders, or a presenter layer (`response_model` already serves that role). For a solo dev on real hardware, the strict form multiplies file count for substitutability we never use.
 
 **Backend rings — dependencies point inward only:**
-`bootstrap/` (composition root, the ONLY ring that imports every other ring) → `api/` + `infra/` (outermost adapters) → `services/` (use-cases) → `core/` (engine + movers) → `domain/` (pure: models, `events.py`, `movement.py`, `errors.py`, `store_merge.py`, `backup.py`, `ports/`).
+`bootstrap/` (composition root, the ONLY ring that imports every other ring) → `api/` + `infra/` (outermost adapters) → `services/` (use-cases) → `core/` (engine + movers) → `domain/` (pure: models, `events.py`, `movement.py`, `errors.py`, `store_merge.py`, `backup.py`, `catalog_merge.py`, `ports/`). E1 (2026-08-26) added `domain/catalog_merge.py` + `domain/ports/catalog_baseline_repository.py` ← `infra/persistence/catalog_baseline_store.py`, built only at `bootstrap/factories.make_bookmark_manager`; every edge already existed in shape, so the contract count **stays 7**.
 
 **Import bans (enforced as import-linter contracts — `7 kept, 0 broken`):**
 - `domain/` imports stdlib + pydantic ONLY — never fastapi, httpx, asyncio I/O, pymobiledevice3, or any outer ring.
@@ -82,6 +82,13 @@ The bookmark store and route store are CRDT-style LWW-element-sets with tombston
 
 Never assume "the item appears in `self.store.<list>` after my mutation, so it'll persist." It only persists if it survives the merge in `_save()`.
 
+### Two rules that work UPSTREAM of the merge (E1 + F, 2026-08-26)
+
+`merge_stores` itself is unchanged — still whole-record LWW. Both rules below shrink what reaches it, and both are the kind of invariant a later refactor would "simplify" away:
+
+- **The catalog force-sync resolves per field, not per record.** `import_catalog` compares three sides per field — `base` (the catalog values this machine last applied, `~/.locwarp/catalog_baseline.json`), `ours`, `theirs` — via the pure `domain/catalog_merge.resolve_record`, and only takes the catalog's value for a field the user never edited. The baseline is **local to one machine and never in `sync_folder`** (each Mac bootstraps its own; a synced baseline would itself need merge semantics). With no baseline file, `base := theirs` per field, so every already-diverged value is preserved. The live record is re-stamped **only** when a field came from theirs, `enrich_bookmark` reported a change, or the id is in the tombstone set (in-memory **union** on-disk — an unstamped record would otherwise be killed by an unreconciled peer tombstone inside the same `_save()`). An unconditional re-stamp would make Refresh itself a revert trigger for the other Mac. `country_code` / `timezone` / `city` / `region` are **not** merged and the catalog never writes them onto an existing record — `enrich_bookmark` is their sole author. `import_json` and `force_seed` keep the blind-overwrite branch (`_upsert_items(resolver=None)`).
+- **`PUT` is a partial update, and a no-op `PUT` writes nothing.** `PUT /api/bookmarks/{id}` takes `BookmarkUpdate` and `PUT /api/bookmarks/categories/{id}` takes `BookmarkCategoryUpdate` (all-Optional, forwarded as `model_dump(exclude_unset=True)`) — an omitted key means "leave unchanged", `""` still clears. `update_bookmark` diffs before mutating and, when nothing differs, returns without re-stamping `updated_at` and **without calling `_save()`**; a Save that changed nothing must never reach the merge carrying a fresh timestamp. Deliberate asymmetry: `update_category` keeps its unconditional re-stamp (no measured symptom), pinned by `test_put_category_with_an_empty_body_still_re_stamps`. `_validate_date_range` treats `None` (omitted) exactly like `""`, so an omitted date is a 200, not a 500.
+
 ---
 
 ## Local rotating backup (`~/.locwarp/backups/`)
@@ -113,6 +120,9 @@ Design: `docs/superpowers/specs/2026-06-22-bookmark-route-rotating-backup-design
   format/dir and stays a compatible on-demand tool; no launchd agent is installed.
 - **Test isolation:** `config.BACKUP_DIR` is redirected to a tmp dir by the autouse
   `conftest._isolate_real_data_paths` guard — extend that guard for any new `~/.locwarp` path.
+  `config.CATALOG_BASELINE_FILE` (the catalog three-way-merge baseline) is covered there too,
+  for the same reason: it is derived from `DATA_DIR` at import time, so patching `DATA_DIR`
+  alone would leave a catalog-sync test poisoning the user's real next force-sync.
 
 ---
 
@@ -171,6 +181,14 @@ The bundled curated event catalog. Source-of-truth for catalog-id entries (`seed
 - Each bookmark gets `id`, `name`, `lat`, `lng`, `category_id`, `country_code`, `created_at`, `last_used_at`
 - `_meta.source_notes` should list each event with its source URL and date range — this is the human-readable changelog for the seed file
 - `_meta.compiled_at` should be bumped on any data change
+
+**Editing a seed value no longer reaches every machine.** Since E1 the force-sync applies a
+corrected `name` / `lat` / `lng` / `address` / `category_id` only to records whose user has not
+edited that field locally; a field they did edit keeps the local value and is reported in the
+sync's `conflicts` count. What makes that distinction is `~/.locwarp/catalog_baseline.json`,
+which each machine writes after its own sync — so a machine that has never re-synced since the
+edit will read it as a local edit and pin it out. `country_code` in the seed is only ever applied
+on the ADD branch; on an existing record `enrich_bookmark` owns it.
 
 When ingesting coordinates from an external site:
 1. Prefer URL-embedded coordinates: `!3d<lat>!4d<lng>` > `?ll=<lat>,<lng>` > `/@<lat>,<lng>,...`

@@ -93,6 +93,17 @@ WIFI_ALIASES_FILE = DATA_DIR / "wifi_aliases.json"
 # Shape: JSON list of udid strings.
 STICKY_DENIED_FILE = DATA_DIR / "sticky_denied.json"
 
+# Snapshot of the catalog values this machine last applied, keyed by id. The
+# catalog force-sync reads it as the `base` of a three-way merge so it can tell
+# "the user edited this field" from "the catalog corrected this field", instead
+# of overwriting both alike.
+# Kept LOCAL under ~/.locwarp and NEVER in the iCloud sync_folder: each Mac must
+# bootstrap its own baseline independently and in any order, and a synced
+# baseline would itself need merge semantics. Reference config.CATALOG_BASELINE_FILE
+# lazily — never `from config import CATALOG_BASELINE_FILE` — so the test
+# isolation guard works.
+CATALOG_BASELINE_FILE = DATA_DIR / "catalog_baseline.json"
+
 # In-process rotating local backup of the live bookmark + route stores.
 # A lifespan-owned task snapshots every BACKUP_INTERVAL_S, archiving a
 # timestamped copy only on data change and pruning past BACKUP_RETENTION_HOURS.

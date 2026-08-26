@@ -364,7 +364,19 @@ export const routeOptimize = (
 // Bookmarks
 export const getBookmarks = () => request<any>('GET', '/api/bookmarks')
 export const createBookmark = (bm: any) => request<any>('POST', '/api/bookmarks', bm)
-export const updateBookmark = (id: string, bm: any) => request<any>('PUT', `/api/bookmarks/${id}`, bm)
+// Partial by design — mirrors the backend's BookmarkUpdate model: the PUT
+// applies only the keys the body carries, so an omitted field keeps its stored
+// value. Send an empty string to clear one.
+export interface BookmarkUpdatePayload {
+  name?: string;
+  lat?: number;
+  lng?: number;
+  address?: string;
+  category_id?: string;
+  country_code?: string;
+}
+export const updateBookmark = (id: string, bm: BookmarkUpdatePayload) =>
+  request<any>('PUT', `/api/bookmarks/${id}`, bm)
 export const deleteBookmark = (id: string) => request<any>('DELETE', `/api/bookmarks/${id}`)
 export const moveBookmarks = (ids: string[], catId: string) =>
   request<any>('POST', '/api/bookmarks/move', { bookmark_ids: ids, target_category_id: catId })
@@ -387,7 +399,17 @@ export const getCategories = () =>
   request<CategoryResponse[]>('GET', '/api/bookmarks/categories')
 export const createCategory = (cat: CategoryPayload) =>
   request<CategoryResponse>('POST', '/api/bookmarks/categories', cat)
-export const updateCategory = (id: string, cat: CategoryPayload) =>
+// Partial-update body: every field optional, mirroring the backend's
+// BookmarkCategoryUpdate. An omitted key leaves the stored value alone; ""
+// still clears a date.
+export interface CategoryUpdatePayload {
+  name?: string;
+  color?: string;
+  start_date?: string;
+  end_date?: string;
+}
+
+export const updateCategory = (id: string, cat: CategoryUpdatePayload) =>
   request<CategoryResponse>('PUT', `/api/bookmarks/categories/${id}`, cat)
 export const deleteCategory = (id: string, cascade = false) =>
   request<{ status: string; deleted_bookmarks: number }>(
@@ -458,12 +480,18 @@ export interface CatalogSyncResult {
   added: number;
   updated: number;
   resurrected: number;
+  // Records whose local edit was preserved over a differing catalog value,
+  // and the subset where the catalog had also moved. Mirrors the backend
+  // CatalogSyncResult response_model (backend/api/bookmarks.py).
+  kept_local: number;
+  conflicts: number;
 }
 
 // Force-syncs the bundled catalog into the local store. Unlike
 // importBookmarks (which goes through /import and skips duplicates),
 // this endpoint upserts catalog ids and resurrects locally-deleted
-// entries — see backend/services/bookmarks.py::import_catalog.
+// entries. Fields the user edited locally are kept — see
+// backend/services/bookmarks.py::import_catalog.
 export const syncCatalog = () =>
   request<CatalogSyncResult>('POST', '/api/bookmarks/catalog/sync')
 

@@ -699,17 +699,27 @@ export const STRINGS = {
   'bm.catalog.up_to_date':         { zh: '已是最新',                   en: 'Up to date' },
   'bm.catalog.up_to_date_tooltip': { zh: '無新活動可加入',             en: 'No new events available' },
   'bm.catalog.failed':             { zh: '更新失敗',                   en: 'Update failed' },
-  'bm.catalog.synced':             { zh: '已同步：新增 {added}・更新 {updated}・復原 {resurrected}',
-                                     en: 'Synced: {added} added · {updated} updated · {resurrected} restored' },
+  'bm.catalog.synced':             { zh: '已同步：新增 {added}・更新 {updated}・復原 {resurrected}・保留本地 {kept_local}',
+                                     en: 'Synced: {added} added · {updated} updated · {resurrected} restored · kept local {kept_local}' },
+  // Only shown when the sync passed over a catalog correction because the user
+  // had edited the same field. The count comes from the backend, which is the
+  // only side that can see the baseline.
+  'bm.catalog.synced_conflicts':   { zh: '{n} 筆同時有本地與清單變更，已保留你的版本',
+                                     en: '{n} entries had both local and catalog changes; kept yours' },
   // Legacy string for the pre-force-sync import path; kept for tests / log fallback.
   'bm.catalog.imported':           { zh: '已加入 {imported} 筆 (跳過 {skipped} 筆已存在)',
                                      en: 'Added {imported} entries ({skipped} already present, skipped)' },
   // — Catalog refresh confirm dialog (informed consent before force-sync) —
   'bm.catalog.confirm_title':      { zh: '更新公開活動清單',           en: 'Refresh public events' },
   'bm.catalog.confirm_added':      { zh: '將新增 {n} 筆新活動',        en: 'Will add {n} new events' },
-  'bm.catalog.confirm_overwrite':  { zh: '將覆蓋 {n} 筆既有活動書籤，其名稱、座標、分類、地址與國碼的本地修改將遺失',
-                                     en: 'Will overwrite {n} existing event bookmarks — local edits to their name, coordinates, category, address, and country will be lost' },
-  'bm.catalog.confirm_no_overwrite': { zh: '不會覆蓋任何既有書籤的本地修改', en: 'No existing bookmarks will be overwritten' },
+  // The count means "differs from the catalog", NOT "will be kept": the
+  // frontend compares ours vs theirs, while the backend rule is relative to a
+  // local baseline it never exposes. Both halves of this text are therefore
+  // true whichever way a given record resolves.
+  'bm.catalog.confirm_diverged':   { zh: '{n} 筆既有活動書籤與清單不同：你在本機改過的名稱、座標、分類或地址會保留，沒改過的欄位會更新為清單版本',
+                                     en: '{n} existing event bookmarks differ from the catalog — edits you made locally to name, coordinates, category or address are kept; fields you never edited are updated to the catalog value' },
+  'bm.catalog.confirm_no_diverged': { zh: '既有活動書籤都與清單一致，沒有本機修改需要保留',
+                                     en: 'All existing event bookmarks match the catalog — there are no local edits to keep' },
   'bm.catalog.confirm_button':     { zh: '更新',                       en: 'Refresh' },
   'bm.picker.end_event': { zh: '結束此活動 🗑', en: 'End event 🗑' },
   'bm.picker.end_event_disabled_cycling': { zh: '請先等本次拉金盆完成', en: 'Wait for the cycle to finish' },
