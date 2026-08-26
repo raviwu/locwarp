@@ -21,14 +21,23 @@ interface DialogBookmark {
 }
 
 interface EditBookmarkDialogProps {
-  // The bookmark being edited (null => dialog closed). Submit merges the edited
-  // fields over this so category + address survive the backend PUT.
+  // The bookmark being edited (null => dialog closed). This is the LIVE
+  // record — the parent re-derives it from its bookmarks list on every
+  // render, it is never a snapshot frozen at open time. Submit merges the
+  // edited fields over this so category + address survive the backend PUT,
+  // and so an untouched field picks up whatever changed on it concurrently
+  // (e.g. a rename synced in from another machine) instead of reverting it.
   bookmark: DialogBookmark | null;
   name: string;
   // lat / lng as raw strings so the single 'lat, lng' field can hold partial
   // input while the user types.
   lat: string;
   lng: string;
+  // Per-field dirty flags: true once the user has changed that field in this
+  // dialog session. Drives which value wins at submit time — see handleSubmit.
+  nameDirty: boolean;
+  latDirty: boolean;
+  lngDirty: boolean;
   onNameChange: (name: string) => void;
   onLatChange: (lat: string) => void;
   onLngChange: (lng: string) => void;
@@ -48,6 +57,9 @@ const EditBookmarkDialog: React.FC<EditBookmarkDialogProps> = ({
   name,
   lat,
   lng,
+  nameDirty,
+  latDirty,
+  lngDirty,
   onNameChange,
   onLatChange,
   onLngChange,
@@ -70,16 +82,20 @@ const EditBookmarkDialog: React.FC<EditBookmarkDialogProps> = ({
     const latNum = parseFloat(lat);
     const lngNum = parseFloat(lng);
     if (!bookmark.id) { onClose(); return; }
-    if (!Number.isFinite(latNum) || latNum < -90 || latNum > 90) return;
-    if (!Number.isFinite(lngNum) || lngNum < -180 || lngNum > 180) return;
-    // Backend PUT requires the full Bookmark shape, so merge the edits over the
-    // original to keep category + address.
-    onSubmit(bookmark.id, {
-      ...bookmark,
-      name: name.trim(),
-      lat: latNum,
-      lng: lngNum,
-    });
+    if (latDirty && (!Number.isFinite(latNum) || latNum < -90 || latNum > 90)) return;
+    if (lngDirty && (!Number.isFinite(lngNum) || lngNum < -180 || lngNum > 180)) return;
+    // Backend PUT requires the full Bookmark shape, so merge over the LIVE
+    // record (never a snapshot frozen at open time). A field the user never
+    // touched in this session takes the record's CURRENT value — spread from
+    // `bookmark` and left alone — instead of whatever was seeded into local
+    // state when the dialog opened, which a concurrent edit (e.g. synced in
+    // from another machine) may have since made stale. Only a dirty field is
+    // overridden with what the user actually typed.
+    const patch: Partial<DialogBookmark> = { ...bookmark };
+    if (nameDirty) patch.name = name.trim();
+    if (latDirty) patch.lat = latNum;
+    if (lngDirty) patch.lng = lngNum;
+    onSubmit(bookmark.id, patch);
     onClose();
   };
 

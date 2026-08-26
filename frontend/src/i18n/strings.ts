@@ -704,6 +704,13 @@ export const STRINGS = {
   // Legacy string for the pre-force-sync import path; kept for tests / log fallback.
   'bm.catalog.imported':           { zh: '已加入 {imported} 筆 (跳過 {skipped} 筆已存在)',
                                      en: 'Added {imported} entries ({skipped} already present, skipped)' },
+  // — Catalog refresh confirm dialog (informed consent before force-sync) —
+  'bm.catalog.confirm_title':      { zh: '更新公開活動清單',           en: 'Refresh public events' },
+  'bm.catalog.confirm_added':      { zh: '將新增 {n} 筆新活動',        en: 'Will add {n} new events' },
+  'bm.catalog.confirm_overwrite':  { zh: '將覆蓋 {n} 筆既有活動書籤，其名稱、座標、分類、地址與國碼的本地修改將遺失',
+                                     en: 'Will overwrite {n} existing event bookmarks — local edits to their name, coordinates, category, address, and country will be lost' },
+  'bm.catalog.confirm_no_overwrite': { zh: '不會覆蓋任何既有書籤的本地修改', en: 'No existing bookmarks will be overwritten' },
+  'bm.catalog.confirm_button':     { zh: '更新',                       en: 'Refresh' },
   'bm.picker.end_event': { zh: '結束此活動 🗑', en: 'End event 🗑' },
   'bm.picker.end_event_disabled_cycling': { zh: '請先等本次拉金盆完成', en: 'Wait for the cycle to finish' },
 

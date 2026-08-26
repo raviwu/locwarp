@@ -12,8 +12,13 @@ import {
 // i18n -> identity translator + a fixed language so the real BookmarkGeoLine
 // child (rendered, not mocked) can mount. Mirrors ControlPanel.test.tsx +
 // BookmarkGeoLine.test.tsx patterns.
+// t(key, vars) encodes vars into the returned string (rather than dropping
+// them, as a plain identity fn would) so tests that need to see an
+// interpolated count (e.g. the catalog refresh confirm dialog) can assert on
+// it without pulling in the real STRINGS table.
 vi.mock('../i18n', () => ({
-  useT: () => (key: string) => key,
+  useT: () => (key: string, vars?: Record<string, unknown>) =>
+    vars ? `${key}::${JSON.stringify(vars)}` : key,
   useI18n: () => ({ lang: 'en', setLang: vi.fn(), t: (k: string) => k }),
 }));
 
@@ -106,6 +111,12 @@ function makeProps(over: Partial<Record<string, any>> = {}) {
     onImport: undefined,
     onBulkPaste: undefined,
     onExportClick: undefined,
+    catalogStatus: undefined,
+    catalogNewCount: undefined,
+    catalogOverwriteCount: undefined,
+    catalogError: undefined,
+    catalogRefreshing: undefined,
+    onCatalogRefresh: undefined,
     ...over,
   } as any;
 }
@@ -620,5 +631,303 @@ describe('BookmarkList custom-coordinate dialog state lifetime', () => {
     expect(add.disabled).toBe(true);
     fireEvent.click(add);
     expect(onBookmarkAdd).not.toHaveBeenCalled();
+  });
+});
+
+describe('BookmarkList edit dialog — live values for untouched fields (bookmark-revert fix)', () => {
+  // Self-contained wrapper so we can rerender with mutated `bookmarks` props
+  // to simulate a concurrent iCloud-synced edit landing while the edit
+  // dialog is open (mirrors the `wrapped` helper in the country-filter suite
+  // above, which is scoped to its own describe block).
+  function wrapped(props: any) {
+    const api = {
+      getBookmarkUiState: (...a: any[]) => getBookmarkUiState(...a),
+      setBookmarkUiState: (...a: any[]) => setBookmarkUiState(...a),
+      reverseGeocode: (...a: any[]) => reverseGeocode(...a),
+    } as any;
+    return (
+      <ServicesProvider value={{ api, ws: createWsRouter(), sendMessage: vi.fn(), connected: true }}>
+        <BookmarkList {...props} />
+      </ServicesProvider>
+    );
+  }
+
+  function openEditDialogFor(name: string) {
+    const row = screen.getAllByText(name)[0].closest('.bookmark-item')!;
+    fireEvent.contextMenu(row);
+    fireEvent.click(screen.getByText('bm.edit'));
+  }
+
+  function coordField() {
+    return screen.getByPlaceholderText(
+      'bm.latlng_single_placeholder',
+    ) as HTMLInputElement;
+  }
+
+  it('submits the LIVE name (not the one captured at open time) when only coordinates were edited', async () => {
+    const onBookmarkEdit = vi.fn();
+    const categories = ['Default', 'Work'];
+    const bookmarks = makeBookmarks(2, categories); // bm-0 'Place 0', bm-1 'Place 1'
+    const { rerender } = render(
+      wrapped(makeProps({ categories, bookmarks, onBookmarkEdit })),
+    );
+    await waitFor(() => expect(getBookmarkUiState).toHaveBeenCalledTimes(1));
+
+    // Open the Edit dialog for bm-0 while its live name is still 'Place 0'.
+    openEditDialogFor('Place 0');
+    expect(screen.getByDisplayValue('Place 0')).toBeInTheDocument();
+
+    // The bookmark is renamed on the OTHER Mac and synced in — the bookmarks
+    // prop underneath the still-open dialog changes.
+    const renamed = bookmarks.map((b) =>
+      b.id === 'bm-0' ? { ...b, name: 'Renamed On Other Mac' } : b,
+    );
+    rerender(wrapped(makeProps({ categories, bookmarks: renamed, onBookmarkEdit })));
+
+    // Edit ONLY the coordinates in this dialog session — never touch name.
+    fireEvent.change(coordField(), { target: { value: '25.5, 121.5' } });
+    fireEvent.click(screen.getByText('generic.save'));
+
+    expect(onBookmarkEdit).toHaveBeenCalledTimes(1);
+    const [id, patch] = onBookmarkEdit.mock.calls[0];
+    expect(id).toBe('bm-0');
+    // The live name wins — the dialog never re-submits the name it captured
+    // at open time.
+    expect(patch.name).toBe('Renamed On Other Mac');
+    expect(patch.lat).toBe(25.5);
+    expect(patch.lng).toBe(121.5);
+  });
+
+  it('submits the typed name when the user DID edit it, even if the live record changed too', async () => {
+    const onBookmarkEdit = vi.fn();
+    const categories = ['Default', 'Work'];
+    const bookmarks = makeBookmarks(2, categories);
+    const { rerender } = render(
+      wrapped(makeProps({ categories, bookmarks, onBookmarkEdit })),
+    );
+    await waitFor(() => expect(getBookmarkUiState).toHaveBeenCalledTimes(1));
+
+    openEditDialogFor('Place 0');
+
+    const renamed = bookmarks.map((b) =>
+      b.id === 'bm-0' ? { ...b, name: 'Renamed On Other Mac' } : b,
+    );
+    rerender(wrapped(makeProps({ categories, bookmarks: renamed, onBookmarkEdit })));
+
+    // The user DOES edit the name field in this session — their typed value
+    // must win over both the stale open-time snapshot and the concurrent
+    // live rename.
+    fireEvent.change(screen.getByPlaceholderText('bm.name_placeholder'), {
+      target: { value: 'User Typed Name' },
+    });
+    fireEvent.click(screen.getByText('generic.save'));
+
+    expect(onBookmarkEdit).toHaveBeenCalledTimes(1);
+    const [id, patch] = onBookmarkEdit.mock.calls[0];
+    expect(id).toBe('bm-0');
+    expect(patch.name).toBe('User Typed Name');
+  });
+
+  it('closes the dialog without submitting when the record is deleted elsewhere while open', async () => {
+    const onBookmarkEdit = vi.fn();
+    const categories = ['Default', 'Work'];
+    const bookmarks = makeBookmarks(2, categories);
+    const { rerender } = render(
+      wrapped(makeProps({ categories, bookmarks, onBookmarkEdit })),
+    );
+    await waitFor(() => expect(getBookmarkUiState).toHaveBeenCalledTimes(1));
+
+    openEditDialogFor('Place 0');
+    expect(screen.getByText('bm.edit')).toBeInTheDocument();
+
+    // bm-0 is deleted on the other Mac and the deletion syncs in.
+    const withoutBm0 = bookmarks.filter((b) => b.id !== 'bm-0');
+    rerender(wrapped(makeProps({ categories, bookmarks: withoutBm0, onBookmarkEdit })));
+
+    await waitFor(() =>
+      expect(screen.queryByPlaceholderText('bm.name_placeholder')).toBeNull(),
+    );
+    expect(onBookmarkEdit).not.toHaveBeenCalled();
+  });
+
+  // ---------------------------------------------------------------------------
+  // C2: the vanished-record effect must actually clear editDialogId, not just
+  // let EditBookmarkDialog render null while a stale id lingers in state. The
+  // test above can't tell the two apart (both make the dialog disappear when
+  // the record vanishes) — this one re-adds the record and asserts the
+  // dialog stays closed, which only holds if editDialogId was truly dropped.
+  // ---------------------------------------------------------------------------
+  it('drops the stale id when its record vanishes, so the dialog does not silently reopen if the id reappears', async () => {
+    const onBookmarkEdit = vi.fn();
+    const categories = ['Default', 'Work'];
+    const bookmarks = makeBookmarks(2, categories);
+    const { rerender } = render(
+      wrapped(makeProps({ categories, bookmarks, onBookmarkEdit })),
+    );
+    await waitFor(() => expect(getBookmarkUiState).toHaveBeenCalledTimes(1));
+
+    openEditDialogFor('Place 0');
+    expect(screen.getByPlaceholderText('bm.name_placeholder')).toBeInTheDocument();
+
+    // bm-0 deleted elsewhere; the dialog disappears (as above).
+    const withoutBm0 = bookmarks.filter((b) => b.id !== 'bm-0');
+    rerender(wrapped(makeProps({ categories, bookmarks: withoutBm0, onBookmarkEdit })));
+    await waitFor(() =>
+      expect(screen.queryByPlaceholderText('bm.name_placeholder')).toBeNull(),
+    );
+
+    // bm-0 reappears with the SAME id (e.g. the delete/re-add raced, or a
+    // later sync restored it). If editDialogId had merely been left stale
+    // while the dialog rendered null off a live `bookmark == null` check,
+    // it would resolve to the reappeared record here and the dialog would
+    // silently pop back open with no user action. It must stay closed.
+    rerender(wrapped(makeProps({ categories, bookmarks, onBookmarkEdit })));
+    await screen.findByText('Place 0');
+    expect(screen.queryByPlaceholderText('bm.name_placeholder')).toBeNull();
+    expect(onBookmarkEdit).not.toHaveBeenCalled();
+  });
+
+  // ---------------------------------------------------------------------------
+  // C1: the per-field dirty flags must be reset on EVERY dialog open, not
+  // just cleared once at mount. A leftover `nameDirty=true` from a prior
+  // session (opened on a different bookmark, then cancelled without
+  // submitting) must never survive into the next session and override that
+  // session's live value.
+  // ---------------------------------------------------------------------------
+  it('does not leak a dirty flag from a cancelled session into the next dialog open', async () => {
+    const onBookmarkEdit = vi.fn();
+    const categories = ['Default', 'Work'];
+    const bookmarks = makeBookmarks(2, categories); // bm-0 'Place 0', bm-1 'Place 1'
+    const { rerender } = render(
+      wrapped(makeProps({ categories, bookmarks, onBookmarkEdit })),
+    );
+    await waitFor(() => expect(getBookmarkUiState).toHaveBeenCalledTimes(1));
+
+    // Open bm-0's dialog, dirty its name field, then cancel without saving.
+    openEditDialogFor('Place 0');
+    fireEvent.change(screen.getByPlaceholderText('bm.name_placeholder'), {
+      target: { value: 'Stale Name From Bm0 Session' },
+    });
+    fireEvent.click(screen.getByText('generic.cancel'));
+
+    // Open bm-1's dialog. Never touch its name field this session.
+    openEditDialogFor('Place 1');
+
+    // bm-1 is renamed on the other Mac while THIS dialog is open.
+    const renamed = bookmarks.map((b) =>
+      b.id === 'bm-1' ? { ...b, name: 'Renamed Bm1 On Other Mac' } : b,
+    );
+    rerender(wrapped(makeProps({ categories, bookmarks: renamed, onBookmarkEdit })));
+
+    // Edit ONLY coordinates in this session.
+    fireEvent.change(coordField(), { target: { value: '30, 130' } });
+    fireEvent.click(screen.getByText('generic.save'));
+
+    expect(onBookmarkEdit).toHaveBeenCalledTimes(1);
+    const [id, patch] = onBookmarkEdit.mock.calls[0];
+    expect(id).toBe('bm-1');
+    // If bm-0's leftover nameDirty had survived into this session, submit
+    // would force `patch.name` from the local text captured at THIS dialog's
+    // open time ('Place 1') instead of spreading bm-1's live current name —
+    // masking the very rename this session is supposed to pick up.
+    expect(patch.name).toBe('Renamed Bm1 On Other Mac');
+    expect(patch.lat).toBe(30);
+    expect(patch.lng).toBe(130);
+  });
+
+  // ---------------------------------------------------------------------------
+  // C3: an id-less bookmark (the `id` field on this component's Bookmark
+  // interface is optional) must not silently pop a dialog whose Save then
+  // discards. In practice every bookmark reaching this list comes from the
+  // backend GET response, which always stamps a real string id (possibly
+  // "" for a hand-imported record missing one, but never `undefined`) — see
+  // the comment at the onEdit call site. This pins that: Edit is a no-op
+  // when `id` is genuinely absent from the object.
+  // ---------------------------------------------------------------------------
+  it('does not open the edit dialog for a bookmark with no id at all', async () => {
+    const onBookmarkEdit = vi.fn();
+    const categories = ['Default'];
+    const bookmarks = [
+      { name: 'No Id Place', lat: 1, lng: 2, category: 'Default' },
+    ];
+    render(wrapped(makeProps({ categories, bookmarks, onBookmarkEdit })));
+    await waitFor(() => expect(getBookmarkUiState).toHaveBeenCalledTimes(1));
+
+    openEditDialogFor('No Id Place');
+    expect(screen.queryByPlaceholderText('bm.name_placeholder')).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Catalog refresh confirm dialog (informed consent before force-sync). The
+// Refresh button must open a confirm dialog showing both the new-entry count
+// and the overwrite count instead of calling onCatalogRefresh directly; only
+// Confirm calls it (exactly once), Cancel is a no-op.
+// ---------------------------------------------------------------------------
+describe('BookmarkList catalog refresh confirm dialog', () => {
+  function catalogProps(over: Partial<Record<string, any>> = {}) {
+    return makeProps({
+      catalogStatus: 'ok',
+      catalogNewCount: 3,
+      catalogOverwriteCount: 2,
+      onCatalogRefresh: vi.fn(),
+      ...over,
+    });
+  }
+
+  it('clicking Refresh opens the confirm dialog without calling the API', async () => {
+    const onCatalogRefresh = vi.fn();
+    renderWithServices(<BookmarkList {...catalogProps({ onCatalogRefresh })} />);
+    await waitFor(() => expect(getBookmarkUiState).toHaveBeenCalledTimes(1));
+
+    expect(screen.queryByRole('dialog')).toBeNull();
+    fireEvent.click(screen.getByText(/bm\.catalog\.refresh_count/));
+
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    expect(onCatalogRefresh).not.toHaveBeenCalled();
+  });
+
+  it('shows both the new count and the overwrite count', async () => {
+    renderWithServices(<BookmarkList {...catalogProps()} />);
+    await waitFor(() => expect(getBookmarkUiState).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getByText(/bm\.catalog\.refresh_count/));
+
+    expect(screen.getByText('bm.catalog.confirm_added::{"n":3}')).toBeInTheDocument();
+    expect(screen.getByText('bm.catalog.confirm_overwrite::{"n":2}')).toBeInTheDocument();
+  });
+
+  it('shows the reassuring no-overwrite variant when the overwrite count is 0', async () => {
+    renderWithServices(<BookmarkList {...catalogProps({ catalogOverwriteCount: 0 })} />);
+    await waitFor(() => expect(getBookmarkUiState).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getByText(/bm\.catalog\.refresh_count/));
+
+    expect(screen.getByText('bm.catalog.confirm_no_overwrite')).toBeInTheDocument();
+    expect(screen.queryByText(/bm\.catalog\.confirm_overwrite::/)).toBeNull();
+  });
+
+  it('Cancel closes the dialog and calls no API', async () => {
+    const onCatalogRefresh = vi.fn();
+    renderWithServices(<BookmarkList {...catalogProps({ onCatalogRefresh })} />);
+    await waitFor(() => expect(getBookmarkUiState).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getByText(/bm\.catalog\.refresh_count/));
+    fireEvent.click(screen.getByText('generic.cancel'));
+
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(onCatalogRefresh).not.toHaveBeenCalled();
+  });
+
+  it('Confirm calls the refresh path exactly once', async () => {
+    const onCatalogRefresh = vi.fn();
+    renderWithServices(<BookmarkList {...catalogProps({ onCatalogRefresh })} />);
+    await waitFor(() => expect(getBookmarkUiState).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getByText(/bm\.catalog\.refresh_count/));
+    fireEvent.click(screen.getByText('bm.catalog.confirm_button'));
+
+    expect(onCatalogRefresh).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('dialog')).toBeNull();
   });
 });

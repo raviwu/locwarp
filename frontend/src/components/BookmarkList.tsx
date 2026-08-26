@@ -1,10 +1,11 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { BookmarkRow } from './BookmarkRow';
 import { CategorySection } from './CategorySection';
 import BookmarkContextMenu from './BookmarkContextMenu';
 import AddBookmarkDialog from './AddBookmarkDialog';
 import CustomBookmarkDialog from './CustomBookmarkDialog';
 import EditBookmarkDialog from './EditBookmarkDialog';
+import CatalogRefreshConfirmDialog from './CatalogRefreshConfirmDialog';
 import EditCategoryModal from './EditCategoryModal';
 import CategoryManagerPanel from './CategoryManagerPanel';
 import { useT, useI18n } from '../i18n';
@@ -87,6 +88,10 @@ interface BookmarkListProps {
   // hides the button entirely.
   catalogStatus?: 'loading' | 'ok' | 'missing' | 'failed';
   catalogNewCount?: number;
+  // Existing catalog-seeded bookmarks the refresh would overwrite (name/lat/
+  // lng/category_id diverged from the bundled value). Drives the confirm
+  // dialog's copy; see CatalogRefreshConfirmDialog.
+  catalogOverwriteCount?: number;
   catalogError?: string | null;
   catalogRefreshing?: boolean;
   onCatalogRefresh?: () => Promise<void> | void;
@@ -127,6 +132,7 @@ const BookmarkList: React.FC<BookmarkListProps> = ({
   onImport,
   catalogStatus,
   catalogNewCount,
+  catalogOverwriteCount,
   catalogError,
   catalogRefreshing,
   onCatalogRefresh,
@@ -191,10 +197,41 @@ const BookmarkList: React.FC<BookmarkListProps> = ({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
   // Full edit dialog (name + lat + lng) — triggered by context menu "Edit".
-  const [editDialog, setEditDialog] = useState<Bookmark | null>(null);
+  // Stores only the id, never a frozen Bookmark snapshot: the record is
+  // derived from the live `bookmarks` prop on every render below, so a
+  // concurrent edit (another Mac renaming the bookmark via iCloud sync while
+  // this dialog is open) is picked up instead of being silently overwritten
+  // by a stale snapshot at submit time.
+  const [editDialogId, setEditDialogId] = useState<string | null>(null);
   const [editDialogName, setEditDialogName] = useState('');
   const [editDialogLat, setEditDialogLat] = useState('');
   const [editDialogLng, setEditDialogLng] = useState('');
+  // Per-field dirty tracking: a field only becomes dirty once the user
+  // actually changes it in this dialog session. Reset to false whenever the
+  // dialog (re)opens on an id. Consulted at submit time (EditBookmarkDialog)
+  // to decide, per field, between the user's typed value and the live
+  // record's current value.
+  const [editDialogNameDirty, setEditDialogNameDirty] = useState(false);
+  const [editDialogLatDirty, setEditDialogLatDirty] = useState(false);
+  const [editDialogLngDirty, setEditDialogLngDirty] = useState(false);
+  // Live record for the dialog: re-looked-up against `bookmarks` on every
+  // render, never frozen at open time.
+  const editDialogBookmark =
+    editDialogId != null
+      ? bookmarks.find((b) => b.id === editDialogId) ?? null
+      : null;
+  // The record vanished from the live list while the dialog was open (e.g.
+  // deleted on the other Mac) — close cleanly instead of submitting a write
+  // against a record that no longer exists.
+  useEffect(() => {
+    if (editDialogId != null && editDialogBookmark == null) {
+      setEditDialogId(null);
+    }
+  }, [editDialogId, editDialogBookmark]);
+  // Informed-consent gate in front of the catalog force-sync — see
+  // CatalogRefreshConfirmDialog. Opened by the Refresh button instead of
+  // calling onCatalogRefresh directly; Confirm calls it exactly once.
+  const [showCatalogConfirm, setShowCatalogConfirm] = useState(false);
   const [showCustomDialog, setShowCustomDialog] = useState(false);
   const [customName, setCustomName] = useState('');
   const [customLat, setCustomLat] = useState('');
@@ -452,7 +489,7 @@ const BookmarkList: React.FC<BookmarkListProps> = ({
           return (
             <button
               className="action-btn"
-              onClick={() => { void onCatalogRefresh(); }}
+              onClick={() => setShowCatalogConfirm(true)}
               disabled={disabled}
               title={title || undefined}
               style={{ padding: '3px 8px', fontSize: 12, opacity: disabled ? 0.5 : 1 }}
@@ -912,10 +949,24 @@ const BookmarkList: React.FC<BookmarkListProps> = ({
           onSetAsGoldDittoA={onSetAsGoldDittoA}
           onAddWaypoint={onAddWaypoint}
           onEdit={(bm) => {
-            setEditDialog(bm);
+            // `bm.id ?? null` is a type-narrowing guard, not a behavior
+            // change: the `id` field on this component's Bookmark interface
+            // is typed optional, but every bookmark actually reaching this
+            // list comes from the backend GET response (useBookmarks.refresh,
+            // never an optimistic local insert), where the Pydantic model
+            // defaults `id` to `""` — a real string, never `undefined`. An
+            // id="" record (reachable only via a hand-crafted /import payload
+            // that omits "id") still round-trips through `?? null` unchanged
+            // and the dialog opens on it exactly as before this guard existed;
+            // its Save button silently discarding on submit is a pre-existing
+            // EditBookmarkDialog behavior this line does not touch.
+            setEditDialogId(bm.id ?? null);
             setEditDialogName(bm.name);
             setEditDialogLat(bm.lat.toString());
             setEditDialogLng(bm.lng.toString());
+            setEditDialogNameDirty(false);
+            setEditDialogLatDirty(false);
+            setEditDialogLngDirty(false);
           }}
           onCopy={async (bm) => {
             const text = `${bm.name} ${bm.lat.toFixed(6)}, ${bm.lng.toFixed(6)}`;
@@ -945,17 +996,23 @@ const BookmarkList: React.FC<BookmarkListProps> = ({
         />
       )}
 
-      {/* Edit dialog — name + lat + lng */}
+      {/* Edit dialog — name + lat + lng. `bookmark` is the LIVE record
+          (re-derived from the `bookmarks` prop above), not a snapshot frozen
+          at open time; the dirty flags tell it which fields to take from the
+          user's typed state vs. from that live record at submit time. */}
       <EditBookmarkDialog
-        bookmark={editDialog}
+        bookmark={editDialogBookmark}
         name={editDialogName}
         lat={editDialogLat}
         lng={editDialogLng}
-        onNameChange={setEditDialogName}
-        onLatChange={setEditDialogLat}
-        onLngChange={setEditDialogLng}
+        nameDirty={editDialogNameDirty}
+        latDirty={editDialogLatDirty}
+        lngDirty={editDialogLngDirty}
+        onNameChange={(v) => { setEditDialogName(v); setEditDialogNameDirty(true); }}
+        onLatChange={(v) => { setEditDialogLat(v); setEditDialogLatDirty(true); }}
+        onLngChange={(v) => { setEditDialogLng(v); setEditDialogLngDirty(true); }}
         onSubmit={onBookmarkEdit}
-        onClose={() => setEditDialog(null)}
+        onClose={() => setEditDialogId(null)}
       />
 
       <CustomBookmarkDialog
@@ -977,6 +1034,19 @@ const BookmarkList: React.FC<BookmarkListProps> = ({
         }}
         onClose={() => setShowCustomDialog(false)}
       />
+
+      {onCatalogRefresh && (
+        <CatalogRefreshConfirmDialog
+          open={showCatalogConfirm}
+          newCount={catalogNewCount ?? 0}
+          overwriteCount={catalogOverwriteCount ?? 0}
+          onConfirm={() => {
+            setShowCatalogConfirm(false);
+            void onCatalogRefresh();
+          }}
+          onClose={() => setShowCatalogConfirm(false)}
+        />
+      )}
     </div>
   );
 };

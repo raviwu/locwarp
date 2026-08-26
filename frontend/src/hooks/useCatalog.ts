@@ -11,8 +11,13 @@ import { HttpError, type CatalogPayload, type CatalogSyncResult } from '../servi
 //
 // The catalog is fetched once on mount. `catalogNewCount` diffs the catalog
 // against the current bookmarks (passed in from useBookmarks) so the Library
-// header can show how many seed entries are not yet imported. `refresh` runs the
-// authoritative force-sync (api.syncCatalog) behind a re-entrancy guard.
+// header can show how many seed entries are not yet imported. `catalogOverwriteCount`
+// diffs the same pair the other direction: existing bookmarks whose id IS already
+// in the catalog but whose name/lat/lng/category_id/address/country_code has
+// drifted from the bundled value — i.e. every field backend/services/bookmarks.py
+// _upsert_items overwrites on an update, so what a force-sync would silently
+// clobber. `refresh` runs the authoritative force-sync (api.syncCatalog) behind
+// a re-entrancy guard.
 //
 // Toasts + i18n + the post-sync bookmark refresh stay in App: `refresh` returns
 // the sync result and throws on failure so App keeps full control over the
@@ -20,7 +25,23 @@ import { HttpError, type CatalogPayload, type CatalogSyncResult } from '../servi
 // matching the useRoutes convention.
 type CatalogStatus = 'loading' | 'ok' | 'missing' | 'failed'
 
-export function useCatalog(api: ApiGateway, bookmarks: Array<{ id: string }>) {
+// Mirrors backend domain/coords.py::round_coord (COORD_PRECISION = 7) so a
+// bookmark that only differs from the catalog past the store's own rounding
+// precision isn't reported as locally-edited.
+const COORD_PRECISION = 7
+const roundCoord = (v: number) => Math.round(v * 10 ** COORD_PRECISION) / 10 ** COORD_PRECISION
+
+interface CatalogDiffBookmark {
+  id: string;
+  name?: string;
+  lat?: number;
+  lng?: number;
+  category_id?: string;
+  address?: string;
+  country_code?: string;
+}
+
+export function useCatalog(api: ApiGateway, bookmarks: Array<CatalogDiffBookmark>) {
   const [catalog, setCatalog] = useState<CatalogPayload | null>(null)
   const [catalogStatus, setCatalogStatus] = useState<CatalogStatus>('loading')
   const [catalogError, setCatalogError] = useState<string | null>(null)
@@ -55,6 +76,44 @@ export function useCatalog(api: ApiGateway, bookmarks: Array<{ id: string }>) {
     return catalog.bookmarks.filter((cb) => !existingIds.has(cb.id)).length
   }, [catalog, bookmarks])
 
+  // Existing bookmarks a force-sync would overwrite: id already present in the
+  // catalog AND any field backend _upsert_items overwrites on update
+  // (name/lat/lng/category_id/address/country_code) has diverged from the
+  // bundled value. Coordinates are compared at the store's own rounding
+  // precision (roundCoord) so float noise below that precision never counts
+  // as a local edit.
+  //
+  // Normalisation for the two fields that are optional on CatalogBookmark:
+  // - address defaults to "" on the backend Bookmark model (models/schemas.py)
+  //   and is never otherwise normalised, so both sides default a missing
+  //   value to "" before comparing — a catalog entry that omits address must
+  //   not be flagged as diverged from an existing blank address.
+  // - country_code is canonicalised to lowercase once, at create time only
+  //   (services/bookmarks.py::create_bookmark does country_code.lower(); the
+  //   force-sync upsert itself does a bare assignment with no re-lowering).
+  //   The bundled catalog's own values are already lowercase. Comparing
+  //   case-insensitively (plus the same "" default) matches what the backend
+  //   treats as the same code, so a bookmark whose code differs only in case
+  //   isn't reported as a local edit that force-sync would clobber.
+  const catalogOverwriteCount = useMemo(() => {
+    if (!catalog) return 0
+    const byId = new Map(bookmarks.map((b) => [b.id, b]))
+    let count = 0
+    for (const cb of catalog.bookmarks) {
+      const existing = byId.get(cb.id)
+      if (!existing) continue
+      const diverged =
+        existing.name !== cb.name ||
+        (existing.lat === undefined ? true : roundCoord(existing.lat) !== roundCoord(cb.lat)) ||
+        (existing.lng === undefined ? true : roundCoord(existing.lng) !== roundCoord(cb.lng)) ||
+        (existing.category_id ?? '') !== cb.category_id ||
+        (existing.address ?? '') !== (cb.address ?? '') ||
+        (existing.country_code ?? '').toLowerCase() !== (cb.country_code ?? '').toLowerCase()
+      if (diverged) count++
+    }
+    return count
+  }, [catalog, bookmarks])
+
   // Force-sync — catalog ids are authoritative. Resurrects entries the user
   // previously deleted from a catalog-seeded category and propagates any
   // lat/lng/name corrections from the bundled file. Returns the result so App
@@ -77,6 +136,7 @@ export function useCatalog(api: ApiGateway, bookmarks: Array<{ id: string }>) {
     catalogStatus,
     catalogError,
     catalogNewCount,
+    catalogOverwriteCount,
     catalogRefreshing,
     refresh,
   }

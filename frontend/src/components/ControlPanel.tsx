@@ -117,6 +117,7 @@ interface ControlPanelProps {
   onBookmarkImport?: (file: File) => Promise<void>;
   catalogStatus?: 'loading' | 'ok' | 'missing' | 'failed';
   catalogNewCount?: number;
+  catalogOverwriteCount?: number;
   catalogError?: string | null;
   catalogRefreshing?: boolean;
   onCatalogRefresh?: () => Promise<void> | void;
@@ -323,6 +324,7 @@ const ControlPanelInner: React.FC<ControlPanelProps> = ({
   onBookmarkImport,
   catalogStatus,
   catalogNewCount,
+  catalogOverwriteCount,
   catalogError,
   catalogRefreshing,
   onCatalogRefresh,
@@ -1014,6 +1016,7 @@ const ControlPanelInner: React.FC<ControlPanelProps> = ({
                     onImport={onBookmarkImport}
                     catalogStatus={catalogStatus}
                     catalogNewCount={catalogNewCount}
+                    catalogOverwriteCount={catalogOverwriteCount}
                     catalogError={catalogError}
                     catalogRefreshing={catalogRefreshing}
                     onCatalogRefresh={onCatalogRefresh}

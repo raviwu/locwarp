@@ -23,6 +23,13 @@ function makeProps(over: Partial<Record<string, any>> = {}) {
     name: 'Old Name',
     lat: '25',
     lng: '121',
+    // Existing tests below predate per-field dirty tracking and exercise the
+    // dialog as if every field the caller passed a value for was actively
+    // edited — so default all three dirty, and let the new dirty-specific
+    // tests override individual flags.
+    nameDirty: true,
+    latDirty: true,
+    lngDirty: true,
     onNameChange: vi.fn(),
     onLatChange: vi.fn(),
     onLngChange: vi.fn(),
@@ -163,6 +170,63 @@ describe('EditBookmarkDialog', () => {
       name: 'New Name',
       lat: 26.5,
       lng: 122.5,
+    });
+  });
+
+  // --- per-field dirty tracking (bookmark-revert fix) ----------------------
+  it('submits the LIVE record value for a field the user never touched', () => {
+    const onSubmit = vi.fn();
+    // `bookmark` is the LIVE record (as BookmarkList now derives it fresh on
+    // every render) and its name has since changed to 'Renamed Elsewhere' —
+    // e.g. synced in from another machine while this dialog was open. The
+    // local `name` state still holds whatever was seeded when the dialog
+    // opened ('Old Name'). Only lat/lng are dirty (the user edited coords).
+    render(
+      <EditBookmarkDialog
+        {...makeProps({
+          bookmark: { ...ORIG, name: 'Renamed Elsewhere' },
+          name: 'Old Name',
+          nameDirty: false,
+          lat: '26.5',
+          lng: '122.5',
+          latDirty: true,
+          lngDirty: true,
+          onSubmit,
+        })}
+      />,
+    );
+    fireEvent.click(screen.getByText('generic.save'));
+    // The submitted name is the LIVE record's current name, not the stale
+    // local state captured at open time.
+    expect(onSubmit).toHaveBeenCalledWith('bm-1', {
+      ...ORIG,
+      name: 'Renamed Elsewhere',
+      lat: 26.5,
+      lng: 122.5,
+    });
+  });
+
+  it('submits the typed value for a field the user DID edit, even if the live record also changed', () => {
+    const onSubmit = vi.fn();
+    render(
+      <EditBookmarkDialog
+        {...makeProps({
+          bookmark: { ...ORIG, name: 'Renamed Elsewhere' },
+          name: 'User Typed Name',
+          nameDirty: true,
+          lat: '25',
+          lng: '121',
+          latDirty: false,
+          lngDirty: false,
+          onSubmit,
+        })}
+      />,
+    );
+    fireEvent.click(screen.getByText('generic.save'));
+    expect(onSubmit).toHaveBeenCalledWith('bm-1', {
+      ...ORIG,
+      name: 'User Typed Name',
+      // lat/lng untouched -> live record's values (25 / 121, same as ORIG).
     });
   });
 

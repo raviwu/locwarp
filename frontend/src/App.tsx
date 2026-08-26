@@ -870,6 +870,7 @@ const App: React.FC = () => {
   const catalogStatus = cat.catalogStatus
   const catalogError = cat.catalogError
   const catalogNewCount = cat.catalogNewCount
+  const catalogOverwriteCount = cat.catalogOverwriteCount
   const catalogRefreshing = cat.catalogRefreshing
 
   const handleCatalogRefresh = useCallback(async () => {
@@ -1301,6 +1302,7 @@ const App: React.FC = () => {
           onBookmarkImport={handleBookmarkImport}
           catalogStatus={catalogStatus}
           catalogNewCount={catalogNewCount}
+          catalogOverwriteCount={catalogOverwriteCount}
           catalogError={catalogError}
           catalogRefreshing={catalogRefreshing}
           onCatalogRefresh={handleCatalogRefresh}

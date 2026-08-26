@@ -79,6 +79,91 @@ describe('useCatalog', () => {
     expect(stub.syncCatalog).not.toHaveBeenCalled()
   })
 
+  it('catalogOverwriteCount counts existing bookmarks whose name/lat/lng/category_id diverged from the catalog', async () => {
+    const { api, setCatalog } = makeStubApi()
+    setCatalog({
+      categories: [],
+      bookmarks: [
+        { id: 'seed-1', name: 'Original Name', lat: 25.0, lng: 121.0, category_id: 'cat-a' },
+        { id: 'seed-2', name: 'Unchanged', lat: 24.0, lng: 120.0, category_id: 'cat-b' },
+        { id: 'seed-3', name: 'Never imported', lat: 23.0, lng: 119.0, category_id: 'cat-a' },
+      ],
+    })
+    const bookmarks = [
+      // Renamed locally -> diverges.
+      { id: 'seed-1', name: 'User Renamed', lat: 25.0, lng: 121.0, category_id: 'cat-a' },
+      // Identical to the catalog value -> not counted.
+      { id: 'seed-2', name: 'Unchanged', lat: 24.0, lng: 120.0, category_id: 'cat-b' },
+      // seed-3 was never imported locally, so it's a "new" entry, not an overwrite.
+    ]
+    const { result } = renderHook(() => useCatalog(api, bookmarks))
+    await waitFor(() => expect(result.current.catalogStatus).toBe('ok'))
+    expect(result.current.catalogOverwriteCount).toBe(1)
+  })
+
+  it('catalogOverwriteCount ignores coordinate noise below the store rounding precision (7dp)', async () => {
+    const { api, setCatalog } = makeStubApi()
+    setCatalog({
+      categories: [],
+      bookmarks: [{ id: 'seed-1', name: 'Same', lat: 25.1234567, lng: 121.1234567, category_id: 'cat-a' }],
+    })
+    // Differs only in the 8th decimal place -> rounds to the same 7dp value.
+    const bookmarks = [{ id: 'seed-1', name: 'Same', lat: 25.12345674, lng: 121.12345674, category_id: 'cat-a' }]
+    const { result } = renderHook(() => useCatalog(api, bookmarks))
+    await waitFor(() => expect(result.current.catalogStatus).toBe('ok'))
+    expect(result.current.catalogOverwriteCount).toBe(0)
+  })
+
+  it('catalogOverwriteCount counts a diverged address (DEFECT B1: backend upsert also overwrites address)', async () => {
+    const { api, setCatalog } = makeStubApi()
+    setCatalog({
+      categories: [],
+      bookmarks: [{ id: 'seed-1', name: 'Same', lat: 25.0, lng: 121.0, category_id: 'cat-a', address: 'Catalog Address' }],
+    })
+    const bookmarks = [{ id: 'seed-1', name: 'Same', lat: 25.0, lng: 121.0, category_id: 'cat-a', address: 'User-edited address' }]
+    const { result } = renderHook(() => useCatalog(api, bookmarks))
+    await waitFor(() => expect(result.current.catalogStatus).toBe('ok'))
+    expect(result.current.catalogOverwriteCount).toBe(1)
+  })
+
+  it('catalogOverwriteCount counts a diverged country_code (DEFECT B1: backend upsert also overwrites country_code)', async () => {
+    const { api, setCatalog } = makeStubApi()
+    setCatalog({
+      categories: [],
+      bookmarks: [{ id: 'seed-1', name: 'Same', lat: 25.0, lng: 121.0, category_id: 'cat-a', country_code: 'jp' }],
+    })
+    const bookmarks = [{ id: 'seed-1', name: 'Same', lat: 25.0, lng: 121.0, category_id: 'cat-a', country_code: 'tw' }]
+    const { result } = renderHook(() => useCatalog(api, bookmarks))
+    await waitFor(() => expect(result.current.catalogStatus).toBe('ok'))
+    expect(result.current.catalogOverwriteCount).toBe(1)
+  })
+
+  it('catalogOverwriteCount treats a missing address the same as an empty one (matches the backend Bookmark default)', async () => {
+    const { api, setCatalog } = makeStubApi()
+    // Catalog entry omits address entirely (CatalogBookmark.address is optional).
+    setCatalog({
+      categories: [],
+      bookmarks: [{ id: 'seed-1', name: 'Same', lat: 25.0, lng: 121.0, category_id: 'cat-a' }],
+    })
+    // Local bookmark has the backend's default blank address.
+    const bookmarks = [{ id: 'seed-1', name: 'Same', lat: 25.0, lng: 121.0, category_id: 'cat-a', address: '' }]
+    const { result } = renderHook(() => useCatalog(api, bookmarks))
+    await waitFor(() => expect(result.current.catalogStatus).toBe('ok'))
+    expect(result.current.catalogOverwriteCount).toBe(0)
+  })
+
+  it('catalogOverwriteCount is case-insensitive on country_code (backend only lowercases at create time, not on force-sync overwrite)', async () => {
+    const { api, setCatalog } = makeStubApi()
+    setCatalog({
+      categories: [],
+      bookmarks: [{ id: 'seed-1', name: 'Same', lat: 25.0, lng: 121.0, category_id: 'cat-a', country_code: 'jp' }],
+    })
+    const bookmarks = [{ id: 'seed-1', name: 'Same', lat: 25.0, lng: 121.0, category_id: 'cat-a', country_code: 'JP' }]
+    const { result } = renderHook(() => useCatalog(api, bookmarks))
+    await waitFor(() => expect(result.current.catalogStatus).toBe('ok'))
+    expect(result.current.catalogOverwriteCount).toBe(0)
+  })
+
   it('classifies a 404 as missing and a non-404 as failed', async () => {
     const { api, stub } = makeStubApi()
     stub.getCatalog.mockRejectedValueOnce(new HttpError('boom', 500))
