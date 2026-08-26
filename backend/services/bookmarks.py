@@ -314,18 +314,33 @@ class BookmarkManager:
 
         ``None`` for any field means "do not modify"; pass an empty string
         to clear ``start_date`` or ``end_date``.
+
+        A call whose supplied values all already match the stored category is
+        a no-op: ``updated_at`` is left alone and ``_save()`` is skipped, for
+        the same reason as :meth:`update_bookmark`. The category dialog
+        submits an empty patch when the user opened it and changed nothing,
+        and the re-stamp on its own is enough to replace the other Mac's
+        un-synced rename inside merge_stores.
         """
         cat = self._find_category(cat_id)
         if cat is None:
             return None
-        if name is not None:
-            cat.name = name
-        if color is not None:
-            cat.color = color
-        if start_date is not None:
-            cat.start_date = start_date
-        if end_date is not None:
-            cat.end_date = end_date
+
+        pending: dict[str, str] = {}
+        for key, value in (
+            ("name", name),
+            ("color", color),
+            ("start_date", start_date),
+            ("end_date", end_date),
+        ):
+            if value is None or getattr(cat, key) == value:
+                continue
+            pending[key] = value
+        if not pending:
+            return cat
+
+        for key, value in pending.items():
+            setattr(cat, key, value)
         cat.updated_at = _now_iso()
         self._save()
         return cat

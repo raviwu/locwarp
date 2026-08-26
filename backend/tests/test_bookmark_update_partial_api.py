@@ -319,18 +319,62 @@ def test_put_category_start_after_a_stored_end_is_not_a_cross_field_error(client
     assert resp.json()["start_date"] == "2026-12-31"
 
 
-def test_put_category_with_an_empty_body_still_re_stamps(client):
-    """Deliberate asymmetry with the bookmark route — plan §6.6.
+def test_put_category_with_an_empty_body_writes_nothing(client):
+    """The no-op guard covers categories too — same rule as the bookmark route.
 
-    The no-op write guard was scoped to update_bookmark, where the revert was
-    actually observed. update_category keeps its unconditional re-stamp; this
-    test exists so removing the guard from one side is a conscious act rather
-    than an accident.
+    The category dialog submits an empty patch when the user opened it and
+    changed nothing. An unconditional re-stamp there is enough to replace the
+    other Mac's un-synced rename inside merge_stores, which is the whole bug
+    class this endpoint's partial-update semantics exist to close.
     """
     cat = _create_category(client)
 
     resp = client.put(f"/api/bookmarks/categories/{cat['id']}", json={})
     assert resp.status_code == 200
+    # Whole record byte-identical, updated_at included — the early return must
+    # still serialize through response_model exactly as the write path does.
+    assert resp.json() == cat
+    stored = client.get("/api/bookmarks/categories").json()
+    assert next(c for c in stored if c["id"] == cat["id"]) == cat
+
+
+def test_put_category_resending_the_stored_values_skips_the_save(client, store_path):
+    """A full body that happens to match is a no-op too, not just an empty one.
+
+    This is the shape a frozen-snapshot client sends: every field present,
+    every value already current. Mirrors the bookmark sibling: the guard has to
+    skip ``_save()`` itself, not merely the re-stamp — a write that reaches the
+    merge at all is what beats the other Mac's un-synced edit.
+    """
+    cat = _create_category(client)
+    bytes_before = store_path.read_bytes()
+    mtime_before = store_path.stat().st_mtime_ns
+
+    resp = client.put(
+        f"/api/bookmarks/categories/{cat['id']}",
+        json={
+            "name": cat["name"],
+            "color": cat["color"],
+            "start_date": cat["start_date"],
+            "end_date": cat["end_date"],
+        },
+    )
+    assert resp.status_code == 200
+    assert resp.json()["updated_at"] == cat["updated_at"]
+    assert store_path.read_bytes() == bytes_before
+    assert store_path.stat().st_mtime_ns == mtime_before
+
+
+def test_put_category_changing_one_field_still_re_stamps(client):
+    """The guard must not swallow a real edit."""
+    cat = _create_category(client)
+
+    resp = client.put(
+        f"/api/bookmarks/categories/{cat['id']}",
+        json={"name": cat["name"], "color": "#abcdef"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["color"] == "#abcdef"
     assert resp.json()["updated_at"] > cat["updated_at"]
 
 
