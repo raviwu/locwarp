@@ -163,3 +163,33 @@ describe('useRoutes refresh resilience', () => {
     await waitFor(() => expect(result.current.savedRoutes).toEqual(rs))
   })
 })
+
+describe('useRoutes route-category patches are sparse', () => {
+  // Regression pin for the route-store half of fix F (change G, Task 0).
+  // categoryRename used to also send `color: cat?.color`, and categoryRecolor
+  // `name: cat?.name` — this client's possibly-stale copy of the field it was
+  // NOT editing. Under the store's last-write-wins merge that stale value
+  // clobbers whatever the other Mac just changed, which is exactly the revert
+  // the bookmark side was fixed for.
+  it('categoryRename sends only the name', async () => {
+    const { api, stub } = makeStubApi()
+    stub.listRouteCategories.mockResolvedValue([{ id: 'c1', name: 'Old', color: '#ff0000' }])
+    const { result } = renderHook(() => useRoutes(api))
+    await waitFor(() => expect(result.current.routeCategories).toHaveLength(1))
+
+    await act(async () => { await result.current.categoryRename('c1', 'New') })
+
+    expect(stub.updateRouteCategory).toHaveBeenCalledWith('c1', { name: 'New' })
+  })
+
+  it('categoryRecolor sends only the colour', async () => {
+    const { api, stub } = makeStubApi()
+    stub.listRouteCategories.mockResolvedValue([{ id: 'c1', name: 'Old', color: '#ff0000' }])
+    const { result } = renderHook(() => useRoutes(api))
+    await waitFor(() => expect(result.current.routeCategories).toHaveLength(1))
+
+    await act(async () => { await result.current.categoryRecolor('c1', '#00ff00') })
+
+    expect(stub.updateRouteCategory).toHaveBeenCalledWith('c1', { color: '#00ff00' })
+  })
+})

@@ -531,8 +531,16 @@ export const listRouteCategories = () =>
   request<any[]>('GET', '/api/route/categories')
 export const createRouteCategory = (name: string, color = '#6c8cff') =>
   request<any>('POST', '/api/route/categories', { name, color })
-export const updateRouteCategory = (id: string, fields: { name?: string; color?: string }) =>
-  request<any>('PUT', `/api/route/categories/${id}`, { id, name: fields.name ?? '', color: fields.color ?? '#6c8cff' })
+// Sparse by design: only the keys the caller passes reach the wire. The
+// backend PUT is a partial update, so an omitted key is left exactly as
+// stored — strictly stronger than re-sending this client's copy of the other
+// field, which could be a value the other Mac has already changed.
+export const updateRouteCategory = (id: string, fields: { name?: string; color?: string }) => {
+  const body: { name?: string; color?: string } = {}
+  if (fields.name !== undefined) body.name = fields.name
+  if (fields.color !== undefined) body.color = fields.color
+  return request<any>('PUT', `/api/route/categories/${id}`, body)
+}
 export const deleteRouteCategory = (id: string) =>
   request<any>('DELETE', `/api/route/categories/${id}`)
 

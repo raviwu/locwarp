@@ -214,13 +214,32 @@ class RouteManager:
         name: str | None = None,
         color: str | None = None,
     ) -> RouteCategory | None:
+        """Partial update. ``None`` means "not sent" — leave that field alone.
+
+        Diffs before mutating and, when nothing actually differs, returns
+        without re-stamping ``updated_at`` and **without calling _save()**.
+        A Save that changed nothing must never reach the CRDT merge carrying a
+        fresh timestamp: under last-write-wins that stale-but-freshly-stamped
+        record out-votes a newer edit the other Mac has not synced yet.
+        The category dialog submits an empty patch whenever the user opens it
+        and changes nothing, so this is a live path, not a theoretical one.
+
+        Mirrors ``BookmarkManager.update_category``; keep the two in step.
+        """
         cat = self._find_category(cat_id)
         if cat is None:
             return None
-        if name is not None:
-            cat.name = name
-        if color is not None:
-            cat.color = color
+
+        pending: dict[str, str] = {}
+        for key, value in (("name", name), ("color", color)):
+            if value is None or getattr(cat, key) == value:
+                continue
+            pending[key] = value
+        if not pending:
+            return cat
+
+        for key, value in pending.items():
+            setattr(cat, key, value)
         cat.updated_at = _now_iso()
         self._save()
         return cat

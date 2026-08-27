@@ -138,17 +138,20 @@ export function useRoutes(api: ApiGateway) {
     setSavedRoutes(routes)
   }, [api, refreshRouteCategories])
 
+  // Both send ONLY the field they change. Re-sending this client's copy of the
+  // other field used to turn every rename into a colour write (and vice versa),
+  // so a stale in-memory value could clobber the other Mac's edit under the
+  // store's last-write-wins merge. routeCategories therefore drops out of the
+  // dependency list too.
   const categoryRename = useCallback(async (id: string, name: string) => {
-    const cat = routeCategories.find((c) => c.id === id)
-    await api.updateRouteCategory(id, { name, color: cat?.color || '#6c8cff' })
+    await api.updateRouteCategory(id, { name })
     await refreshRouteCategories()
-  }, [api, routeCategories, refreshRouteCategories])
+  }, [api, refreshRouteCategories])
 
   const categoryRecolor = useCallback(async (id: string, color: string) => {
-    const cat = routeCategories.find((c) => c.id === id)
-    await api.updateRouteCategory(id, { name: cat?.name || '', color })
+    await api.updateRouteCategory(id, { color })
     await refreshRouteCategories()
-  }, [api, routeCategories, refreshRouteCategories])
+  }, [api, refreshRouteCategories])
 
   // -- GPX import / export + bulk JSON import --
 

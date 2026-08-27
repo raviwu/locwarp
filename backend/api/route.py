@@ -172,6 +172,18 @@ async def import_all_saved_routes(body: _RouteImportBody, rm=Depends(get_route_m
 
 # ── Categories ────────────────────────────────────────────
 
+class RouteCategoryUpdate(BaseModel):
+    """Partial-update body for PUT /categories/{cat_id}.
+
+    Same idiom, and the same reason, as ``api.bookmarks.BookmarkCategoryUpdate``:
+    ``RouteCategory``'s ``color`` default (``"#6c8cff"``) is concrete, so a body
+    parsed as ``RouteCategory`` resets the colour on every rename. Omit a field
+    to leave it alone.
+    """
+    name: str | None = None
+    color: str | None = None
+
+
 @router.get("/categories", response_model=list[RouteCategory])
 async def list_route_categories(rm=Depends(get_route_manager)):
     return rm.list_categories()
@@ -183,8 +195,15 @@ async def create_route_category(cat: RouteCategory, rm=Depends(get_route_manager
 
 
 @router.put("/categories/{cat_id}", response_model=RouteCategory)
-async def update_route_category(cat_id: str, cat: RouteCategory, rm=Depends(get_route_manager)):
-    updated = rm.update_category(cat_id, name=cat.name, color=cat.color)
+async def update_route_category(cat_id: str, cat: RouteCategoryUpdate, rm=Depends(get_route_manager)):
+    """Apply only the fields the client actually sent.
+
+    ``exclude_unset`` drops the keys the body omitted; ``update_category``
+    drops any explicit ``null``. An omitted colour therefore stays as stored
+    instead of being reset to a schema default the client never chose.
+    Mirrors ``PUT /api/bookmarks/categories/{cat_id}``.
+    """
+    updated = rm.update_category(cat_id, **cat.model_dump(exclude_unset=True))
     if not updated:
         raise HTTPException(status_code=404, detail="Category not found")
     return updated
