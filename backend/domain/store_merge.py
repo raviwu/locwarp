@@ -16,7 +16,10 @@ written by a build that predates G has no map, every unit resolves at
 
 Design: docs/superpowers/plans/2026-08-27-bookmark-per-field-merge-g.md
 
-No I/O, no logging. merge_stores(a, b) == merge_stores(b, a); merge_stores(a, a) == a.
+No I/O. merge_stores(a, b) == merge_stores(b, a); merge_stores(a, a) == a.
+The one log line is a warning on the single arbitrary decision this module
+makes (two differing values at indistinguishable timestamps) — it changes no
+behaviour and fires only on a real same-field conflict.
 
 This is the single merge primitive used everywhere two copies of a store can
 diverge: BookmarkManager / RouteManager save + reconcile, and the enable/disable
@@ -25,10 +28,13 @@ device wrote the file last — both converge to the same result.
 """
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timedelta, timezone
 from typing import TypeVar
 
 from models.schemas import BookmarkStore, RouteStore, Tombstone
+
+logger = logging.getLogger(__name__)
 
 # Tombstones older than this are garbage-collected during a merge. Safe because
 # every device is expected to sync well within this window — by the time a
@@ -137,6 +143,18 @@ def merge_records(left, right, units: dict[str, tuple[str, ...]]):
             lv = [getattr(left, f) for f in fields]
             rv = [getattr(right, f) for f in fields]
             winner = left if repr(lv) > repr(rv) else right
+            if lv != rv:
+                # The only genuinely arbitrary pick in the whole merge: two
+                # different values, indistinguishable timestamps. Everything
+                # else here is a defensible LWW outcome; this one silently
+                # discards a real edit, and a silent loss is the exact bug
+                # class that started this work. Say so.
+                logger.warning(
+                    "Merge tie on %s.%s (id=%s): both stamps %r, values differ "
+                    "(%r vs %r) — keeping %r by content sort.",
+                    type(left).__name__, unit, getattr(left, "id", "?"),
+                    ls, lv, rv, [getattr(winner, f) for f in fields],
+                )
         winner_of[unit] = winner
 
     values = {}

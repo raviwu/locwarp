@@ -15,6 +15,8 @@ Design: docs/superpowers/plans/2026-08-27-bookmark-per-field-merge-g.md §4.
 """
 from __future__ import annotations
 
+import logging
+
 import random
 
 import pytest
@@ -335,3 +337,35 @@ def test_merge_stays_commutative_and_idempotent_over_random_stores():
         )
         merged = merge_stores(a, b)
         assert merge_stores(merged, merged).model_dump() == merged.model_dump()
+
+
+def test_an_arbitrary_tiebreak_is_logged(caplog):
+    """Q3: the same-field conflict stays silent to the user, but not to the log.
+
+    Only the rule-3 case is logged. A same-field conflict the stamps CAN
+    separate is an ordinary LWW outcome, and it happens on every single
+    `_save()` (the in-memory record differs from the on-disk copy by
+    definition), so logging that would be noise that hides this.
+    """
+    same = "2026-08-27T00:00:00+00:00"
+    a = Bookmark(id="x", name="alpha", lat=1.0, lng=2.0, updated_at=same)
+    b = Bookmark(id="x", name="omega", lat=1.0, lng=2.0, updated_at=same)
+
+    with caplog.at_level(logging.WARNING, logger="domain.store_merge"):
+        merged = merge_records(a, b, BOOKMARK_MERGE_UNITS)
+
+    assert merged.name == "omega"          # content sort
+    assert len(caplog.records) == 1
+    assert "Merge tie on Bookmark.name (id=x)" in caplog.records[0].getMessage()
+
+
+def test_an_ordinary_lww_resolution_is_not_logged(caplog):
+    older = "2026-08-27T00:00:00+00:00"
+    newer = "2026-08-27T01:00:00+00:00"
+    a = Bookmark(id="x", name="alpha", lat=1.0, lng=2.0, updated_at=older)
+    b = Bookmark(id="x", name="omega", lat=1.0, lng=2.0, updated_at=newer)
+
+    with caplog.at_level(logging.WARNING, logger="domain.store_merge"):
+        merge_records(a, b, BOOKMARK_MERGE_UNITS)
+
+    assert caplog.records == []

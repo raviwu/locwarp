@@ -231,8 +231,10 @@ the direct answer to the reason G was deferred in the E1/F plan §2 table.
 
 ### 4.5 Writers
 
-Every mutation stamps only what it changed. F's no-op guard already computes
-exactly that set:
+Every mutation stamps only what it changed **and backfills every untouched unit
+with the record's PREVIOUS `updated_at`** — see §11.1; the second half was
+missing from this plan and is what makes the first half worth anything. F's
+no-op guard already computes the changed set:
 
 - `update_bookmark` — has `pending: dict[field, value]` (`:465-479`). Map each
   changed field to its unit, stamp those units, stamp `updated_at`. The existing
@@ -400,3 +402,89 @@ Recommended anyway: `make backup` **before** `make build-install` on each Mac �
 | **Q1** | Include `RouteStore` (routes + route categories) in G, or bookmarks only? | (a) bookmarks only, routes later; (b) both in one pass | **(b) both** — same primitive, same merge function; doing routes later means writing the unit table twice and living with a known-broken half. Task 0 already opens that file. |
 | **Q2** | Stamp encoding — ISO strings (+57% file size) or epoch-ms integers (+24%)? | (a) ISO; (b) epoch-ms | **(a) ISO** — consistent with every other timestamp in the file and greppable when debugging by eye. Revisit if sync volume bites. |
 | **Q3** | Same-field conflict resolution: silently pick a winner (§4.3), or surface it? | (a) silent; (b) also log + expose a count the UI could toast | **(a) silent for now** — but I'd add the log line, since a silent same-field loss is precisely the class of bug that started this. |
+
+---
+
+## 11. Implementation notes — what the build changed about this plan
+
+Written after the fact. Everything here is a correction to a section above, not
+a new decision; each one was forced by a test.
+
+### 11.1 `stamp_units` must backfill, not just stamp (corrects §4.5)
+
+§4.5 said "every mutation stamps only what it changed". Implemented literally,
+G buys nothing. `unit_stamp` falls back to the record's `updated_at` for a unit
+with no stamp, so a peer that edits one field and stamps only that one has all
+its *other* units inherit the fresh record stamp — and they go on clobbering
+exactly as before. `stamp_units` therefore also writes the record's PREVIOUS
+`updated_at` onto every untouched unit, which is the honest answer to "when did
+this unit last change". Pinned by
+`test_an_unstamped_unit_is_read_pessimistically`.
+
+A visible consequence: a write materialises the whole map, so
+`field_updated_at` grows even on a pass that moved one field. Tests that want
+to assert "nothing moved" must read through `unit_stamp`, not compare the raw
+map.
+
+### 11.2 Two commutativity holes in `merge_records` (refines §4.3)
+
+The property test caught both; rule 3 as written in §4.3 was not sufficient.
+
+1. **Stamp carry-forward.** When both sides hold the same value for a unit,
+   rule 3 falls through to a positional pick, so `merge(a, b)` and `merge(b, a)`
+   carried different maps for an identical record. Fixed: carry the newest
+   EXPLICIT stamp held by *any* side whose value equals the winning value — not
+   the winner object's. Only explicit stamps, or `merge(a, a)` returns a record
+   with a fuller map than `a` and idempotence fails.
+2. **The base pick.** `base` supplies the fields no unit owns, and used `>=`,
+   favouring left on a tie. Fixed with the same symmetric content sort rule 3
+   uses.
+
+Also restated: the property assertion `merge_stores(a, a) == a` is wrong when a
+store carries a live item its own tombstone suppresses (the pre-existing
+`_alive` filter, untouched by G). It is stated as idempotence on the merge's own
+output.
+
+### 11.3 Positional contracts must now say so (new)
+
+G made the merge commutative all the way down, so "pass the winner as the left
+argument" stopped meaning anything. Two call sites relied on it and were fixed
+with `domain/store_merge.prefer_left_on_exact_ties`:
+
+- `services/sync_merge.py` — "local wins" on the one-shot enable/disable
+  migration. Its two tests failed, which is how this was found.
+- `merge_backup.py` — "the live store wins; a backup only fills gaps". Its
+  tests did NOT fail: the content sort happened to favour the live values.
+  Caught by writing the tie tests sort-adversarially and mutation-testing them.
+
+### 11.4 `Resolution.changed` became `Resolution.taken` (refines Task 6)
+
+§4.5 said the catalog resolver "already knows which fields came from theirs
+(`res.values`)" — it did not; `res.values` is the resolved value per field
+either way, and `changed` was a bool. It is now the tuple of fields taken from
+theirs, with `changed` kept as a derived property.
+
+Two behaviours fell out of wiring it:
+
+- An **enrich-only** pass stamps no unit. It re-derived the geo four from
+  coordinates nobody moved; claiming `coords` would out-vote a real pin move on
+  the other Mac. The record-level bump still happens — that is what carries the
+  record past an unreconciled peer tombstone inside the same `_save()`.
+- The **blind-overwrite** branch (`resolver=None`) clears `field_updated_at`.
+  Every unit is as of now there by definition, and stale stamps would let a
+  peer copy of an older edit out-rank what `force_seed` just wrote.
+
+### 11.5 Q3 answered: silent, plus one warning (resolves §10 Q3)
+
+Silent to the user, as recommended. The log line is narrower than "same-field
+conflict": only the **rule-3** case is logged. A same-field conflict the stamps
+can separate is an ordinary LWW outcome and occurs on every `_save()` — the
+in-memory record differs from the on-disk copy by definition — so logging that
+would be noise hiding the one decision the merge cannot justify.
+
+### 11.6 Status
+
+Tasks 0–8 and 10 done; Task 9 (routes) was folded into Tasks 1–5 per Q1 = both.
+Commits: `9360589` (0), `f029f2d` (1–4), `283d3c6` (5, 7), `b75d9da` (6),
+`a2b684b` (8), plus the docs/log pass. 1313 pytest / 995 vitest / 7 kept 0
+broken / depcruise 0.
