@@ -22,7 +22,12 @@ from domain.ports.bookmark_repository import BookmarkRepository
 from domain.ports.catalog_baseline_repository import CatalogBaselineRepository
 from models.schemas import Bookmark, BookmarkCategory, BookmarkStore, Tombstone
 from services.file_watch_binding import FileWatchBinding
-from domain.store_merge import force_seed_items
+from domain.store_merge import (
+    BOOKMARK_MERGE_UNITS,
+    CATEGORY_MERGE_UNITS,
+    force_seed_items,
+    stamp_units,
+)
 from services.store_merge import merge_stores
 from services.geo_offline import resolve as _geo_resolve
 
@@ -104,6 +109,22 @@ def enrich_bookmark(bm: Bookmark, *, force: bool = False) -> bool:
             setattr(bm, field, value)
             changed = True
     return changed
+
+
+def _units_changed(pending) -> set[str]:
+    """Merge units touched by a set of changed field names.
+
+    A field that belongs to no unit (the geo four, which ride with `coords`)
+    contributes nothing — enrich_bookmark owns those and must never stamp.
+    """
+    field_to_unit = {
+        f: unit
+        for units in (BOOKMARK_MERGE_UNITS, CATEGORY_MERGE_UNITS)
+        for unit, fields in units.items()
+        for f in fields
+    }
+    geo = {"country_code", "timezone", "city", "region"}
+    return {field_to_unit[f] for f in pending if f in field_to_unit and f not in geo}
 
 
 class BookmarkManager:
@@ -341,7 +362,7 @@ class BookmarkManager:
 
         for key, value in pending.items():
             setattr(cat, key, value)
-        cat.updated_at = _now_iso()
+        stamp_units(cat, _units_changed(pending), _now_iso(), CATEGORY_MERGE_UNITS)
         self._save()
         return cat
 
@@ -484,7 +505,10 @@ class BookmarkManager:
         if "lat" in pending or "lng" in pending:
             enrich_bookmark(bm, force=True)
 
-        bm.updated_at = _now_iso()
+        # Stamp the units this write actually touched. The geo fields
+        # enrich_bookmark just refreshed are part of the `coords` unit, so they
+        # need no stamp of their own.
+        stamp_units(bm, _units_changed(pending), _now_iso(), BOOKMARK_MERGE_UNITS)
         self._save()
         return bm
 
@@ -539,9 +563,15 @@ class BookmarkManager:
                 # to carry a rounded coordinate like every other write path —
                 # otherwise a legacy long-precision value wins every later merge
                 # while keeping its drifted tail.
-                bm.lat = round_coord(bm.lat)
-                bm.lng = round_coord(bm.lng)
-                bm.updated_at = now
+                rounded = (round_coord(bm.lat), round_coord(bm.lng))
+                coords_changed = rounded != (bm.lat, bm.lng)
+                bm.lat, bm.lng = rounded
+                # Only `category_id` (and `coords`, if the rounding actually
+                # moved the point) is this write's doing. Stamping the whole
+                # record would let a drag-and-drop out-vote a rename the other
+                # Mac has not synced yet.
+                changed = {"category_id"} | ({"coords"} if coords_changed else set())
+                stamp_units(bm, changed, now, BOOKMARK_MERGE_UNITS)
                 moved += 1
 
         if moved:

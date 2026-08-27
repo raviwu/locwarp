@@ -2,20 +2,22 @@
 
 Root-cause report: docs/superpowers/specs/2026-08-26-bookmark-revert-root-cause.md
 
-Design root cause (E1 and F both work UPSTREAM of it; neither changes it):
-  - backend/domain/store_merge.py merges whole records by comparing
-    ``updated_at`` strings; there is no field-level merge.
-  - ``update_bookmark`` re-stamps ``bm.updated_at = _now_iso()`` on every call
-    that changes something, so a stale copy carrying a fresh timestamp beats a
-    newer copy carrying an older one.
+Design root cause, and where each fix sits relative to it:
+  - ``update_bookmark`` re-stamps ``bm.updated_at`` on every call that changes
+    something, so a stale copy carrying a fresh timestamp beats a newer copy
+    carrying an older one. E1 and F both work UPSTREAM of that.
+  - backend/domain/store_merge.py used to merge whole records by comparing
+    those ``updated_at`` strings. Change G (2026-08-27) replaced that with
+    per-unit resolution against ``field_updated_at``, so the record-level
+    stamp no longer decides every field at once.
 
 The four tests here, in the order they appear:
 
-  1. ``test_stale_whole_record_update_outranks_fresher_remote_copy`` — the
-     RESIDUAL hazard neither fix closes: two machines edit *different* fields
-     of one record between syncs, whole-record LWW takes the later save whole,
-     and the other machine's field is lost. Only per-field timestamps (change
-     G, deferred) would fix it. It stays red-flagged on purpose.
+  1. ``test_disjoint_field_edits_from_two_machines_both_survive`` — G's
+     acceptance test, and the one hazard that stayed open through E1 and F:
+     two machines edit *different* fields of one record between syncs. It used
+     to assert the loss. The full per-field matrix lives in
+     ``test_store_merge_per_field.py`` and ``test_store_writers_stamp_units.py``.
   2. ``test_catalog_force_sync_preserves_local_rename`` — E1's acceptance test.
      ``import_catalog`` resolves each field three ways against a per-machine
      baseline (``domain/catalog_merge.py``) instead of overwriting seed-*
@@ -29,13 +31,12 @@ The four tests here, in the order they appear:
      machines: a sparse body no longer clobbers a field a peer changed, while
      a client that explicitly sends every field still wins by LWW.
 
-Test 1 is a SERVICE-layer test and F cannot reach it: it calls
+Test 1 is a SERVICE-layer test and F could never reach it: it calls
 ``BookmarkManager.update_bookmark`` directly, and its staleness lives in
 manager A's in-memory record rather than in a request body. What does reach it
-is the no-op write guard shipped with F — a call whose values all match the
-stored record writes nothing — which is why manager A's call now carries one
-genuine field edit. That keeps it a test of the residual whole-record-LWW
-hazard rather than of the guard.
+is G, at the merge. The no-op write guard shipped with F is why manager A's
+call carries one genuine field edit — a call whose values all match the stored
+record writes nothing at all, which would make the test vacuous.
 """
 import json
 
@@ -67,10 +68,9 @@ def _patch_paths(tmp_path, monkeypatch):
     monkeypatch.setattr("services.bookmarks._CONFIG_DEFAULT_BOOKMARKS_FILE", tmp_path / "bookmarks.json")
 
 
-def test_stale_whole_record_update_outranks_fresher_remote_copy(tmp_path, monkeypatch):
-    """RESIDUAL HAZARD: two machines edit different fields of one record
-    between syncs, and whole-record LWW takes the later save whole — so the
-    earlier machine's field is silently lost.
+def test_disjoint_field_edits_from_two_machines_both_survive(tmp_path, monkeypatch):
+    """CLOSED BY G: two machines edit different fields of one record between
+    syncs, and both edits survive.
 
     Two BookmarkManager instances share one on-disk store file, mirroring
     Ravi's two-Mac iCloud-sync setup:
@@ -87,22 +87,24 @@ def test_stale_whole_record_update_outranks_fresher_remote_copy(tmp_path, monkey
                                              record still carries "old", and
                                              the re-stamp makes it t_a > t_b
 
-    Outcome: A's save wins the merge because t_a > t_b, so the on-disk name
-    reverts to "old" even though B's rename to "new" was the newer *intent*.
-    This test pins BOTH the outcome (final name) and the mechanism (t_a > t_b)
-    so it explains itself.
+    Before G this was the residual hazard, and the assertions below were its
+    mirror image: A's save won the merge whole because t_a > t_b, so the
+    on-disk name reverted to "old" even though B's rename was the newer
+    *intent*. Neither shipped fix could reach it — E1 is a catalog-sync rule,
+    and F narrows the request BODY while the staleness here lives in manager
+    A's in-memory record: ``update_bookmark`` mutates the object
+    ``_find_bookmark`` returns, A's own copy, which still holds "old".
 
-    Neither shipped fix reaches this. E1 is a catalog-sync rule, and F narrows
-    the request BODY while the staleness here lives in manager A's in-memory
-    record: ``update_bookmark`` mutates the object ``_find_bookmark`` returns —
-    A's own copy, which still holds "old" because A never reconciled after B's
-    save — so omitting ``name`` from the call changes nothing. Only per-field
-    timestamps (change G, deferred) would close it.
+    G closes it at the merge. A's write stamps only the `address` unit and
+    backfills `name` with A's PREVIOUS record stamp, so B's genuinely newer
+    `name` out-ranks it unit-for-unit even though A's record-level
+    ``updated_at`` is later. The record-stamp assertion below is kept exactly
+    as it was: t_a > t_b still holds, and that is the point — it is no longer
+    what decides the name.
 
-    A's call carries ``address="A's own edit"`` rather than re-sending its own
-    stored values: F's no-op write guard skips both the re-stamp and the save
-    when nothing differs, so a call that changed nothing would no longer reach
-    the merge at all. One genuine edit keeps this a test of whole-record LWW.
+    A's call still carries ``address="A's own edit"`` rather than re-sending
+    its own stored values, because F's no-op guard skips a write that changes
+    nothing.
     """
     _patch_paths(tmp_path, monkeypatch)
     store_path = tmp_path / "bookmarks.json"
@@ -142,11 +144,17 @@ def test_stale_whole_record_update_outranks_fresher_remote_copy(tmp_path, monkey
     on_disk = json.loads(store_path.read_text(encoding="utf-8"))
     on_disk_bm = next(b for b in on_disk["bookmarks"] if b["id"] == bm.id)
 
-    # Outcome: the stale value won.
-    assert on_disk_bm["name"] == "old"
-    # Mechanism: it won BECAUSE the stale PUT got re-stamped strictly newer
-    # than B's genuinely-fresher edit -- not because of id ordering or luck.
+    # Outcome: both edits survive. B's rename is not collateral damage of A's
+    # unrelated address edit.
+    assert on_disk_bm["name"] == "new"
+    assert on_disk_bm["address"] == "A's own edit"
+    # Mechanism: A's record-level stamp IS still the newer one — that has not
+    # changed and is exactly why this used to fail. What decides `name` now is
+    # the per-unit stamp, and A's write backfilled that unit with A's previous
+    # record stamp instead of re-stamping it.
     assert on_disk_bm["updated_at"] > b_result.updated_at
+    assert on_disk_bm["field_updated_at"]["name"] == b_result.field_updated_at["name"]
+    assert on_disk_bm["field_updated_at"]["address"] > on_disk_bm["field_updated_at"]["name"]
 
 
 def test_catalog_force_sync_preserves_local_rename(tmp_path, monkeypatch):

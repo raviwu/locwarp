@@ -24,6 +24,11 @@ from domain.ports.route_repository import RouteRepository
 from models.schemas import RouteCategory, RouteStore, SavedRoute, Tombstone
 from services.file_watch_binding import FileWatchBinding
 from services.store_merge import merge_stores
+from domain.store_merge import (
+    ROUTE_CATEGORY_MERGE_UNITS,
+    ROUTE_MERGE_UNITS,
+    stamp_units,
+)
 from domain.store_merge import force_seed_items
 
 logger = logging.getLogger(__name__)
@@ -240,7 +245,7 @@ class RouteManager:
 
         for key, value in pending.items():
             setattr(cat, key, value)
-        cat.updated_at = _now_iso()
+        stamp_units(cat, set(pending), _now_iso(), ROUTE_CATEGORY_MERGE_UNITS)
         self._save()
         return cat
 
@@ -322,6 +327,7 @@ class RouteManager:
             return None
         if self._find_category(incoming.category_id) is None:
             incoming.category_id = existing.category_id
+        before_category_id = existing.category_id
         existing.name = incoming.name
         existing.waypoints = incoming.waypoints
         existing.profile = incoming.profile
@@ -331,7 +337,13 @@ class RouteManager:
         existing.road_distance_m = incoming.road_distance_m
         existing.road_distance_status = incoming.road_distance_status
         existing.dist_fingerprint = incoming.dist_fingerprint
-        existing.updated_at = _now_iso()
+        # A replace rewrites the shape and the name; it only touches the
+        # category when the incoming one differs, so a peer's re-filing is not
+        # collateral damage.
+        changed = {"name", "geometry"}
+        if incoming.category_id != before_category_id:
+            changed.add("category_id")
+        stamp_units(existing, changed, _now_iso(), ROUTE_MERGE_UNITS)
         self._save()
         return existing
 
@@ -340,7 +352,7 @@ class RouteManager:
         if route is None:
             return None
         route.name = name
-        route.updated_at = _now_iso()
+        stamp_units(route, {"name"}, _now_iso(), ROUTE_MERGE_UNITS)
         self._save()
         return route
 
@@ -362,7 +374,7 @@ class RouteManager:
         for r in self.store.routes:
             if r.id in ids_set and r.category_id != target_category_id:
                 r.category_id = target_category_id
-                r.updated_at = _now_iso()
+                stamp_units(r, {"category_id"}, _now_iso(), ROUTE_MERGE_UNITS)
                 moved += 1
         if moved:
             self._save()
