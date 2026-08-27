@@ -8,9 +8,10 @@ merge-bookmarks``.
 
 Why it is safe:
   - The merge is the same commutative ``merge_stores`` the app uses: a
-    union by id where the newer ``updated_at`` wins a collision and the
-    LIVE copy wins ties. A backup therefore only fills gaps — it never
-    overwrites data the live store already has.
+    union by id where a collision is resolved per merge unit (the newer
+    per-field stamp wins) and, when every unit is an exact tie, the LIVE
+    copy wins. A backup therefore only fills gaps — it never overwrites
+    data the live store already has.
   - The live file is copied aside as ``<name>.bak-<timestamp>`` before
     anything is written.
   - A tombstone in the live store still suppresses a backup item with the
@@ -47,7 +48,7 @@ import config
 from config import get_bookmarks_path, get_routes_path
 from models.schemas import BookmarkStore, RouteStore
 from services.json_safe import safe_load_json
-from services.store_merge import merge_stores
+from services.store_merge import merge_stores, prefer_left_on_exact_ties
 
 
 def detect_store_cls(data: dict):
@@ -124,8 +125,20 @@ def _merge_store_into_live(
         live.tombstones = [t for t in live.tombstones if t.id not in backup_ids]
 
     before = len(_items(live))
-    # live first → live wins ties; the backup only fills gaps.
+    # The backup only fills gaps. merge_stores resolves a collision per merge
+    # unit (newer unit stamp wins), which is what lets a backup restore one
+    # field of a record without dragging the rest of it back. An EXACT tie on
+    # every unit is the one case the merge cannot decide for us — it sorts by
+    # content, symmetrically — so this path states its own policy: the live
+    # store wins. Argument order alone stopped carrying that meaning with
+    # change G.
     merged = merge_stores(live, backup)
+    items_attr = "bookmarks" if store_cls is BookmarkStore else "routes"
+    setattr(merged, items_attr,
+            prefer_left_on_exact_ties(_items(merged), _items(live), _items(backup)))
+    merged.categories = prefer_left_on_exact_ties(
+        merged.categories, live.categories, backup.categories,
+    )
     after = len(_items(merged))
 
     summary = {

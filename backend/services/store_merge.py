@@ -5,7 +5,13 @@ test_store_merge.py imports TOMBSTONE_RETENTION_DAYS; the rest import merge_stor
 from domain.store_merge import (  # noqa: F401
     TOMBSTONE_RETENTION_DAYS,
     merge_stores,
+    prefer_left_on_exact_ties,
     units_all_tied,
 )
 
-__all__ = ["merge_stores", "TOMBSTONE_RETENTION_DAYS", "units_all_tied"]
+__all__ = [
+    "merge_stores",
+    "TOMBSTONE_RETENTION_DAYS",
+    "units_all_tied",
+    "prefer_left_on_exact_ties",
+]

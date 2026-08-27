@@ -1,9 +1,10 @@
 """merge_backup.py — safe restore path that folds a Desktop backup JSON into
 the live store via the commutative merge_stores.
 
-Contract: the merge is additive (union by id, newer updated_at wins, live
-wins ties), the live file is copied aside before any write, and a live
-tombstone still suppresses a backup item unless --force-restore is given.
+Contract: the merge is additive (union by id, resolved per merge unit -- the
+newer per-field stamp wins -- and the live copy wins an exact tie on every
+unit), the live file is copied aside before any write, and a live tombstone
+still suppresses a backup item unless --force-restore is given.
 """
 
 import json
@@ -159,3 +160,80 @@ def test_merge_into_absent_live_is_clean_restore(tmp_path):
     summary = merge_backup_into_live(backup, live)
     assert {x["id"] for x in json.loads(live.read_text())["bookmarks"]} == {"a"}
     assert summary["backup_copy"] is None
+
+
+# ── change G: the restore is per merge unit ──────────────────────────────
+
+
+def test_a_backup_restores_a_lost_field_without_dragging_back_the_others(tmp_path):
+    """The reason a restore is per unit and not per record.
+
+    The live store lost the address (say a bad sync wrote a blank one) but has
+    since been renamed. Restoring must bring the address back and leave the
+    newer name alone -- whole-record LWW could only do one or the other.
+    """
+    live_p, backup_p = tmp_path / "bookmarks.json", tmp_path / "backup.json"
+    old, new = _recent(48), _recent(1)
+    _write(live_p, {"categories": [], "tombstones": [], "bookmarks": [
+        {**_bm("a", "renamed later", new), "address": "",
+         "field_updated_at": {"name": new, "address": new}},
+    ]})
+    _write(backup_p, {"categories": [], "tombstones": [], "bookmarks": [
+        {**_bm("a", "old name", old), "address": "10 Real Street",
+         "field_updated_at": {"name": old, "address": old}},
+    ]})
+
+    merge_backup_into_live(backup_p, live_p)
+
+    bm = json.loads(live_p.read_text())["bookmarks"][0]
+    assert bm["name"] == "renamed later"
+    assert bm["address"] == "", "the live blank is NEWER, so the merge keeps it"
+
+    # Same backup, but the blanking happened before the rename: now the
+    # address genuinely is the older value on the live side and comes back.
+    _write(live_p, {"categories": [], "tombstones": [], "bookmarks": [
+        {**_bm("a", "renamed later", new), "address": "",
+         "field_updated_at": {"name": new, "address": _recent(72)}},
+    ]})
+    merge_backup_into_live(backup_p, live_p)
+
+    bm = json.loads(live_p.read_text())["bookmarks"][0]
+    assert bm["name"] == "renamed later"
+    assert bm["address"] == "10 Real Street"
+
+
+def test_the_live_store_wins_when_every_unit_is_an_exact_tie(tmp_path):
+    """The one case the merge cannot decide, so this path decides it.
+
+    merge_stores is commutative and breaks an exact tie by sorting the values,
+    which is symmetric but arbitrary. "A backup only fills gaps" is this
+    script's own promise, and since change G argument order no longer carries
+    it -- hence the explicit re-application of the live record.
+
+    The two names are chosen so the content sort prefers the BACKUP. Pick them
+    the other way round and the test passes with the policy deleted.
+    """
+    live_p, backup_p = tmp_path / "bookmarks.json", tmp_path / "backup.json"
+    same = _recent(5)
+    _write(live_p, {"categories": [], "tombstones": [],
+                    "bookmarks": [_bm("a", "aaa live copy", same)]})
+    _write(backup_p, {"categories": [], "tombstones": [],
+                      "bookmarks": [_bm("a", "zzz backup copy", same)]})
+
+    merge_backup_into_live(backup_p, live_p)
+
+    assert json.loads(live_p.read_text())["bookmarks"][0]["name"] == "aaa live copy"
+
+
+def test_a_tied_category_also_keeps_the_live_copy(tmp_path):
+    live_p, backup_p = tmp_path / "bookmarks.json", tmp_path / "backup.json"
+    same = _recent(5)
+    cat = {"id": "c1", "color": "#111111", "updated_at": same}
+    _write(live_p, {"tombstones": [], "bookmarks": [],
+                    "categories": [{**cat, "name": "aaa live cat"}]})
+    _write(backup_p, {"tombstones": [], "bookmarks": [],
+                      "categories": [{**cat, "name": "zzz backup cat"}]})
+
+    merge_backup_into_live(backup_p, live_p)
+
+    assert json.loads(live_p.read_text())["categories"][0]["name"] == "aaa live cat"

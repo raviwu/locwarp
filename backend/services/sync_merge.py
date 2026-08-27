@@ -37,7 +37,7 @@ from pathlib import Path
 
 from models.schemas import BookmarkStore, RouteStore
 from services.json_safe import safe_load_json, safe_write_json
-from services.store_merge import merge_stores, units_all_tied
+from services.store_merge import merge_stores, prefer_left_on_exact_ties
 
 logger = logging.getLogger(__name__)
 
@@ -68,26 +68,18 @@ def _build_category_remap(categories: list) -> tuple[list, dict[str, str]]:
 
 
 def _prefer_local_on_exact_ties(merged, local, remote, items_attr: str):
-    """Re-apply local's record for every id both sides hold with identical
-    stamps on every merge unit.
+    """This migration's "local wins" policy, applied to one item list.
 
-    ``merge_stores`` is commutative, so it cannot express "the left argument
-    wins a tie" — it resolves an exact tie by sorting the values, which is
-    arbitrary but symmetric. "Local wins" is this one-shot migration's own
-    documented policy, so it belongs here. Records where the two sides differ
-    on any unit stamp are left exactly as the merge resolved them, so the
-    per-field merge is preserved.
+    The rule itself is ``domain.store_merge.prefer_left_on_exact_ties`` (the
+    restore path in ``merge_backup`` states the same policy about the live
+    store). This wrapper just names local as the left side, so the policy is
+    legible at the call site rather than implied by argument order.
     """
-    local_by_id = {i.id: i for i in getattr(local, items_attr)}
-    remote_by_id = {i.id: i for i in getattr(remote, items_attr)}
-    out = []
-    for item in getattr(merged, items_attr):
-        mine, theirs = local_by_id.get(item.id), remote_by_id.get(item.id)
-        if mine is not None and theirs is not None and units_all_tied(mine, theirs):
-            out.append(mine.model_copy(deep=True))
-        else:
-            out.append(item)
-    return out
+    return prefer_left_on_exact_ties(
+        getattr(merged, items_attr),
+        getattr(local, items_attr),
+        getattr(remote, items_attr),
+    )
 
 
 def _merge_bookmark_payload(local: BookmarkStore, remote: BookmarkStore) -> BookmarkStore:

@@ -190,13 +190,38 @@ def units_all_tied(a, b) -> bool:
 
     ``merge_records`` breaks such a tie with a content sort, deliberately, so
     that it stays commutative. A caller that wants a *positional* preference on
-    an exact tie — ``sync_merge``'s one-shot "local wins" bootstrap is the only
-    one — has to say so itself, and this is how it detects the case.
+    an exact tie has to say so itself, and this is how ``prefer_left_on_exact_ties``
+    detects the case.
     """
     units = merge_units_for(a)
     if units is None or merge_units_for(b) is not units:
         return (a.updated_at or "") == (b.updated_at or "")
     return all(unit_stamp(a, u) == unit_stamp(b, u) for u in units)
+
+
+def prefer_left_on_exact_ties(merged_items: list, left_items: list, right_items: list) -> list:
+    """Re-apply ``left``'s record for every id both sides hold with identical
+    stamps on every merge unit.
+
+    ``merge_stores`` is commutative, so it cannot express "the left argument
+    wins a tie" — it resolves an exact tie by sorting the values, which is
+    arbitrary but symmetric. A caller whose contract IS positional says so with
+    this. Records where the two sides differ on any unit stamp are left exactly
+    as the merge resolved them, so the per-field merge is preserved.
+
+    Two callers: ``sync_merge``'s one-shot "local wins" bootstrap, and
+    ``merge_backup``'s "the live store wins, a backup only fills gaps".
+    """
+    left_by_id = {i.id: i for i in left_items}
+    right_by_id = {i.id: i for i in right_items}
+    out = []
+    for item in merged_items:
+        mine, theirs = left_by_id.get(item.id), right_by_id.get(item.id)
+        if mine is not None and theirs is not None and units_all_tied(mine, theirs):
+            out.append(mine.model_copy(deep=True))
+        else:
+            out.append(item)
+    return out
 
 
 def stamp_units(record, changed: set[str], now_iso: str, units: dict[str, tuple[str, ...]]) -> None:
