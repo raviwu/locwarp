@@ -2,6 +2,10 @@
 Preserves the 5 importers (services/bookmarks.py, services/route_store.py,
 services/sync_merge.py, merge_backup.py, tests/test_store_merge.py). Only
 test_store_merge.py imports TOMBSTONE_RETENTION_DAYS; the rest import merge_stores."""
-from domain.store_merge import merge_stores, TOMBSTONE_RETENTION_DAYS  # noqa: F401
+from domain.store_merge import (  # noqa: F401
+    TOMBSTONE_RETENTION_DAYS,
+    merge_stores,
+    units_all_tied,
+)
 
-__all__ = ["merge_stores", "TOMBSTONE_RETENTION_DAYS"]
+__all__ = ["merge_stores", "TOMBSTONE_RETENTION_DAYS", "units_all_tied"]

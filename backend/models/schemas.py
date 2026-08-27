@@ -199,6 +199,12 @@ class RouteCategory(BaseModel):
     # Bumped on every mutation so the cloud-sync merge can pick the newer
     # copy on an id collision. Empty = legacy (pre-sync-merge) record.
     updated_at: str = ""
+    # Per-unit last-write stamps for the cross-device merge (change G):
+    # merge-unit name -> ISO 8601. A unit with no entry falls back to this
+    # record's `updated_at`, so a record written before G merges exactly as it
+    # did then. Unit tables live in domain/store_merge.py; only mutation paths
+    # write here, never enrichment.
+    field_updated_at: dict[str, str] = {}
 
 
 class SavedRoute(BaseModel):
@@ -227,6 +233,12 @@ class SavedRoute(BaseModel):
     road_distance_m: float | None = None
     road_distance_status: str = "pending"  # 'pending' | 'ok' | 'unavailable'
     dist_fingerprint: str = ""
+    # Per-unit last-write stamps for the cross-device merge (change G):
+    # merge-unit name -> ISO 8601. A unit with no entry falls back to this
+    # record's `updated_at`, so a record written before G merges exactly as it
+    # did then. Unit tables live in domain/store_merge.py; only mutation paths
+    # write here, never enrichment.
+    field_updated_at: dict[str, str] = {}
 
 
 class RouteMoveRequest(BaseModel):
@@ -256,6 +268,12 @@ class BookmarkCategory(BaseModel):
     # Bumped on every mutation so the cloud-sync merge can pick the newer
     # copy on an id collision. Empty = legacy (pre-sync-merge) record.
     updated_at: str = ""
+    # Per-unit last-write stamps for the cross-device merge (change G):
+    # merge-unit name -> ISO 8601. A unit with no entry falls back to this
+    # record's `updated_at`, so a record written before G merges exactly as it
+    # did then. Unit tables live in domain/store_merge.py; only mutation paths
+    # write here, never enrichment.
+    field_updated_at: dict[str, str] = {}
 
 
 class Bookmark(BaseModel):
@@ -282,6 +300,12 @@ class Bookmark(BaseModel):
     # Bumped on every mutation so the cloud-sync merge can pick the newer
     # copy on an id collision. Empty = legacy (pre-sync-merge) record.
     updated_at: str = ""
+    # Per-unit last-write stamps for the cross-device merge (change G):
+    # merge-unit name -> ISO 8601. A unit with no entry falls back to this
+    # record's `updated_at`, so a record written before G merges exactly as it
+    # did then. Unit tables live in domain/store_merge.py; only mutation paths
+    # write here, never enrichment.
+    field_updated_at: dict[str, str] = {}
 
 
 class BookmarkMoveRequest(BaseModel):

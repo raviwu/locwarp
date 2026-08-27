@@ -4,9 +4,14 @@ Used by ``cloud_sync.migrate_pair`` when enabling/disabling cloud sync
 and the destination already has a file from a prior session on another
 device. Strategy:
 
-1. ``merge_stores``: per-item LWW union by ID (newer ``updated_at`` wins;
-   tie keeps local), plus tombstone suppression so a deletion on either
-   side is honoured rather than resurrected.
+1. ``merge_stores``: per-item, per-field LWW union by ID (newer stamp wins),
+   plus tombstone suppression so a deletion on either side is honoured rather
+   than resurrected. On an EXACT tie — every merge unit stamped identically on
+   both sides, which in practice means two legacy records with no timestamps —
+   ``merge_stores`` picks by a content sort, because it has to stay
+   commutative. This migration wants local to win that case, so it re-applies
+   local itself (``_prefer_local_on_exact_ties``) rather than relying on
+   argument order the way it did before change G.
 2. **Collapse same-name categories**: when two distinct category IDs
    carry the same ``name``, keep the one with the earliest ``created_at``
    and remap items pointing at the dropped duplicate.
@@ -32,7 +37,7 @@ from pathlib import Path
 
 from models.schemas import BookmarkStore, RouteStore
 from services.json_safe import safe_load_json, safe_write_json
-from services.store_merge import merge_stores
+from services.store_merge import merge_stores, units_all_tied
 
 logger = logging.getLogger(__name__)
 
@@ -62,11 +67,36 @@ def _build_category_remap(categories: list) -> tuple[list, dict[str, str]]:
     return keepers, remap
 
 
+def _prefer_local_on_exact_ties(merged, local, remote, items_attr: str):
+    """Re-apply local's record for every id both sides hold with identical
+    stamps on every merge unit.
+
+    ``merge_stores`` is commutative, so it cannot express "the left argument
+    wins a tie" — it resolves an exact tie by sorting the values, which is
+    arbitrary but symmetric. "Local wins" is this one-shot migration's own
+    documented policy, so it belongs here. Records where the two sides differ
+    on any unit stamp are left exactly as the merge resolved them, so the
+    per-field merge is preserved.
+    """
+    local_by_id = {i.id: i for i in getattr(local, items_attr)}
+    remote_by_id = {i.id: i for i in getattr(remote, items_attr)}
+    out = []
+    for item in getattr(merged, items_attr):
+        mine, theirs = local_by_id.get(item.id), remote_by_id.get(item.id)
+        if mine is not None and theirs is not None and units_all_tied(mine, theirs):
+            out.append(mine.model_copy(deep=True))
+        else:
+            out.append(item)
+    return out
+
+
 def _merge_bookmark_payload(local: BookmarkStore, remote: BookmarkStore) -> BookmarkStore:
     # merge_stores does the per-item LWW union + tombstone suppression; the
     # same-name category collapse below is a separate bootstrap concern (two
     # devices independently created "Trips" with different ids).
     merged = merge_stores(local, remote)
+    merged.bookmarks = _prefer_local_on_exact_ties(merged, local, remote, "bookmarks")
+    merged.categories = _prefer_local_on_exact_ties(merged, local, remote, "categories")
     deduped_cats, remap = _build_category_remap(list(merged.categories))
     if remap:
         for bm in merged.bookmarks:
@@ -85,6 +115,8 @@ def _merge_bookmark_payload(local: BookmarkStore, remote: BookmarkStore) -> Book
 
 def _merge_route_payload(local: RouteStore, remote: RouteStore) -> RouteStore:
     merged = merge_stores(local, remote)
+    merged.routes = _prefer_local_on_exact_ties(merged, local, remote, "routes")
+    merged.categories = _prefer_local_on_exact_ties(merged, local, remote, "categories")
     deduped_cats, remap = _build_category_remap(list(merged.categories))
     if remap:
         for r in merged.routes:
