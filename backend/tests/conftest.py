@@ -1,7 +1,9 @@
 """Pytest configuration. Adds the backend/ root to sys.path so tests can
 import models.*, core.*, services.* the same way the runtime does.
 """
+import importlib
 import sys
+from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
@@ -37,8 +39,47 @@ def _ensure_data_dir():
     config.DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 
+@contextmanager
+def reimport_config_module():
+    """Import a FRESH ``config`` module, then put the ORIGINAL object back.
+
+    The restore is the load-bearing half. Every runtime module that did
+    ``import config`` at its own import time — ``bootstrap.factories`` among
+    them — holds a direct reference to whatever object was in ``sys.modules``
+    back then. A test that pops ``config`` and leaves a *different* object
+    behind splits config in two: ``_isolate_real_data_paths`` patches the new
+    object while ``factories`` keeps reading the stale one, so every data path
+    silently reverts to the user's real ``~/.locwarp``. That is exactly how
+    the full suite wrote the real ``catalog_baseline.json`` until 2026-08-27.
+
+    Any test that needs a fresh import MUST go through this.
+    """
+    original = sys.modules.get("config")
+    sys.modules.pop("config", None)
+    try:
+        yield importlib.import_module("config")
+    finally:
+        if original is not None:
+            sys.modules["config"] = original
+        else:
+            sys.modules.pop("config", None)
+
+
+@pytest.fixture
+def reimport_config():
+    """Expose :func:`reimport_config_module` as a fixture."""
+    yield reimport_config_module
+
+
+@pytest.fixture(scope="session")
+def _live_config_module():
+    """The ``config`` module object the runtime modules bound at import time."""
+    import config
+    return config
+
+
 @pytest.fixture(autouse=True)
-def _isolate_real_data_paths(tmp_path, monkeypatch):
+def _isolate_real_data_paths(tmp_path, monkeypatch, _live_config_module):
     """HARD GUARD: redirect EVERY data-file path to a per-test tmp dir so no
     test can ever read or WRITE the user's real ~/.locwarp/ or iCloud sync
     folder.
@@ -57,6 +98,21 @@ def _isolate_real_data_paths(tmp_path, monkeypatch):
     rp = tmp_path / "recent_places.json"
 
     import config
+    # The patches below only bite if `config` is still the SAME object the
+    # runtime modules bound with `import config` at their own import time.
+    # A test that does sys.modules.pop("config") and re-imports splits it in
+    # two: this fixture patches the new object while e.g. bootstrap.factories
+    # keeps reading the stale one, and every path below silently reverts to
+    # the user's real ~/.locwarp. That is how the full suite wrote the real
+    # catalog_baseline.json until 2026-08-27. Fail loudly on the next test
+    # instead of corrupting user data in the dark; a test that swaps the
+    # module must restore the original object (see test_config_no_env_read).
+    assert config is _live_config_module, (
+        "sys.modules['config'] was replaced and not restored by an earlier "
+        "test — path isolation is a no-op and tests will write real "
+        "~/.locwarp files. Restore the original module object in that "
+        "test's teardown."
+    )
     monkeypatch.setattr(config, "DATA_DIR", tmp_path, raising=False)
     monkeypatch.setattr(config, "SETTINGS_FILE", st, raising=False)
     monkeypatch.setattr(config, "_DEFAULT_BOOKMARKS_FILE", bm, raising=False)
