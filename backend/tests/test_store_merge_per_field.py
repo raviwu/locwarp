@@ -369,3 +369,39 @@ def test_an_ordinary_lww_resolution_is_not_logged(caplog):
         merge_records(a, b, BOOKMARK_MERGE_UNITS)
 
     assert caplog.records == []
+
+
+def test_two_identical_records_short_circuit_to_the_same_object():
+    """Pins the fast path, without a timing assertion.
+
+    `_save()` merges against the on-disk copy, so all but the one or two
+    records a write touched are identical on both sides. Resolving those unit
+    by unit costs ~95x what returning them costs (19ms vs 0.2ms measured over
+    550 bookmarks) and this runs under `_store_lock` on every save and every
+    watcher tick. Returning `left` uncopied is what the pre-G union did with
+    the side it picked.
+    """
+    ts = "2026-08-27T00:00:00+00:00"
+    a = Bookmark(id="x", name="n", lat=1.0, lng=2.0, updated_at=ts,
+                 field_updated_at={"name": ts})
+    b = a.model_copy(deep=True)
+
+    assert merge_records(a, b, BOOKMARK_MERGE_UNITS) is a
+
+
+def test_the_fast_path_still_normalises_a_record_stamped_behind_its_units():
+    """The one thing the slow path does to a pair of identical records.
+
+    `updated_at` means "last time anything about this record changed", and
+    `_alive` compares a tombstone against it -- a record whose own unit stamp
+    is newer would be killed by a tombstone it should outlive.
+    """
+    old, new = "2026-08-27T00:00:00+00:00", "2026-08-27T05:00:00+00:00"
+    a = Bookmark(id="x", name="n", lat=1.0, lng=2.0, updated_at=old,
+                 field_updated_at={"name": new})
+    b = a.model_copy(deep=True)
+
+    merged = merge_records(a, b, BOOKMARK_MERGE_UNITS)
+
+    assert merged.updated_at == new
+    assert a.updated_at == old, "the input must not be mutated"

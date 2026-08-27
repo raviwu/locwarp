@@ -482,7 +482,26 @@ can separate is an ordinary LWW outcome and occurs on every `_save()` — the
 in-memory record differs from the on-disk copy by definition — so logging that
 would be noise hiding the one decision the merge cannot justify.
 
-### 11.6 Status
+### 11.6 Risk 4 measured, and it was real (resolves §9.4)
+
+§9 risk 4 asked for "one timing check". Naive G was **95x slower** on the hot
+path: 0.19 ms → 18.9 ms for a 550-bookmark store, under `_store_lock`, on every
+`_save()` and every watcher tick. The cost is `model_copy(deep=True)` plus a
+`model_dump()` per record, where the pre-G union just picked one side's object.
+
+Fixed with an equality short-circuit in `merge_records`: identical records
+return `left` uncopied, which is exactly what the pre-G union did with the side
+it picked. A save touches one or two records, so this is the common case by a
+wide margin. Now **0.99 ms** for the same store with one record differing, vs
+0.19 ms pre-G — 5x, sub-millisecond, acceptable. The pathological all-records-
+differ case is still ~19 ms and does not occur outside a first-ever sync.
+
+Pinned by `test_two_identical_records_short_circuit_to_the_same_object` (object
+identity, not a timing assertion) and by a second test for the one thing the
+slow path still owes an identical pair: normalising a record whose `updated_at`
+is behind its own newest unit stamp.
+
+### 11.7 Status
 
 Tasks 0–8 and 10 done; Task 9 (routes) was folded into Tasks 1–5 per Q1 = both.
 Commits: `9360589` (0), `f029f2d` (1–4), `283d3c6` (5, 7), `b75d9da` (6),

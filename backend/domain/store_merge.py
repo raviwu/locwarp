@@ -132,6 +132,26 @@ def merge_records(left, right, units: dict[str, tuple[str, ...]]):
     ``updated_at`` is >= every stamp in its own map. Merging a record that
     violates it normalises it (once, then stably) rather than preserving it.
     """
+    if left == right:
+        # The overwhelmingly common case: `_save()` merges against the on-disk
+        # copy, so all but the one or two records this write touched are
+        # identical on both sides. Resolving them unit by unit produces exactly
+        # `left` back, at ~95x the cost of not doing it -- measured at 19ms vs
+        # 0.2ms for a 550-bookmark store, under `_store_lock`, on every save
+        # AND every watcher tick.
+        #
+        # `left` is returned uncopied, which is what the pre-G union did with
+        # the side it picked, so no caller can have been relying on a fresh
+        # object. The one thing the slow path would still do here is normalise
+        # a record whose `updated_at` is older than its own newest unit stamp,
+        # so that is done explicitly rather than lost.
+        stamps = (getattr(left, "field_updated_at", None) or {}).values()
+        newest = max([left.updated_at or "", *stamps])
+        if newest != (left.updated_at or ""):
+            left = left.model_copy(deep=True)
+            left.updated_at = newest
+        return left
+
     winner_of: dict[str, object] = {}
     for unit, fields in units.items():
         ls, rs = unit_stamp(left, unit), unit_stamp(right, unit)
