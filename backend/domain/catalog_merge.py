@@ -4,10 +4,11 @@ stdlib only (domain ring). No clock, no I/O, no store access — the caller
 supplies the three sides and applies the outcome, so every decision here is
 deterministic and unit-testable in isolation.
 
-The store itself stays a whole-record LWW set (domain/store_merge.py is
-untouched). This module works UPSTREAM of it: it shrinks what the catalog is
+This module works UPSTREAM of the store merge: it shrinks what the catalog is
 allowed to write into a record in the first place, so a value the user edited
-is never handed to the merge as "the catalog's opinion".
+is never handed to the merge as "the catalog's opinion". The merge itself
+(domain/store_merge.py) resolves per unit since change G, and `Resolution.taken`
+is what lets the caller stamp only the units the catalog actually corrected.
 """
 from __future__ import annotations
 
@@ -34,18 +35,30 @@ class Resolution(NamedTuple):
     values    — the resolved value per requested field
     kept      — fields where OUR value was preserved over a differing catalog one
     conflicts — the subset of `kept` where both sides moved, differently
-    changed   — some resolved value came from theirs (drives the re-stamp)
+    taken     — fields whose resolved value came FROM theirs
+
+    `taken` drives the re-stamp, and it is a field list rather than the bool
+    it used to be because change G stamps per merge unit: a catalog correction
+    to `name` must re-stamp the name unit and leave `address` reading as of
+    whenever the user last touched it. A bool would force the caller to
+    re-stamp every unit and hand this machine a fresh timestamp on fields it
+    never changed — which is the revert this whole line of work exists to stop.
 
     `kept` is not redundant with the other three: "the user edited it and the
     catalog had nothing new to say" and "nobody touched anything" produce an
-    identical `values`/`conflicts`/`changed`, and only the first should count
+    identical `values`/`conflicts`/`taken`, and only the first should count
     towards the kept_local the sync reports.
     """
 
     values: dict[str, Any]
     kept: tuple[str, ...]
     conflicts: tuple[str, ...]
-    changed: bool
+    taken: tuple[str, ...]
+
+    @property
+    def changed(self) -> bool:
+        """True when any resolved value came from theirs."""
+        return bool(self.taken)
 
 
 def resolve_record(
@@ -65,7 +78,7 @@ def resolve_record(
     values: dict[str, Any] = {}
     kept: list[str] = []
     conflicts: list[str] = []
-    changed = False
+    taken: list[str] = []
 
     for field in fields:
         our_value = ours[field]
@@ -80,7 +93,7 @@ def resolve_record(
             resolved = our_value
         elif our_value == base_value:
             resolved = their_value          # genuine catalog correction
-            changed = True
+            taken.append(field)
         else:
             resolved = our_value            # local edit wins
             kept.append(field)
@@ -89,4 +102,4 @@ def resolve_record(
 
         values[field] = resolved
 
-    return Resolution(values, tuple(kept), tuple(conflicts), changed)
+    return Resolution(values, tuple(kept), tuple(conflicts), tuple(taken))

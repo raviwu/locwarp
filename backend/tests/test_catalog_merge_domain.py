@@ -35,7 +35,7 @@ def test_merge_field_lists_match_what_the_catalog_owns():
 
 def test_nobody_touched_anything_is_a_no_op():
     res = _r("B", "B", "B")
-    assert res == Resolution(values={"f": "B"}, kept=(), conflicts=(), changed=False)
+    assert res == Resolution(values={"f": "B"}, kept=(), conflicts=(), taken=())
 
 
 def test_catalog_correction_lands_when_the_user_never_edited_the_field():
@@ -69,7 +69,7 @@ def test_both_sides_moved_to_the_same_value_is_a_silent_no_op():
     still records the old one. Reporting a conflict here would be a phantom
     the user could never clear."""
     res = _r("B", "T", "T")
-    assert res == Resolution(values={"f": "T"}, kept=(), conflicts=(), changed=False)
+    assert res == Resolution(values={"f": "T"}, kept=(), conflicts=(), taken=())
 
 
 def test_both_sides_moved_apart_keeps_ours_and_reports_a_conflict():
@@ -113,6 +113,7 @@ def test_kept_and_conflicts_are_reported_per_field_name():
     assert res.values == {"name": "mine", "address": "fixed", "lat": 1.0, "lng": 9.0}
     assert res.kept == ("name", "lng")
     assert res.conflicts == ("name",)
+    assert res.taken == ("address",)
     assert res.changed is True   # 'address' was taken from theirs
 
 
@@ -129,3 +130,17 @@ def test_changed_is_true_exactly_when_a_value_came_from_theirs():
     for base, ours, theirs in product(("B", "X", "Y"), repeat=3):
         res = _r(base, ours, theirs)
         assert res.changed is (res.values["f"] != ours), (base, ours, theirs)
+
+
+def test_taken_names_the_fields_that_came_from_theirs():
+    """`changed` is derived from `taken`, and the caller needs the names.
+
+    Change G stamps per merge unit: the sync re-stamps `name` and leaves
+    `address` reading as of whenever the user last edited it. A bool would
+    force the caller to stamp every unit, which is the revert being fixed.
+    """
+    for base, ours, theirs in product(("B", "X", "Y"), repeat=3):
+        res = _r(base, ours, theirs)
+        expected = ("f",) if res.values["f"] != ours else ()
+        assert res.taken == expected, (base, ours, theirs)
+        assert res.changed is bool(res.taken)

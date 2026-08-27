@@ -526,3 +526,111 @@ def test_force_seed_still_overwrites_a_diverged_local_record(manager, monkeypatc
     manager.force_seed([Bookmark(**_bm(name="Seeded Over The Top"))])
 
     assert manager._find_bookmark("seed-1").name == "Seeded Over The Top"
+
+
+# ── change G: the re-stamp is per merge unit ─────────────────────────────
+
+def test_a_name_correction_leaves_the_address_unit_reading_as_before(manager, monkeypatch):
+    """The catalog corrects one field; the OTHER fields must not silently
+    acquire a fresh timestamp on this machine.
+
+    Before change G the whole record was re-stamped, so pressing Refresh here
+    handed this Mac a newer `updated_at` on `address` too — and the peer's
+    genuine address edit, made earlier but not yet synced, lost the merge.
+    """
+    _stub_geo(monkeypatch, _TW)
+    manager.import_catalog(_catalog())
+    manager.update_bookmark("seed-1", address="my own address")
+    before = manager._find_bookmark("seed-1")
+    before_record, before_address = before.updated_at, before.field_updated_at["address"]
+
+    manager.import_catalog(_catalog([_bm(name="Shop (corrected)", address="my own address")]))
+
+    bm = manager._find_bookmark("seed-1")
+    assert bm.name == "Shop (corrected)"
+    assert bm.field_updated_at["name"] == bm.updated_at > before_record
+    assert bm.field_updated_at["address"] == before_address, (
+        "a field the catalog did not correct must keep the stamp of the edit "
+        "that last changed it"
+    )
+
+
+def test_a_coordinate_correction_stamps_coords_not_name(manager, monkeypatch):
+    _stub_geo(monkeypatch, _TW)
+    manager.import_catalog(_catalog())
+    manager.update_bookmark("seed-1", name="Mine")
+    before = manager._find_bookmark("seed-1").field_updated_at["name"]
+
+    manager.import_catalog(_catalog([_bm(name="Mine", lat=26.5)]))
+
+    bm = manager._find_bookmark("seed-1")
+    assert bm.lat == 26.5
+    assert bm.field_updated_at["coords"] == bm.updated_at
+    assert bm.field_updated_at["name"] == before
+
+
+def test_an_enrich_only_change_bumps_the_record_but_stamps_no_unit(manager, monkeypatch):
+    """The geo four are derived from coordinates nobody moved.
+
+    The record-level bump still has to happen — that is what carries the
+    record past an unreconciled peer tombstone inside the same ``_save()``.
+    But claiming the `coords` unit for a re-derivation would out-vote a real
+    pin move on the other Mac.
+    """
+    from domain.store_merge import BOOKMARK_MERGE_UNITS, unit_stamp
+
+    _stub_geo(monkeypatch, _TW)
+    manager.import_catalog(_catalog())
+    before = manager._find_bookmark("seed-1")
+    before_record = before.updated_at
+    before_units = {u: unit_stamp(before, u) for u in BOOKMARK_MERGE_UNITS}
+
+    _stub_geo(monkeypatch, ("jp", "Asia/Tokyo", "Tokyo", "Kanto"))
+    manager.import_catalog(_catalog())
+
+    bm = manager._find_bookmark("seed-1")
+    assert bm.country_code == "jp"          # the re-enrich did land
+    assert bm.updated_at > before_record    # and the record was bumped
+    # Read through unit_stamp, not the raw map: the record bump would silently
+    # drag every unit forward with it, and the backfill exists to stop that.
+    # Materialising the old value IS the fix, so the raw map legitimately grows.
+    assert {u: unit_stamp(bm, u) for u in BOOKMARK_MERGE_UNITS} == before_units
+
+
+def test_a_category_colour_correction_stamps_only_the_colour_unit(manager, monkeypatch):
+    _stub_geo(monkeypatch, _TW)
+    manager.import_catalog(_catalog())
+    manager.update_category("seed-cat", name="My Name For It")
+    before = next(c for c in manager.store.categories if c.id == "seed-cat")
+    before_name = before.field_updated_at["name"]
+
+    manager.import_catalog(_catalog(categories=[_cat(name="My Name For It", color="#999999")]))
+
+    cat = next(c for c in manager.store.categories if c.id == "seed-cat")
+    assert cat.color == "#999999"
+    assert cat.field_updated_at["color"] == cat.updated_at
+    assert cat.field_updated_at["name"] == before_name
+
+
+def test_force_seed_clears_the_unit_stamps_so_the_overwrite_actually_wins(manager, monkeypatch):
+    """The blind-overwrite branch has to beat whatever the record carried.
+
+    Without clearing, the record keeps a `name` stamp from the user's older
+    edit while `updated_at` jumps to now — so the very value force_seed just
+    wrote loses the next merge against a peer copy of that older edit.
+    """
+    _stub_geo(monkeypatch, _TW)
+    manager.import_catalog(_catalog())
+    manager.update_bookmark("seed-1", name="My Renamed Spot")
+    stale_name_stamp = manager._find_bookmark("seed-1").field_updated_at["name"]
+
+    from models.schemas import Bookmark
+    manager.force_seed([Bookmark(**_bm(name="Seeded Over The Top"))])
+
+    bm = manager._find_bookmark("seed-1")
+    assert bm.name == "Seeded Over The Top"
+    from domain.store_merge import unit_stamp
+    assert unit_stamp(bm, "name") == bm.updated_at > stale_name_stamp
+    # Units force_seed did not actually move may keep their old stamp — the
+    # value on both sides is identical, so nothing turns on it. Only the unit
+    # that changed has to win, and it does.

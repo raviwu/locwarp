@@ -658,7 +658,9 @@ class BookmarkManager:
           re-stamped ONLY when the resolution took a value from the catalog or
           the re-enrich rewrote a geo field. An unchanged record keeps its own
           ``updated_at``, so a force-sync cannot out-vote a fresher edit that
-          has not yet arrived from the other Mac.
+          has not yet arrived from the other Mac. The re-stamp is per unit
+          (``Resolution.taken``): correcting a name leaves the address reading
+          as of whenever the user last edited it.
 
         ``country_code`` (and its siblings timezone / city / region) is written
         by ``enrich_bookmark`` alone on the resolver path — the catalog never
@@ -687,6 +689,11 @@ class BookmarkManager:
                     old.category_id = bm.category_id
                     old.country_code = bm.country_code
                     old.updated_at = bm.updated_at
+                    # A blind overwrite means every unit is as of now. Leaving
+                    # the old per-unit stamps in place would let a peer's older
+                    # edit out-rank the value force_seed just wrote, which is
+                    # the opposite of what this branch promises.
+                    old.field_updated_at = {}
                     enrich_bookmark(old, force=enrich_force)
                 else:
                     res = resolver(old, bm)
@@ -697,7 +704,17 @@ class BookmarkManager:
                     # theirs if the catalog corrected it.
                     enriched = enrich_bookmark(old, force=enrich_force)
                     if res.changed or enriched:
-                        old.updated_at = bm.updated_at
+                        # Only the units the catalog actually corrected. An
+                        # enrich-only change stamps NO unit: it re-derived the
+                        # geo four from coordinates nobody moved, and claiming
+                        # `coords` for that would out-vote a real pin move on
+                        # the other Mac. The record-level bump still happens,
+                        # because that is what carries the record past a
+                        # tombstone.
+                        stamp_units(
+                            old, _units_changed(res.taken),
+                            bm.updated_at, BOOKMARK_MERGE_UNITS,
+                        )
                     if res.kept:
                         kept_local += 1
                     if res.conflicts:
@@ -828,7 +845,9 @@ class BookmarkManager:
                 for field, value in res.values.items():
                     setattr(old, field, value)
                 if res.changed:
-                    old.updated_at = now
+                    stamp_units(
+                        old, _units_changed(res.taken), now, CATEGORY_MERGE_UNITS,
+                    )
                 kept_cats += bool(res.kept)
                 conflict_cats += bool(res.conflicts)
                 updated_cats += 1
