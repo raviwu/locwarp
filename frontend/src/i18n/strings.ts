@@ -599,6 +599,8 @@ export const STRINGS = {
   'bm.add': { zh: '新增收藏', en: 'Add Bookmark' },
   'bm.add_custom': { zh: '自訂座標收藏', en: 'Custom Coordinates' },
   'bm.add_custom_tooltip': { zh: '手動輸入經緯度新增收藏', en: 'Add a bookmark by typing latitude / longitude' },
+  'bm.coord_snapped': { zh: '已吸附至目前位置', en: 'Snapped to current position' },
+  'bm.coord_imprecise': { zh: '此縮放下 1 像素 ≈ {m} 公尺,放大後再點更準確', en: '1 pixel ≈ {m} m at this zoom — zoom in for a precise pick' },
   'bm.lat_placeholder': { zh: '緯度 lat', en: 'Latitude' },
   'bm.lng_placeholder': { zh: '經度 lng', en: 'Longitude' },
   'bm.latlng_placeholder': { zh: '緯度 或 貼 緯度,經度', en: 'Latitude (or paste "lat, lng")' },

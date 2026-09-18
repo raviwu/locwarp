@@ -91,6 +91,30 @@ describe('AppAddBookmarkDialog', () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
+  it('reports when the coordinate was snapped to the current position', () => {
+    render(<AppAddBookmarkDialog {...makeProps({ dialog: makeDialog({ snapped: true }) })} />);
+    expect(screen.getByTestId('addbm-snapped')).toBeInTheDocument();
+    expect(screen.queryByTestId('addbm-precision')).not.toBeInTheDocument();
+  });
+
+  it('warns when one screen pixel is worth more than the hint threshold', () => {
+    render(<AppAddBookmarkDialog {...makeProps({ dialog: makeDialog({ metersPerPixel: 417 }) })} />);
+    expect(screen.getByTestId('addbm-precision')).toBeInTheDocument();
+  });
+
+  it('stays quiet at a precise zoom', () => {
+    render(<AppAddBookmarkDialog {...makeProps({ dialog: makeDialog({ metersPerPixel: 1.2 }) })} />);
+    expect(screen.queryByTestId('addbm-precision')).not.toBeInTheDocument();
+  });
+
+  it('never shows both the snap badge and the precision warning', () => {
+    render(<AppAddBookmarkDialog
+      {...makeProps({ dialog: makeDialog({ snapped: true, metersPerPixel: 417 }) })}
+    />);
+    expect(screen.getByTestId('addbm-snapped')).toBeInTheDocument();
+    expect(screen.queryByTestId('addbm-precision')).not.toBeInTheDocument();
+  });
+
   it('fires onCategoryChange when the category select changes', () => {
     const onCategoryChange = vi.fn();
     render(<AppAddBookmarkDialog {...makeProps({ onCategoryChange })} />);

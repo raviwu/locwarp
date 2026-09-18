@@ -3,6 +3,7 @@ import {
   MARKER_SNAP_RADIUS_PX,
   snapContextCoord,
   metersPerPixel,
+  precisionHintText,
 } from './mapPrecision'
 
 const CLICK = { lat: 47.3388227, lng: 11.7993164, point: { x: 500, y: 300 } }
@@ -54,5 +55,19 @@ describe('metersPerPixel', () => {
 
   it('halves for every zoom level gained', () => {
     expect(metersPerPixel(35, 13)).toBeCloseTo(metersPerPixel(35, 12) / 2, 6)
+  })
+})
+
+describe('precisionHintText', () => {
+  it('substitutes the rounded metre value into the {m} token', () => {
+    expect(precisionHintText('1px ~ {m} m', 417.04)).toBe('1px ~ 417 m')
+  })
+
+  it('rounds to a whole metre', () => {
+    expect(precisionHintText('{m}', 2000.6)).toBe('2001')
+  })
+
+  it('leaves a template without the token untouched', () => {
+    expect(precisionHintText('no token here', 417)).toBe('no token here')
   })
 })

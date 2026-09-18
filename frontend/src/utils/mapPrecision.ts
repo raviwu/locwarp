@@ -50,6 +50,16 @@ export function snapContextCoord(
   return { lat: click.lat, lng: click.lng, snapped: false }
 }
 
+/**
+ * Fill the `{m}` token of a translated precision-hint template with the
+ * rounded metres-per-pixel value. Kept out of the component so the
+ * substitution is testable without an i18n harness, and so each locale keeps
+ * control of where the number sits in the sentence.
+ */
+export function precisionHintText(template: string, metersPerPixel: number): string {
+  return template.replace('{m}', String(Math.round(metersPerPixel)))
+}
+
 // Ground resolution of one screen pixel, web-mercator, 256 px tiles.
 // 156543.03392 = earth equatorial circumference / 256.
 export function metersPerPixel(lat: number, zoom: number): number {

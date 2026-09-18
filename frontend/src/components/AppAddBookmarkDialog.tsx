@@ -2,6 +2,7 @@ import React from 'react';
 import { createPortal } from 'react-dom';
 import { isSubmitEnter } from '../utils/keyboard';
 import { useT } from '../i18n';
+import { PRECISION_HINT_M_PER_PX, precisionHintText } from '../utils/mapPrecision';
 
 // The App-level add-bookmark dialog's controlled state. Distinct from the
 // inline BookmarkList AddBookmarkDialog: this one is a portal, carries the
@@ -73,6 +74,27 @@ const AppAddBookmarkDialog: React.FC<AppAddBookmarkDialogProps> = ({
       <div style={{ fontSize: 11, opacity: 0.6, marginBottom: 8 }}>
         {dialog.lat.toFixed(5)}, {dialog.lng.toFixed(5)}
       </div>
+      {/* Provenance of the coordinate above. A snap means the click was taken
+          to mean "the device", so the value is exact and no precision warning
+          applies — the two are deliberately mutually exclusive. */}
+      {dialog.snapped && (
+        <div
+          data-testid="addbm-snapped"
+          style={{ fontSize: 11, color: '#4caf50', marginBottom: 8 }}
+        >
+          {t('bm.coord_snapped')}
+        </div>
+      )}
+      {!dialog.snapped
+        && typeof dialog.metersPerPixel === 'number'
+        && dialog.metersPerPixel >= PRECISION_HINT_M_PER_PX && (
+        <div
+          data-testid="addbm-precision"
+          style={{ fontSize: 11, color: '#ffa726', marginBottom: 8 }}
+        >
+          {precisionHintText(t('bm.coord_imprecise'), dialog.metersPerPixel)}
+        </div>
+      )}
       <div style={{ position: 'relative', marginBottom: 8 }}>
         <input
           type="text"
