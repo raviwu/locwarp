@@ -18,6 +18,8 @@ import MapContextMenu from './MapContextMenu';
 import { CoordInputStrip } from './CoordInputStrip';
 import { RecentPlacesPopover, type RecentPlaceEntry } from './RecentPlacesPopover';
 import { useLeafletBarButton } from './LeafletBarButton';
+import { snapContextCoord, metersPerPixel } from '../utils/mapPrecision';
+import type { AddBookmarkMeta } from './AppAddBookmarkDialog';
 
 interface Position {
   lat: number;
@@ -40,6 +42,11 @@ interface ContextMenuState {
   // name (e.g. an address from search). Forwarded to onAddBookmark to
   // pre-fill the dialog. Undefined when opened from a map right-click.
   name?: string;
+  // Set when the open coordinate was replaced by the device's exact position
+  // because the right-click landed inside the position marker's footprint.
+  snapped?: boolean;
+  // Ground metres per screen pixel at the zoom this menu was opened on.
+  metersPerPixel?: number;
 }
 
 import type { RuntimesMap } from '../hooks/useSimulation';
@@ -55,7 +62,7 @@ interface MapViewProps {
   onMapClick: (lat: number, lng: number) => void;
   onTeleport: (lat: number, lng: number, source?: 'menu' | 'coord') => void;
   onNavigate: (lat: number, lng: number, source?: 'menu' | 'coord') => void;
-  onAddBookmark: (lat: number, lng: number, suggestedName?: string) => void;
+  onAddBookmark: (lat: number, lng: number, suggestedName?: string, meta?: AddBookmarkMeta) => void;
   onAddWaypoint?: (lat: number, lng: number) => void;
   // Left-click on a waypoint marker opens a small action menu. Both
   // handlers are optional — when undefined, the waypoint marker stays
@@ -492,13 +499,36 @@ const MapViewInner: React.FC<MapViewProps> = ({
     },
     // Right-click: open the shared context menu at the click point. The
     // hook already called preventDefault on the original event.
+    //
+    // The raw `lat`/`lng` Leaflet hands us is the click PIXEL converted at the
+    // map's current zoom — at zoom 8 that is 220-610 m per pixel. The position
+    // marker is non-interactive, so a right-click aimed at the avatar passes
+    // through and arrives up to 22 px off. Snap it back to the device's exact
+    // coordinate, once, here: every menu action then inherits the clean value.
     onContextMenu: (lat, lng, oe) => {
+      const map = mapRef.current;
+      let coord: { lat: number; lng: number; snapped: boolean } = { lat, lng, snapped: false };
+      let mpp: number | undefined;
+      if (map) {
+        const clickPt = map.mouseEventToContainerPoint(oe);
+        const cur = currentPosition
+          ? {
+              lat: currentPosition.lat,
+              lng: currentPosition.lng,
+              point: map.latLngToContainerPoint([currentPosition.lat, currentPosition.lng]),
+            }
+          : null;
+        coord = snapContextCoord({ lat, lng, point: clickPt }, cur);
+        mpp = metersPerPixel(coord.lat, map.getZoom());
+      }
       setContextMenu({
         visible: true,
         x: oe.clientX,
         y: oe.clientY,
-        lat,
-        lng,
+        lat: coord.lat,
+        lng: coord.lng,
+        snapped: coord.snapped,
+        metersPerPixel: mpp,
       });
     },
     // moveend (+ once on mount): feed the center up to App via the ref mirror.
@@ -884,7 +914,10 @@ const MapViewInner: React.FC<MapViewProps> = ({
           onNavigate={onNavigate}
           onSetAsGoldDittoA={onSetAsGoldDittoA}
           onCopy={() => copyContextCoords(contextMenu.lat, contextMenu.lng)}
-          onAddBookmark={onAddBookmark}
+          onAddBookmark={(la, ln, nm) => onAddBookmark(la, ln, nm, {
+            snapped: contextMenu.snapped,
+            metersPerPixel: contextMenu.metersPerPixel,
+          })}
           onAddWaypoint={onAddWaypoint}
           onClose={closeContextMenu}
         />

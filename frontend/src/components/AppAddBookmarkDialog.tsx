@@ -7,6 +7,16 @@ import { useT } from '../i18n';
 // inline BookmarkList AddBookmarkDialog: this one is a portal, carries the
 // target lat/lng + the async reverse-geocode pre-fill flags (nameResolving /
 // countryCode), and is opened by a map click rather than the library panel.
+// Precision provenance for a map-originated add. Absent for library-panel and
+// recent-places adds, which carry an exact coordinate by construction.
+export interface AddBookmarkMeta {
+  // True when the right-click was inside the position marker and was replaced
+  // by the device's exact coordinate.
+  snapped?: boolean;
+  // Ground resolution of one screen pixel at the zoom the click happened on.
+  metersPerPixel?: number;
+}
+
 export interface AppAddBookmarkState {
   lat: number;
   lng: number;
@@ -14,6 +24,8 @@ export interface AppAddBookmarkState {
   category: string;
   countryCode?: string;
   nameResolving?: boolean;
+  snapped?: boolean;
+  metersPerPixel?: number;
 }
 
 interface AppAddBookmarkDialogProps {

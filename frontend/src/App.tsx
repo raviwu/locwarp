@@ -32,6 +32,7 @@ import EtaBar from './components/EtaBar'
 import WaypointEditor from './components/WaypointEditor'
 import StatusBar from './components/StatusBar'
 import AppAddBookmarkDialog from './components/AppAddBookmarkDialog'
+import type { AddBookmarkMeta, AppAddBookmarkState } from './components/AppAddBookmarkDialog'
 import BulkPasteDialog from './components/BulkPasteDialog'
 import WaypointFlyDialog from './components/WaypointFlyDialog'
 import RouteLoadDialog from './components/RouteLoadDialog'
@@ -382,12 +383,16 @@ const App: React.FC = () => {
     setPreviewPin({ lat: cl, lng: nl })
   }, [])
 
-  const [addBmDialog, setAddBmDialog] = useState<{
-    lat: number; lng: number; name: string; category: string;
-    countryCode?: string; nameResolving?: boolean;
-  } | null>(null)
+  // Shape lives with the dialog that renders it (AppAddBookmarkState), so the
+  // precision fields a map-originated add carries stay defined in one place.
+  const [addBmDialog, setAddBmDialog] = useState<AppAddBookmarkState | null>(null)
 
-  const handleAddBookmark = useCallback((lat: number, lng: number, suggestedName?: string) => {
+  const handleAddBookmark = useCallback((
+    lat: number,
+    lng: number,
+    suggestedName?: string,
+    meta?: AddBookmarkMeta,
+  ) => {
     // When the caller already knows a name (e.g. a recent-history entry
     // from a search), seed the dialog so reverse-geocode only fills the
     // country_code and won't overwrite the typed name — the existing
@@ -399,6 +404,8 @@ const App: React.FC = () => {
       name: seedName,
       category: bm.categories[0]?.name || t('bm.default'),
       nameResolving: true,
+      snapped: meta?.snapped,
+      metersPerPixel: meta?.metersPerPixel,
     })
     // Reverse-geocode asynchronously to pre-fill the name + remember country.
     // User can still overwrite the suggestion. If the call fails we just leave
