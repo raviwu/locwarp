@@ -139,3 +139,51 @@ def test_main_cli_restores_combined_file(tmp_path, monkeypatch, capsys):
     assert rc == 0
     assert bm_live.exists() and rt_live.exists()
     assert "Combined restore complete." in capsys.readouterr().out
+
+
+def test_old_snapshot_without_tombstones_key_still_restores(tmp_path):
+    """BACKWARD COMPAT. Every snapshot written before 2026-09-18 has no
+    `tombstones` key. Both store models default the field to [], so those files
+    must keep restoring exactly as they always did."""
+    f = _build_combined(tmp_path)
+    raw = json.loads(f.read_text())
+    del raw["bookmarks"]["tombstones"]
+    del raw["routes"]["tombstones"]
+
+    bm_live = tmp_path / "restored-bookmarks.json"
+    rt_live = tmp_path / "restored-routes.json"
+    summary = restore_combined_snapshot(raw, bm_live, rt_live, force_restore=True)
+
+    assert summary["bookmarks"]["items_restored"] >= 1
+    assert summary["routes"]["items_restored"] >= 1
+    assert summary["bookmarks"]["live_items_deleted"] == []
+    assert any(b["name"] == "B" for b in json.loads(bm_live.read_text())["bookmarks"])
+
+
+def test_tombstones_survive_a_full_snapshot_restore_round_trip(tmp_path):
+    """The end-to-end contract: delete an item, snapshot it, restore into a
+    peer that still holds it alive, and it stays deleted."""
+    bm = make_bookmark_manager()
+    cat = bm.create_category(name="Cat")
+    keep = bm.create_bookmark(name="keep", lat=1.0, lng=2.0, category_id=cat.id)
+    doomed = bm.create_bookmark(name="doomed", lat=3.0, lng=4.0, category_id=cat.id)
+    rm = make_route_manager()
+
+    peer = tmp_path / "peer-bookmarks.json"
+    peer.write_text(json.dumps({
+        "categories": [c.model_dump(mode="json") for c in bm.store.categories],
+        "bookmarks": [keep.model_dump(mode="json"), doomed.model_dump(mode="json")],
+        "tombstones": [],
+    }), encoding="utf-8")
+
+    bm.delete_bookmark(doomed.id)
+    snap = backup.build_snapshot(
+        bm.snapshot_export(), rm.snapshot_export(), [],
+        datetime(2026, 9, 18, 12, 0, 0), "in-process",
+    )
+
+    summary = restore_combined_snapshot(snap, peer, tmp_path / "peer-routes.json")
+
+    written = json.loads(peer.read_text())
+    assert {b["id"] for b in written["bookmarks"]} == {keep.id}
+    assert summary["bookmarks"]["live_items_deleted"] == [doomed.id]

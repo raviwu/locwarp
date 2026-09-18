@@ -237,3 +237,65 @@ def test_a_tied_category_also_keeps_the_live_copy(tmp_path):
     merge_backup_into_live(backup_p, live_p)
 
     assert json.loads(live_p.read_text())["categories"][0]["name"] == "aaa live cat"
+
+
+# ── a backup that carries deletion history can DELETE live items ──────────
+# Since 2026-09-18 snapshots carry tombstones. That is correct CRDT behaviour
+# but it must never be silent, and --force-restore must actually protect the
+# live store from it.
+
+
+def test_backup_tombstone_deletes_a_live_item_and_reports_it(tmp_path):
+    live = tmp_path / "bookmarks.json"
+    backup = tmp_path / "backup.json"
+    _write(live, {"categories": [], "tombstones": [],
+                  "bookmarks": [_bm("x", "X", _recent(5))]})
+    _write(backup, {"categories": [], "bookmarks": [_bm("y", "Y", _recent(3))],
+                    "tombstones": [{"id": "x", "kind": "bookmark",
+                                    "deleted_at": _recent(1)}]})
+
+    summary = merge_backup_into_live(backup, live)
+
+    assert {b["id"] for b in json.loads(live.read_text())["bookmarks"]} == {"y"}
+    assert summary["live_items_deleted"] == ["x"], (
+        "a restore that removes live data must report it"
+    )
+
+
+def test_force_restore_keeps_a_live_item_the_backup_tombstoned(tmp_path):
+    """The keep-set must cover ids the LIVE store holds alive. Scoping the
+    backup-side tombstone drop to backup_ids alone would drop nothing here,
+    because the dangerous tombstones are exactly the ones for ids the backup
+    does NOT carry alive."""
+    live = tmp_path / "bookmarks.json"
+    backup = tmp_path / "backup.json"
+    _write(live, {"categories": [], "tombstones": [],
+                  "bookmarks": [_bm("x", "X", _recent(5))]})
+    _write(backup, {"categories": [], "bookmarks": [_bm("y", "Y", _recent(3))],
+                    "tombstones": [{"id": "x", "kind": "bookmark",
+                                    "deleted_at": _recent(1)}]})
+
+    summary = merge_backup_into_live(backup, live, force_restore=True)
+
+    assert {b["id"] for b in json.loads(live.read_text())["bookmarks"]} == {"x", "y"}
+    assert summary["live_items_deleted"] == []
+    assert "x" in summary["backup_tombstones_dropped"]
+
+
+def test_force_restore_preserves_a_backup_tombstone_neither_side_holds_alive(tmp_path):
+    """The other half of the contract: --force-restore must not blanket-erase
+    deletion history. A tombstone for an id nobody holds alive is real history
+    and has to survive, or every force restore resurrects old deletions."""
+    live = tmp_path / "bookmarks.json"
+    backup = tmp_path / "backup.json"
+    _write(live, {"categories": [], "tombstones": [],
+                  "bookmarks": [_bm("x", "X", _recent(5))]})
+    _write(backup, {"categories": [], "bookmarks": [],
+                    "tombstones": [{"id": "z", "kind": "bookmark",
+                                    "deleted_at": _recent(1)}]})
+
+    summary = merge_backup_into_live(backup, live, force_restore=True)
+
+    assert "z" not in summary["backup_tombstones_dropped"]
+    written = json.loads(live.read_text())
+    assert "z" in {t["id"] for t in written["tombstones"]}

@@ -62,9 +62,16 @@ def build_snapshot(
     bookmarks: dict, routes: dict, recent: list, now: datetime, source: str
 ) -> dict:
     """Assemble the combined snapshot payload. ``bookmarks`` is the
-    {categories, bookmarks} whole-store shape; ``routes`` is {categories, routes}
-    — each directly re-importable via LocWarp's import endpoints. ``recent`` is
-    a flat list (RecentPlacesManager.snapshot_export()), not a pydantic store."""
+    {categories, bookmarks, tombstones} whole-store shape; ``routes`` is
+    {categories, routes, tombstones}. The tombstone lists are what make a
+    restore deletion-faithful — the full-fidelity restore path is
+    ``make restore-backup`` (merge_backup.py), NOT the import endpoints, which
+    drop tombstones. ``recent`` is a flat list
+    (RecentPlacesManager.snapshot_export()), not a pydantic store.
+
+    The exported list is whatever was live at snapshot time: GC runs inside
+    merge_stores, i.e. on write, so an idle store can export a tombstone older
+    than TOMBSTONE_RETENTION_DAYS. Restore applies the authoritative cutoff."""
     return {
         "_backup_meta": {
             "captured_at": now.astimezone().isoformat(timespec="seconds"),
@@ -72,8 +79,15 @@ def build_snapshot(
             "bookmark_count": len(bookmarks.get("bookmarks", [])),
             "route_count": len(routes.get("routes", [])),
             "recent_count": len(recent),
-            "note": "Insurance snapshot of LocWarp live state. 'bookmarks' and "
-            "'routes' are each re-importable via LocWarp's import endpoints.",
+            # Keep IDENTICAL to scripts/desktop_backup.py's note — both tools
+            # write the same file and a reader must get the same instruction.
+            "note": (
+                "Insurance snapshot of LocWarp live state. 'bookmarks' and "
+                "'routes' are full stores INCLUDING tombstones (deletion "
+                "history). Restore with `make restore-backup` (dry-run first): "
+                "the import endpoints accept these objects but DROP tombstones "
+                "and re-stamp updated_at, which resurrects deleted items."
+            ),
         },
         "bookmarks": bookmarks,
         "routes": routes,

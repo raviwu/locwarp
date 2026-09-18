@@ -616,17 +616,32 @@ class BookmarkManager:
     # ------------------------------------------------------------------
 
     def export_json(self) -> str:
-        """Serialise the entire store to a JSON string."""
-        return self.store.model_dump_json(indent=2)
+        """Serialise the entire store — categories, bookmarks AND tombstones —
+        to a JSON string.
+
+        Held under _store_lock for the same reason snapshot_export() is: the
+        watcher thread reassigns self.store mid-merge, so an unlocked read can
+        tear. Callers on the event loop must therefore go through
+        asyncio.to_thread (see GET /api/bookmarks/store)."""
+        with self._store_lock:
+            return self.store.model_dump_json(indent=2)
 
     def snapshot_export(self) -> dict:
-        """Consistent {categories, bookmarks} read under _store_lock so the
-        rotating backup never captures a torn state mid-_save / mid-_watcher_tick.
-        The critical section is just the dict build; the caller writes outside."""
+        """Consistent {categories, bookmarks, tombstones} read under _store_lock
+        so the rotating backup never captures a torn state mid-_save /
+        mid-_watcher_tick. The critical section is just the dict build; the
+        caller writes outside.
+
+        ``tombstones`` is NOT optional: a snapshot without deletion history
+        resurrects every deleted item when restored against a peer that still
+        holds it alive (an item is alive iff no tombstone has
+        ``deleted_at >= item.updated_at``). Captured in the same critical
+        section as the other two lists so the three cannot tear apart."""
         with self._store_lock:
             return {
                 "categories": [c.model_dump(mode="json") for c in self.store.categories],
                 "bookmarks": [b.model_dump(mode="json") for b in self.store.bookmarks],
+                "tombstones": [t.model_dump(mode="json") for t in self.store.tombstones],
             }
 
     def _upsert_items(

@@ -257,6 +257,26 @@ async def export_bookmarks(
     )
 
 
+@router.get("/store")
+async def export_bookmark_store(bm=Depends(get_bookmark_manager)):
+    """Full-fidelity store dump — categories, bookmarks AND tombstones.
+
+    Distinct from GET "" (the UI list, a frozen {categories, bookmarks}
+    contract) and from GET /export (a user-facing shareable artifact with
+    per-category scoping and markdown/geojson/csv formats). Backups need
+    deletion history: a snapshot without tombstones resurrects deleted
+    bookmarks when restored against a peer that still holds them alive.
+    Consumed by scripts/desktop_backup.py.
+
+    export_json() takes a blocking threading.Lock that the watcher thread holds
+    across a merge, so it runs off the event loop.
+    """
+    import asyncio
+
+    body = await asyncio.to_thread(bm.export_json)
+    return Response(content=body, media_type="application/json")
+
+
 @router.post("/import")
 async def import_bookmarks(data: dict, bm=Depends(get_bookmark_manager)):
     import json as _json

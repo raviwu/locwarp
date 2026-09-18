@@ -71,6 +71,33 @@ def _get(path: str):
         return json.loads(resp.read().decode("utf-8"))
 
 
+def _get_bookmarks_store():
+    """Full bookmark store INCLUDING tombstones.
+
+    ``GET /api/bookmarks`` is the UI list endpoint and deliberately carries no
+    deletion history; a snapshot without it resurrects deleted bookmarks when
+    restored against a peer that still holds them alive (the 2026-09-18
+    incident). ``GET /api/bookmarks/store`` exists for exactly this. Falls back
+    to the list endpoint when talking to an older backend, so a mixed-version
+    machine still gets a (lesser) backup rather than none.
+
+    NOTE: ``HTTPError`` subclasses ``URLError``, so a 404 would otherwise be
+    swallowed by main()'s unreachable-backend handler and silently produce no
+    backup at all. It must be caught here, ahead of that.
+    """
+    try:
+        return _get("/api/bookmarks/store")
+    except urllib.error.HTTPError as exc:
+        if exc.code != 404:
+            raise
+        print(
+            "warn: /api/bookmarks/store missing (older backend) — falling back "
+            "to /api/bookmarks; this snapshot will carry NO bookmark tombstones",
+            file=sys.stderr,
+        )
+        return _get("/api/bookmarks")
+
+
 def _read_recent() -> list:
     """Best-effort read of the recent-places file. Never raises — a missing or
     corrupt file just means an empty recent contribution to this backup, same
@@ -126,8 +153,10 @@ def _prune_old_snapshots(backup_dir: str, now: float, max_age_s: float) -> list[
 
 def main() -> int:
     try:
-        bookmarks = _get("/api/bookmarks")          # {categories, bookmarks}
-        routes = _get("/api/route/saved/export")    # {categories, routes}
+        # Both legs must carry tombstones. The routes leg already does:
+        # /saved/export serialises the whole RouteStore via model_dump_json().
+        bookmarks = _get_bookmarks_store()          # {categories, bookmarks, tombstones}
+        routes = _get("/api/route/saved/export")    # {categories, routes, tombstones}
     except (urllib.error.URLError, OSError, ValueError) as exc:
         # Backend not running / unreachable — keep the last good backup untouched.
         print(f"skip: LocWarp backend unreachable ({exc})", file=sys.stderr)
@@ -154,9 +183,14 @@ def main() -> int:
             "bookmark_count": bm_count,
             "route_count": rt_count,
             "recent_count": rec_count,
-            "note": "Insurance snapshot of LocWarp in-memory state. The "
-                    "'bookmarks' and 'routes' objects are each directly "
-                    "re-importable via LocWarp's import endpoints.",
+            # Keep IDENTICAL to backend/domain/backup.py's note — both tools
+            # write the same file and a reader must get the same instruction.
+            "note": "Insurance snapshot of LocWarp live state. 'bookmarks' and "
+                    "'routes' are full stores INCLUDING tombstones (deletion "
+                    "history). Restore with `make restore-backup` (dry-run "
+                    "first): the import endpoints accept these objects but DROP "
+                    "tombstones and re-stamp updated_at, which resurrects "
+                    "deleted items.",
         },
         "bookmarks": bookmarks,
         "routes": routes,

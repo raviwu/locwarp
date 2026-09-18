@@ -183,12 +183,13 @@ class RouteManager:
         return sorted(self.store.categories, key=lambda c: c.sort_order)
 
     def snapshot_export(self) -> dict:
-        """{categories, routes} for the rotating backup task. No lock, but bind
-        self.store to a local FIRST so both lists come from the SAME store object.
-        The watcher reassigns self.store atomically (GIL) and merge_stores returns
-        a fresh store (it never mutates the bound one), and CRUD runs on the
-        event-loop thread alongside the synchronous backup tick — so a single
-        bound reference cannot capture a mixed pre/post-merge (torn) read."""
+        """{categories, routes, tombstones} for the rotating backup task. No
+        lock, but bind self.store to a local FIRST so all three lists come from
+        the SAME store object. The watcher reassigns self.store atomically (GIL)
+        and merge_stores returns a fresh store (it never mutates the bound one),
+        and CRUD runs on the event-loop thread alongside the synchronous backup
+        tick — so a single bound reference cannot capture a mixed
+        pre/post-merge (torn) read."""
         store = self.store
         return {
             "categories": [
@@ -196,6 +197,10 @@ class RouteManager:
                 for c in sorted(store.categories, key=lambda c: c.sort_order)
             ],
             "routes": [r.model_dump(mode="json") for r in store.routes],
+            # Deletion history is part of the store's fidelity: a snapshot
+            # without it resurrects deleted routes on restore. Read from the
+            # same bound `store` local as the other two lists.
+            "tombstones": [t.model_dump(mode="json") for t in store.tombstones],
         }
 
     def create_category(self, name: str, color: str = "#6c8cff") -> RouteCategory:

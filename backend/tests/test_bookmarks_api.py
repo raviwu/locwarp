@@ -266,3 +266,39 @@ def test_list_bookmarks_api_carries_geo_fields(client):
     assert len(bms) == 1
     assert bms[0]["country_code"] == "tw"
     assert bms[0]["timezone"] == "Asia/Taipei"
+
+
+# ---------------------------------------------------------------------------
+# Full-fidelity store dump (GET /store) — backups need deletion history.
+# Cover for the 2026-09-18 incident: snapshots carried 0 tombstones while the
+# live store carried 13, so a restore would have resurrected all 13.
+# ---------------------------------------------------------------------------
+
+
+def test_get_bookmarks_store_returns_full_store_with_tombstones(client):
+    from models.schemas import BookmarkStore
+
+    cat = _create_category(client)
+    keep = _create_bookmark(client, cat["id"], name="keep")
+    doomed = _create_bookmark(client, cat["id"], name="doomed")
+    assert client.delete(f"/api/bookmarks/{doomed['id']}").status_code == 200
+
+    resp = client.get("/api/bookmarks/store")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert set(body) == {"categories", "bookmarks", "tombstones"}
+    # Parses as the real store model, so a restore can round-trip it.
+    store = BookmarkStore(**body)
+    assert [b.id for b in store.bookmarks] == [keep["id"]]
+    assert [t.id for t in store.tombstones] == [doomed["id"]]
+
+
+def test_get_bookmarks_list_shape_is_unchanged(client):
+    """FREEZE GUARD. The UI list endpoint's contract must NOT grow a
+    tombstones key — that is why /store exists as a separate endpoint."""
+    cat = _create_category(client)
+    doomed = _create_bookmark(client, cat["id"], name="doomed")
+    client.delete(f"/api/bookmarks/{doomed['id']}")
+
+    body = client.get("/api/bookmarks").json()
+    assert set(body) == {"categories", "bookmarks"}

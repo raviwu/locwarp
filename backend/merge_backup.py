@@ -117,12 +117,30 @@ def _merge_store_into_live(
     # Ids the backup carries — used both to report tombstone suppression and
     # to know which tombstones --force-restore should drop.
     backup_ids = {x.id for x in _items(backup)} | {c.id for c in backup.categories}
+    # What the LIVE store holds alive BEFORE the merge. Since backups began
+    # carrying deletion history, a restore can DELETE live records (a backup
+    # tombstone suppresses a live item), so the summary must be able to report
+    # that — a restore that removes data must never be silent.
+    live_alive = {x.id for x in _items(live)} | {c.id for c in live.categories}
     suppressed = sorted(t.id for t in live.tombstones if t.id in backup_ids)
 
     dropped_tombstones: list[str] = []
-    if force_restore and suppressed:
-        dropped_tombstones = list(suppressed)
-        live.tombstones = [t for t in live.tombstones if t.id not in backup_ids]
+    dropped_backup_tombstones: list[str] = []
+    if force_restore:
+        if suppressed:
+            dropped_tombstones = list(suppressed)
+            live.tombstones = [t for t in live.tombstones if t.id not in backup_ids]
+        # The BACKUP's own tombstones delete live records, and the dangerous
+        # ones are precisely those for ids the backup does NOT hold alive —
+        # scoping this drop to backup_ids alone would therefore drop nothing
+        # that matters. --force-restore means "keep what either side still has",
+        # so the keep-set must cover the live store's alive ids too.
+        keep = backup_ids | live_alive
+        dropped_backup_tombstones = sorted(
+            t.id for t in backup.tombstones if t.id in keep
+        )
+        if dropped_backup_tombstones:
+            backup.tombstones = [t for t in backup.tombstones if t.id not in keep]
 
     before = len(_items(live))
     # The backup only fills gaps. merge_stores resolves a collision per merge
@@ -140,6 +158,8 @@ def _merge_store_into_live(
         merged.categories, live.categories, backup.categories,
     )
     after = len(_items(merged))
+    merged_alive = {x.id for x in _items(merged)} | {c.id for c in merged.categories}
+    live_items_deleted = sorted(live_alive - merged_alive)
 
     summary = {
         "store_type": "bookmarks" if store_cls is BookmarkStore else "routes",
@@ -150,6 +170,10 @@ def _merge_store_into_live(
         "items_restored": after - before,
         "tombstone_suppressed": [] if force_restore else suppressed,
         "tombstones_dropped": dropped_tombstones,
+        # Live records the merge removed because the BACKUP carried a tombstone
+        # for them. Empty on every pre-2026-09-18 snapshot (they had none).
+        "live_items_deleted": live_items_deleted,
+        "backup_tombstones_dropped": dropped_backup_tombstones,
         "dry_run": dry_run,
         "backup_copy": None,
     }
@@ -232,6 +256,27 @@ def restore_combined_snapshot(
     return results
 
 
+def _print_live_deletions(summary: dict, indent: str = "") -> None:
+    """A restore that REMOVES live records must say so loudly.
+
+    Since backups began carrying deletion history (2026-09-18), the backup's
+    own tombstones can suppress items the live store still holds — which is
+    correct CRDT behaviour, but it must never be silent. The live file is
+    copied to a ``.bak-<ts>`` sidecar first; that is the recovery artifact.
+    """
+    killed = summary.get("live_items_deleted") or []
+    if killed:
+        print(f"{indent}WARNING: removed {len(killed)} live item(s) — the backup "
+              f"carries tombstones for them")
+        preview = ", ".join(killed[:5]) + ("..." if len(killed) > 5 else "")
+        print(f"{indent}  ids: {preview}")
+        print(f"{indent}  -> intended? if not, restore the .bak- sidecar or "
+              f"re-run with FORCE=1")
+    dropped = summary.get("backup_tombstones_dropped") or []
+    if dropped:
+        print(f"{indent}Backup tombstones ignored (force restore): {len(dropped)}")
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Merge a backup store JSON into the live LocWarp store.",
@@ -272,6 +317,7 @@ def main(argv: list[str] | None = None) -> int:
             if s["tombstone_suppressed"]:
                 print(f"  Suppressed by tombstones (NOT restored): "
                       f"{len(s['tombstone_suppressed'])} — re-run with FORCE=1")
+            _print_live_deletions(s, indent="  ")
             if not s["dry_run"] and s["backup_copy"]:
                 print(f"  Live store backed up to: {s['backup_copy']}")
         if "recent" in combined:
@@ -304,6 +350,7 @@ def main(argv: list[str] | None = None) -> int:
         print("  → these ids were deleted; re-run with FORCE=1 to bring them back")
     if summary["tombstones_dropped"]:
         print(f"Tombstones dropped (force restore): {len(summary['tombstones_dropped'])}")
+    _print_live_deletions(summary)
     if summary["dry_run"]:
         print("DRY RUN — nothing written.")
     else:
