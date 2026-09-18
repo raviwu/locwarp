@@ -248,3 +248,46 @@ starting; keep it green + import-linter `7 kept, 0 broken` after every commit.
 | Test escapes isolation → corrupts real data | conftest guard extended for `BACKUP_DIR` in the same change |
 | Backup task leaks across shutdown | Cancelled + awaited in lifespan teardown alongside `watchdog_task` |
 | Two backup systems on one dir | In-process uses the identical format/dir as `desktop_backup.py`; no launchd agent installed; `make backup` remains a compatible manual tool |
+
+---
+
+## Tombstones (2026-09-18)
+
+**The snapshot was not a faithful copy of the store.** Both `snapshot_export()`s hand-built a dict
+listing two of the store's three fields, so every snapshot carried zero deletion history. Measured
+during the 2026-09-18 store-loss incident:
+
+| Source | bookmark tombstones | route tombstones |
+|---|---|---|
+| live store (recovered) | 13 | 5 |
+| in-process snapshot | 0 | 0 |
+| `desktop_backup.py` snapshot | 0 | 4 |
+
+The routes leg partially survived by accident: `GET /api/route/saved/export` serialises the whole
+`RouteStore` via `model_dump_json()`, while `GET /api/bookmarks` hand-builds `{categories,
+bookmarks}`. Restoring a tombstone-less snapshot resurrects every deleted item on the next merge
+with a peer that still holds it — silent data corruption.
+
+**Fix:** both `snapshot_export()`s emit `tombstones`; bookmarks gained `GET /api/bookmarks/store`
+(the UI list endpoint's shape stays frozen, pinned by a guard test) and `desktop_backup.py` uses it
+with a 404 fallback — `HTTPError` subclasses `URLError`, so the fallback must be caught ahead of
+`main()`'s unreachable-backend handler or a 404 silently yields no backup.
+
+**Consequence — a restore can now delete live records.** A backup tombstone suppressing a live item
+is correct CRDT behaviour, but it must never be silent: `_merge_store_into_live` computes
+`live_items_deleted` and the CLI warns, naming the `.bak-<ts>` sidecar as the recovery artifact.
+`DRY_RUN=1` is the documented first step.
+
+**`--force-restore` keeps what EITHER side holds alive.** `keep = backup_ids | live_alive`. Scoping
+the backup-side tombstone drop to `backup_ids` alone protects nothing, because the tombstones that
+destroy live data are precisely those for ids the backup does *not* hold alive. A tombstone for an
+id neither side holds alive is real history and survives.
+
+**Retention:** the exported list is whatever was live at snapshot time. GC runs inside
+`merge_stores`, i.e. on write, so an idle store can export a tombstone older than
+`TOMBSTONE_RETENTION_DAYS`; restore applies the authoritative cutoff. Do not assume a snapshot
+cannot carry a >30-day tombstone.
+
+**Backward compatibility:** snapshots written before this change have no `tombstones` key; both
+models default it to `[]`, so they restore exactly as before — with an empty deletion history,
+which is the honest representation of what those files contain.

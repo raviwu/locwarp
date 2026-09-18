@@ -27,7 +27,7 @@ Project-specific instructions for Claude / agentic workers. Layered on top of `~
 **The three load-bearing inversions:** engine → `DevicePort` (infra `device_manager` injected); `device_manager` → `EventPublisher` (api WS publisher injected; **awaited, in-line, order-preserving** — never hold the connection-manager lock under `device_manager._lock`); `device_manager` → `TunnelRegistry` (infra `wifi_tunnel` injected, owning `_tunnels` + `_tunnels_lock`; read path snapshots under the lock). DI = one container on `app.state`, synchronous providers, no DI framework.
 
 **Hard rules for any work under this refactor:**
-- **Behavior / API freeze.** No external HTTP / WS / IPC change. The full backend pytest suite stays green after EVERY commit (current baseline ≈914 collected — pin the exact number via `cd backend && .venv/bin/python -m pytest --collect-only -q` before starting). WS payloads compared **deep-equal JSON** (not literal bytes), serialized `exclude_unset`/`exclude_none` so absent keys stay absent. The ONE documented exception is the `device_manager.py:1155` NameError fix (a dead retry path becomes live).
+- **Behavior / API freeze.** No external HTTP / WS / IPC change. The full backend pytest suite stays green after EVERY commit (current baseline ≈1332 collected, measured 2026-09-18 — pin the exact number via `cd backend && .venv/bin/python -m pytest --collect-only -q` before starting). WS payloads compared **deep-equal JSON** (not literal bytes), serialized `exclude_unset`/`exclude_none` so absent keys stay absent. The ONE documented exception is the `device_manager.py:1155` NameError fix (a dead retry path becomes live).
 - **Danger-zone-test-first.** `simulation_engine.py` + all movers + `api/location.py` + `device_manager` recovery + `phone_control.py` have **no direct tests**. Write characterization tests (driven by an injected `ClockPort` + stepped `asyncio.sleep`, asserting ordered exact tuples) **before** touching them. The frontend now has Vitest infra (≈651 tests across 84 files); keep it green and add tests with each change.
 - **Thick carve-outs stay leaky.** Do NOT abstract `pymobiledevice3` / `usbmuxd` / SIP / tunnel-helper / `osascript` guts into pure cores — wrap them behind narrow ports only as a test/inversion seam.
 - **CI gate before structural moves.** All 7 import-linter contracts are enforced (`7 kept, 0 broken`) plus the frontend dependency-cruiser gate; keep both green before any structural move.
@@ -119,7 +119,25 @@ Design: `docs/superpowers/specs/2026-06-22-bookmark-route-rotating-backup-design
   per-store files still restore via `make merge-bookmarks` / `make merge-routes`. (Feeding the
   combined file straight to `merge-bookmarks` used to raise a ValidationError — `restore_combined_snapshot`
   fixes that.) The manual `make backup` (`scripts/desktop_backup.py`) writes the identical
-  format/dir and stays a compatible on-demand tool; no launchd agent is installed.
+  format/dir and stays a compatible on-demand tool. **A launchd agent IS installed**
+  (`~/Library/LaunchAgents/com.locwarp.desktop-backup.plist`, verified present in
+  `launchctl list` 2026-09-18 — an earlier note here claiming otherwise was wrong), so TWO
+  writers share `~/.locwarp/backups/` and overwrite each other's `locwarp-latest-backup.json`:
+  the in-process `BackupService` every 5 min (`_backup_meta.source == "in-process"`) and this
+  script every 60 s (`source == "http://127.0.0.1:8777"`). Retention is duplicated in both —
+  change them together.
+- **Snapshots carry tombstones (2026-09-18).** Both `snapshot_export()`s and
+  `GET /api/bookmarks/store` emit `{categories, items, tombstones}`; the routes leg already did
+  via `model_dump_json()`. Without deletion history a restore RESURRECTS deleted items on the
+  next peer merge — the defect that cost 13 bookmark tombstones in the 2026-09-18 incident.
+  Consequences: (a) a restore can now DELETE live records, so `merge_backup` reports
+  `live_items_deleted` and the CLI warns — always `DRY_RUN=1` first; (b) `--force-restore` keeps
+  what EITHER side holds alive (`keep = backup_ids | live_alive`) — scoping that drop to
+  `backup_ids` alone protects nothing, since the dangerous tombstones are for ids the backup
+  does not hold alive; (c) the import endpoints drop tombstones and re-stamp `updated_at`, so
+  `make restore-backup` is the only deletion-faithful restore. The `_backup_meta.note` says so
+  and is duplicated verbatim in `domain/backup.py` + `scripts/desktop_backup.py` (pinned by a
+  test). Snapshots written before this change have zero bookmark tombstones.
 - **Test isolation:** `config.BACKUP_DIR` is redirected to a tmp dir by the autouse
   `conftest._isolate_real_data_paths` guard — extend that guard for any new `~/.locwarp` path.
   `config.CATALOG_BASELINE_FILE` (the catalog three-way-merge baseline) is covered there too,

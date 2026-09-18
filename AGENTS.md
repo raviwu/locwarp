@@ -40,7 +40,7 @@ DI is plain constructor injection + one container on `app.state` (AppState refra
 
 ### Hard rules for any work under this refactor
 
-- **Behavior / API freeze.** No external HTTP / WS / IPC change. The full backend pytest suite stays green after EVERY commit (current baseline ≈914 collected — pin via `cd backend && .venv/bin/python -m pytest --collect-only -q`). WS payloads compared **deep-equal JSON** (not literal bytes), serialized `exclude_unset`/`exclude_none` so absent keys stay absent. The ONE documented exception is the `device_manager.py:1155` NameError fix (a dead retry path becomes live).
+- **Behavior / API freeze.** No external HTTP / WS / IPC change. The full backend pytest suite stays green after EVERY commit (current baseline ≈1332 collected, measured 2026-09-18 — pin via `cd backend && .venv/bin/python -m pytest --collect-only -q`). WS payloads compared **deep-equal JSON** (not literal bytes), serialized `exclude_unset`/`exclude_none` so absent keys stay absent. The ONE documented exception is the `device_manager.py:1155` NameError fix (a dead retry path becomes live).
 - **Danger-zone-test-first.** `simulation_engine.py` + all movers + `api/location.py` + `device_manager` recovery + `phone_control.py` have **no direct tests**. Write characterization tests (injected `ClockPort` + stepped `asyncio.sleep`, asserting ordered exact tuples) **before** touching them. The frontend now has Vitest infra (≈651 tests across 84 files); keep it green and add tests with each change.
 - **Thick carve-outs stay leaky.** Do NOT abstract `pymobiledevice3` / `usbmuxd` / SIP / tunnel-helper / `osascript` guts into pure cores — wrap them behind narrow ports only as a test/inversion seam.
 
@@ -81,7 +81,17 @@ Design: `docs/superpowers/specs/2026-06-22-bookmark-route-rotating-backup-design
   `BACKUP_RETENTION_HOURS` (720h / 30 days, widened from 72h) by the **filename** timestamp.
 - **Never clobbers on empty:** `BackupService.tick` skips when bookmarks==0 AND routes==0.
 - Consistent reads via `BookmarkManager.snapshot_export()` (under `_store_lock`) /
-  `RouteManager.snapshot_export()`.
+  `RouteManager.snapshot_export()`. Both emit `{categories, items, tombstones}`.
+- **Snapshots carry tombstones (2026-09-18).** Without deletion history a restore RESURRECTS
+  deleted items on the next peer merge. So: a restore can now DELETE live records (`merge_backup`
+  reports `live_items_deleted`, the CLI warns — `DRY_RUN=1` first); `--force-restore` keeps what
+  EITHER side holds alive (`keep = backup_ids | live_alive`); the import endpoints drop
+  tombstones, so `make restore-backup` is the only deletion-faithful restore. Bookmarks go
+  through `GET /api/bookmarks/store` (NOT `GET /api/bookmarks`, whose shape is frozen).
+- **Two writers** share the dir and overwrite each other's `locwarp-latest-backup.json`: the
+  in-process `BackupService` (5 min, `source == "in-process"`) and `scripts/desktop_backup.py`
+  (60 s via the installed `com.locwarp.desktop-backup.plist` launchd agent,
+  `source == "http://127.0.0.1:8777"`).
 - Rings: `domain/backup.py` + `domain/ports/backup_repository.py` ←
   `infra/persistence/backup_store.py` (atomic via `json_safe`) ← `services/backup_service.py` ←
   `bootstrap/factories.make_backup_service` + `main.py` lifespan. No new import-linter contract.
