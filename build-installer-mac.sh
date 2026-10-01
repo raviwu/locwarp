@@ -15,9 +15,25 @@ echo "============================================================"
 echo " [1/3] Build backend with PyInstaller"
 echo "============================================================"
 cd "$ROOT/backend"
+# requirements.txt pins need Python >= 3.11 (timezonefinder 8.2.x). A bare
+# `python3` on macOS is usually Xcode's 3.9, so pick a versioned interpreter.
+if [[ -x "$ROOT/backend/.venv/bin/python" ]] && \
+   ! "$ROOT/backend/.venv/bin/python" -c 'import sys; sys.exit(sys.version_info < (3, 11))'; then
+    echo "ERROR: backend/.venv is $("$ROOT/backend/.venv/bin/python" --version 2>&1); need >= 3.11." >&2
+    echo "Remove it (rm -rf backend/.venv) and re-run to bootstrap with a newer Python." >&2
+    exit 1
+fi
 if [[ ! -f "$ROOT/backend/.venv/bin/activate" ]]; then
-    echo "==> Bootstrapping backend/.venv (first-time setup)"
-    python3 -m venv "$ROOT/backend/.venv"
+    PY_BOOT=""
+    for cand in python3.13 python3.12 python3.11; do
+        if command -v "$cand" >/dev/null 2>&1; then PY_BOOT="$cand"; break; fi
+    done
+    if [[ -z "$PY_BOOT" ]]; then
+        echo "ERROR: no python3.11+ found (try: brew install python@3.13)." >&2
+        exit 1
+    fi
+    echo "==> Bootstrapping backend/.venv with $PY_BOOT (first-time setup)"
+    "$PY_BOOT" -m venv "$ROOT/backend/.venv"
     # shellcheck disable=SC1091
     source "$ROOT/backend/.venv/bin/activate"
     python -m pip install --upgrade pip
