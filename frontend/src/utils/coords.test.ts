@@ -123,3 +123,31 @@ describe('parseCoord — map-URL precedence', () => {
     expect(parseCoord(url)).toEqual({ lat: 25.0339639, lng: 121.5644722 })
   })
 })
+
+describe('parseCoord — Unicode minus', () => {
+  // Typeset sources and CJK input methods emit a Unicode minus instead of
+  // ASCII "-". Read as separator junk it would flip the hemisphere.
+  it('reads a U+2212 minus sign as negative', () => {
+    expect(parseCoord('\u221233.86, \u2212151.2')).toEqual({ lat: -33.86, lng: -151.2 })
+  })
+
+  it('reads full-width and small hyphen-minus as negative', () => {
+    expect(parseCoord('\uFF0D33.86, \uFE63151.2')).toEqual({ lat: -33.86, lng: -151.2 })
+  })
+
+  it('keeps a minus sign between two numbers as a separator', () => {
+    // Not in front of a number on its own, so it is not a sign.
+    expect(parseCoord('25.0339\u2212121.5645')).toEqual({ lat: 25.0339, lng: 121.5645 })
+    expect(parseCoord('25.0339 \u2212 121.5645')).toEqual({ lat: 25.0339, lng: 121.5645 })
+  })
+
+  it('reads a minus after a space as the second number\'s sign, like ASCII "-"', () => {
+    expect(parseCoord('25.0339 \u2212121.5645')).toEqual({ lat: 25.0339, lng: -121.5645 })
+    expect(parseCoord('25.0339 -121.5645')).toEqual({ lat: 25.0339, lng: -121.5645 })
+  })
+
+  it('keeps an en dash as a separator', () => {
+    // Ambiguous between a dash and a minus, so it is never read as a sign.
+    expect(parseCoord('25.0339\u2013121.5645')).toEqual({ lat: 25.0339, lng: 121.5645 })
+  })
+})

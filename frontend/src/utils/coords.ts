@@ -4,6 +4,19 @@
 // "(-33.41902, -70.70187) 一般火" or "#3\n35.018, 135.584" without
 // hand-cleaning them first.
 
+// A Unicode minus (U+2212 MINUS SIGN, U+FE63 SMALL HYPHEN-MINUS, U+FF0D
+// FULLWIDTH HYPHEN-MINUS) in sign position becomes "-" before anything else
+// runs. Typeset sources (Wikipedia, PDFs) and CJK input methods emit these
+// instead of ASCII "-". Without this step the decimal scrape reads them as
+// separator junk, so "−33.86, −151.2" silently lands at 33.86, 151.2 — the
+// wrong hemisphere — and the map-URL and integer patterns miss the pair
+// altogether. Sign position means no digit or "." right before it and a digit
+// right after it. Glued between two numbers ("25.03−121.56") or spaced on
+// both sides ("25.03 − 121.56") it stays a separator, while "25.03 −121.56"
+// reads the second number as negative, exactly as ASCII "-" does. The en dash
+// is left alone: it is as often a separator as a sign.
+const MINUS_SIGN_RE = /(?<![\d.])[\u2212\uFE63\uFF0D](?=\d)/g;
+
 // Brackets / quotes / degree symbols are turned into spaces so they can't
 // glue numbers to surrounding labels and so leftover-text extraction (for
 // the bookmark "name" field) doesn't have to special-case them.
@@ -56,9 +69,10 @@ function parseMapUrlCoord(raw: string): { lat: number; lng: number } | null {
 // Any other text in the input is ignored — labels, prefixes ("#3", "OK"),
 // trailing notes ("一般火"), brackets, etc. all get discarded.
 export function parseCoord(raw: string): { lat: number; lng: number } | null {
-  const pin = parseMapUrlCoord(raw);
+  const text = raw.replace(MINUS_SIGN_RE, '-');
+  const pin = parseMapUrlCoord(text);
   if (pin) return pin;
-  const cleaned = raw.replace(DECORATION_RE, ' ');
+  const cleaned = text.replace(DECORATION_RE, ' ');
   COORD_DECIMAL_RE.lastIndex = 0;
   let m: RegExpExecArray | null;
   while ((m = COORD_DECIMAL_RE.exec(cleaned)) !== null) {
